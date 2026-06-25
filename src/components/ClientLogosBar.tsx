@@ -18,14 +18,14 @@ const ClientLogosBar: React.FC = () => {
   const logos = [...clientLogos].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
   return (
-    <section className="client-logos-bar bg-neutral-900 border-y border-neutral-800">
+    <section className="client-logos-bar">
       <style>{`
         .client-logos-bar .clb-row {
           display: flex;
           flex-wrap: nowrap;
           align-items: center;
           justify-content: center;
-          gap: clamp(48px, 7vw, 96px);
+          gap: clamp(32px, 5vw, 64px);
           overflow-x: auto;
           scrollbar-width: none;
         }
@@ -35,7 +35,7 @@ const ClientLogosBar: React.FC = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 110px;
+          height: 28px;
         }
         .client-logos-bar .clb-logo-img {
           height: 100%;
@@ -54,11 +54,11 @@ const ClientLogosBar: React.FC = () => {
           filter: grayscale(0);
         }
         @media (max-width: 640px) {
-          .client-logos-bar .clb-logo-link { height: 72px; }
-          .client-logos-bar .clb-row { gap: 48px; }
+          .client-logos-bar .clb-logo-link { height: 22px; }
+          .client-logos-bar .clb-row { gap: 28px; }
         }
       `}</style>
-      <div className="w-full max-w-screen-xl mx-auto px-6 py-12 md:py-16">
+      <div className="w-full max-w-screen-xl mx-auto px-6 py-8 md:py-10">
         <div className="clb-row">
           {logos.map((logo) => (
             <a
