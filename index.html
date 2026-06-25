@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/Logo2.webp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <!-- ═══════════════════════════════════════════════════════
+         PRIMARY SEO
+    ═══════════════════════════════════════════════════════ -->
+    <title>Flai - Dronefoto og video i Trekantsområdet - En ny verden</title>
+    <meta name="description" content="Flai - Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti. Book nemt og hurtigt på vores hjemmeside. Vi dækker Kolding, Vejle, Fredericia, Haderslev, Middelfart, Hedensted, Vejen, Vojens, Børkop, Strib, Bogense, Juelsminde, Taulov, Nørre Åby." />
+    <meta name="robots" content="index, follow" />
+    <!-- Canonical injected immediately from window.location so Googlebot sees
+         the correct canonical even before React hydrates. SEO.tsx keeps the
+         dynamic update for client-side navigations. -->
+    <script>
+      (function () {
+        var BASE = 'https://flai.dk';
+        var path = window.location.pathname.replace(/\/+$/, '') || '/';
+        var head = document.head;
+
+        // Inject canonical so Googlebot sees the correct URL before React hydrates.
+        // SEO.tsx keeps this updated for client-side navigations.
+        var canonical = document.createElement('link');
+        canonical.rel = 'canonical';
+        canonical.href = path === '/' ? BASE : BASE + path;
+        head.appendChild(canonical);
+
+        // Also set og:url so social crawlers agree
+        var ogUrl = document.querySelector('meta[property="og:url"]');
+        if (!ogUrl) {
+          ogUrl = document.createElement('meta');
+          ogUrl.setAttribute('property', 'og:url');
+          head.appendChild(ogUrl);
+        }
+        ogUrl.setAttribute('content', path === '/' ? BASE : BASE + path);
+      })();
+    </script>
+    <link rel="related" href="https://flai.dk/docs/information" />
+
+    <!-- ═══════════════════════════════════════════════════════
+         OPEN GRAPH (Facebook, LinkedIn, WhatsApp)
+    ═══════════════════════════════════════════════════════ -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Flai" />
+    <!-- og:url is injected dynamically by SEO.tsx for each route -->
+    <meta property="og:title" content="Flai - Dronefoto og video i Trekantsområdet - En ny verden" />
+    <meta property="og:description" content="Flai - Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti. Book nemt og hurtigt på vores hjemmeside. Vi dækker Kolding, Vejle, Fredericia, Haderslev, Middelfart, Hedensted, Vejen, Vojens, Børkop, Strib, Bogense, Juelsminde, Taulov, Nørre Åby." />
+    <meta property="og:image" content="https://flai.dk/og-image.webp" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="da_DK" />
+
+    <!-- ═══════════════════════════════════════════════════════
+         TWITTER / X CARD
+    ═══════════════════════════════════════════════════════ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Flai - Dronefoto og video i Trekantsområdet - En ny verden" />
+    <meta name="twitter:description" content="Flai - Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti. Book nemt og hurtigt på vores hjemmeside. Vi dækker Kolding, Vejle, Fredericia, Haderslev, Middelfart, Hedensted, Vejen, Vojens, Børkop, Strib, Bogense, Juelsminde, Taulov, Nørre Åby." />
+    <meta name="twitter:image" content="https://flai.dk/og-image.webp" />
+
+    <!-- Cloudinary preconnect — used sitewide, zero cost on non-homepage routes -->
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+
+    <!-- Hero preloads — homepage only. __HERO_PUBLIC_ID exposed for heroPreload.ts. -->
+    <script>
+      window.__HERO_PUBLIC_ID = 'herovideo';
+      if (window.location.pathname === '/') {
+        var B = 'https://res.cloudinary.com/dq6jxbyrg/video/upload/';
+        var I = window.__HERO_PUBLIC_ID;
+        var h = document.head;
+
+        // Preload video (lower priority than image — append, don't prepend)
+        var v = document.createElement('link');
+        v.rel = 'preload'; v.as = 'video';
+        v.href = B+'vc_h264/f_mp4/q_auto:good/'+I+'.mp4';
+        v.setAttribute('fetchpriority', 'low');
+        h.appendChild(v);
+
+        // Preload poster image — this IS the LCP element, prepend so browser
+        // discovers it as early as possible (appears before video preload in DOM)
+        var p = document.createElement('link');
+        p.rel = 'preload'; p.as = 'image';
+        p.href = B+'c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/'+I+'.jpg';
+        p.setAttribute('imagesrcset',
+          B+'c_fill,g_auto,w_480,so_0/f_jpg/q_auto:eco/'+I+'.jpg 480w,'+
+          B+'c_fill,g_auto,w_960,so_0/f_jpg/q_auto:eco/'+I+'.jpg 960w,'+
+          B+'c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/'+I+'.jpg 1920w');
+        p.setAttribute('imagesizes', '100vw');
+        p.setAttribute('fetchpriority', 'high');
+        h.prepend(p);
+      }
+    </script>
+
+    <!-- Preconnect to Supabase -->
+    <link rel="preconnect" href="https://pbqeljimuerxatrtmgsn.supabase.co" crossorigin="anonymous" />
+
+    <!-- Fonts: system-UI stack — zero network round-trip, zero layout shift -->
+    <style>
+      body { font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+
+    <!-- INSTANT DARK BACKGROUND — prevents white flash before React mounts -->
+    <style>
+      html, body, #root { background-color: #171717; margin: 0; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- 🚀 SPEED FIX: Added 'defer' to prevent JavaScript from blocking page rendering -->
+    <script type="module" defer src="/src/main.tsx"></script>
+  </body>
+</html>
