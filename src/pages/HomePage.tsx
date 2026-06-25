@@ -732,8 +732,6 @@ const HomePage: React.FC = () => {
 
       <ClientLogosBar />
 
-      <div className="h-6 md:h-10 bg-neutral-800" />
-
       {homeSections.filter(s => s.is_active).map((section, index) => {
         const isCode = section.section_type === 'code' || section.section_type === 'visual_editor';
         if (isCode) {
