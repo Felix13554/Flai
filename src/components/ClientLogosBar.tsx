@@ -58,7 +58,7 @@ const ClientLogosBar: React.FC = () => {
           .client-logos-bar .clb-row { gap: 36px; }
         }
       `}</style>
-      <div className="w-full max-w-screen-xl mx-auto px-6 py-10 md:py-12">
+      <div className="w-full max-w-screen-xl mx-auto px-6 py-5 md:py-6">
         <div className="clb-row">
           {logos.map((logo) => (
             <a
