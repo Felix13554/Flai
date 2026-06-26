@@ -5,9 +5,9 @@ export interface ClientLogosBarProps {
   /**
    * 'section' (default) — standalone full-width bar with its own background,
    * used between page sections.
-   * 'overlay' — same logo size/color/hover treatment as 'section', just with
-   * a transparent background so it can sit on top of the hero video, docked
-   * to the bottom of the hero.
+   * 'overlay' — same logo size/color as 'section', just with a transparent
+   * background so it can sit on top of the hero video, docked to the
+   * bottom of the hero.
    */
   variant?: 'section' | 'overlay';
 }
@@ -17,8 +17,7 @@ export interface ClientLogosBarProps {
 // height (so width — and therefore how many fit per row — is driven purely
 // by each logo's own aspect ratio). When there isn't enough logos to fill
 // the row it stays centered, leaving empty space on the left/right instead
-// of stretching. On hover, every other logo turns grayscale while the
-// hovered logo keeps its original color — no opacity/fade animation.
+// of stretching. Logos are static — no hover effects or animations.
 const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) => {
   const { clientLogos, isClientLogosLoaded } = useData();
 
@@ -57,16 +56,6 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
           width: auto;
           object-fit: contain;
           display: block;
-          filter: grayscale(0);
-          transition: filter 0.25s ease;
-        }
-        /* When the row is being hovered, every logo turns grayscale... */
-        .client-logos-bar .clb-row:hover .clb-logo-img {
-          filter: grayscale(1);
-        }
-        /* ...except the one actually being hovered, which returns to full color. */
-        .client-logos-bar .clb-logo-link:hover .clb-logo-img {
-          filter: grayscale(0);
         }
         @media (max-width: 640px) {
           .client-logos-bar .clb-logo-link { height: 44px; }
