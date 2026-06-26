@@ -700,7 +700,7 @@ const HomePage: React.FC = () => {
       <HeroVideoSection videoUrl={heroVideoUrl}>
         <div className="flex flex-col h-full w-full">
           <div className="flex-1" />
-          <div className="flex flex-col items-center pb-16 sm:pb-20">
+          <div className="flex flex-col items-center pb-10 sm:pb-14">
             <div className="mb-6 text-white drop-shadow-2xl">
               <div className="flex flex-col items-center">
                 <img
@@ -727,10 +727,11 @@ const HomePage: React.FC = () => {
               </button>
             </div>
           </div>
+          {/* Client logos docked to the bottom of the hero video, so they're
+              visible above the fold alongside the buttons/logo/subtitle. */}
+          <ClientLogosBar variant="overlay" />
         </div>
       </HeroVideoSection>
-
-      <ClientLogosBar />
 
       {homeSections.filter(s => s.is_active).map((section, index) => {
         const isCode = section.section_type === 'code' || section.section_type === 'visual_editor';
