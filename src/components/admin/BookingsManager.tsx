@@ -26,6 +26,7 @@ import {
   Edit3,
   AlertCircle,
   FileEdit,
+  FileText,
   X
 } from 'lucide-react';
 import { useBookings } from '../../hooks/useBookings';
@@ -83,6 +84,24 @@ const BookingsManager: React.FC = () => {
   const [draftFlowStep, setDraftFlowStep] = useState<'ask' | 'input'>('ask');
   const [draftReplyQuery, setDraftReplyQuery] = useState('');
   const [creatingDraft, setCreatingDraft] = useState(false);
+
+  // --- Send Faktura (invoice) flow state ---
+  // The booking currently going through the "send faktura" modal (null = closed)
+  const [invoicingBooking, setInvoicingBooking] = useState<any | null>(null);
+  const [invoiceFormData, setInvoiceFormData] = useState({
+    isBusiness: false,
+    businessName: '',
+    businessCvr: '',
+    address: '',
+    finalizeOnly: false,
+  });
+  const [sendingInvoice, setSendingInvoice] = useState(false);
+  // Result popup shown after a successful finalize/send, with the PDF download link
+  const [invoiceResult, setInvoiceResult] = useState<{
+    invoicePdf: string | null;
+    invoiceUrl: string | null;
+    wasSent: boolean;
+  } | null>(null);
   
   const [editingData, setEditingData] = useState<{
     payment_status: string;
@@ -362,50 +381,115 @@ const BookingsManager: React.FC = () => {
   const handleCompleteBooking = async (bookingId: number) => {
     try {
       const booking = bookings.find(b => b.id === bookingId);
-      
+
       if (!booking) {
         toast.error('Booking ikke fundet');
         return;
       }
 
       await markBookingComplete(bookingId);
-      
-      if (booking.payment_status !== 'paid') {
-        try {
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-invoice`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ bookingId: bookingId })
-            }
-          );
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-
-          const result = await response.json();
-
-          if (result.error) {
-            toast.error('Booking gennemført, men faktura kunne ikke køsættes');
-          } else {
-            toast.success('Booking gennemført! Faktura sendes til kunden.');
-          }
-        } catch (invoiceError) {
-          console.error('BookingsManager: Error queueing invoice:', invoiceError);
-          toast.error('Booking gennemført, men faktura kunne ikke køsættes');
-        }
-      } else {
-        toast.success('Booking markeret som gennemført');
-      }
+      toast.success('Booking markeret som gennemført');
     } catch (error) {
       console.error('BookingsManager: Error completing booking:', error);
       toast.error('Kunne ikke gennemføre booking');
+    }
+  };
+
+  // --- Send Faktura flow ---
+  // Opens the "Send Faktura" modal for a given booking, pre-filling the
+  // address from the booking (still editable, and always required on submit).
+  const handleOpenInvoiceModal = (booking: any) => {
+    setInvoicingBooking(booking);
+    setInvoiceFormData({
+      isBusiness: false,
+      businessName: '',
+      businessCvr: '',
+      address: booking.address || '',
+      finalizeOnly: false,
+    });
+  };
+
+  const handleCloseInvoiceModal = () => {
+    setInvoicingBooking(null);
+    setInvoiceFormData({
+      isBusiness: false,
+      businessName: '',
+      businessCvr: '',
+      address: '',
+      finalizeOnly: false,
+    });
+  };
+
+  const handleSendInvoice = async () => {
+    if (!invoicingBooking) return;
+
+    const { isBusiness, businessName, businessCvr, address, finalizeOnly } = invoiceFormData;
+
+    if (!address.trim()) {
+      toast.error('Adresse er påkrævet');
+      return;
+    }
+    if (isBusiness && !businessName.trim()) {
+      toast.error('Virksomhedsnavn er påkrævet for virksomhedsfakturaer');
+      return;
+    }
+
+    setSendingInvoice(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-invoice`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bookingId: invoicingBooking.id,
+            address: address.trim(),
+            ...(isBusiness && {
+              isBusiness: true,
+              businessName: businessName.trim(),
+              ...(businessCvr.trim() ? { businessCvr: businessCvr.trim() } : {}),
+            }),
+            ...(finalizeOnly && { finalizeOnly: true }),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.error) {
+        throw new Error(result.details || result.error);
+      }
+
+      if (result.status === 'failed') {
+        throw new Error(result.error || 'Faktura kunne ikke oprettes');
+      }
+
+      toast.success(finalizeOnly ? 'Faktura finaliseret' : 'Faktura sendt til kunden');
+      handleCloseInvoiceModal();
+
+      // Show the download popup if we got a PDF/hosted URL back. The chain
+      // (queue-invoice -> process-invoices -> send-invoice) is awaited end to
+      // end, so this is already available synchronously — no polling needed.
+      if (result.invoicePdf || result.invoiceUrl) {
+        setInvoiceResult({
+          invoicePdf: result.invoicePdf || null,
+          invoiceUrl: result.invoiceUrl || null,
+          wasSent: !!result.wasSent,
+        });
+      }
+    } catch (error: any) {
+      console.error('BookingsManager: Error sending invoice:', error);
+      toast.error(`Kunne ikke sende faktura: ${error.message}`);
+    } finally {
+      setSendingInvoice(false);
     }
   };
 
@@ -1567,6 +1651,14 @@ const BookingsManager: React.FC = () => {
                     </button>
                   )}
 
+                  <button
+                    onClick={() => handleOpenInvoiceModal(booking)}
+                    className="flex items-center px-3 py-1 bg-amber-600 text-white rounded text-sm hover:bg-amber-500 transition-colors"
+                  >
+                    <FileText size={14} className="mr-1" />
+                    <EditableContent contentKey="admin-bookings-send-invoice-button" fallback="Send Faktura" />
+                  </button>
+
                   {booking.is_completed && booking.payment_status !== 'paid' && (
                     <button
                       onClick={() => handleStatusUpdate(booking.id, 'paid')}
@@ -1869,7 +1961,154 @@ const BookingsManager: React.FC = () => {
                 </div>
               )}
 
-              {/* Edit Form */}
+              {/* Send Faktura Modal */}
+              {invoicingBooking?.id === booking.id && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                  <div className="bg-neutral-800 rounded-2xl p-8 max-w-lg w-full border-2 border-amber-500/30 shadow-2xl shadow-amber-500/20 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center mb-6">
+                      <div className="w-14 h-14 bg-amber-600 rounded-full flex items-center justify-center mr-4 shadow-lg">
+                        <FileText className="text-white" size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold">
+                          <EditableContent contentKey="admin-bookings-send-invoice-modal-title" fallback="Send Faktura" />
+                        </h3>
+                        <p className="text-sm text-neutral-400">
+                          <EditableContent contentKey="bookings-manager-booking-4" fallback="Booking #" />{booking.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-5 mb-6">
+                      {/* Business toggle */}
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-300 mb-2">
+                          <EditableContent contentKey="admin-bookings-invoice-is-business-label" fallback="Er det til en virksomhed?" />
+                        </label>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceFormData(prev => ({ ...prev, isBusiness: false }))}
+                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              !invoiceFormData.isBusiness
+                                ? 'bg-primary text-white'
+                                : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+                            }`}
+                          >
+                            <EditableContent contentKey="admin-bookings-invoice-private" fallback="Privat" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceFormData(prev => ({ ...prev, isBusiness: true }))}
+                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              invoiceFormData.isBusiness
+                                ? 'bg-primary text-white'
+                                : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+                            }`}
+                          >
+                            <EditableContent contentKey="admin-bookings-invoice-business" fallback="Virksomhed" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Business fields (only when business is selected) */}
+                      {invoiceFormData.isBusiness && (
+                        <div className="space-y-4 p-4 bg-neutral-700/50 rounded-xl border border-neutral-600">
+                          <div>
+                            <label className="block text-sm font-medium text-neutral-300 mb-2">
+                              <EditableContent contentKey="admin-bookings-invoice-business-name-label" fallback="Virksomhedsnavn *" />
+                            </label>
+                            <input
+                              type="text"
+                              value={invoiceFormData.businessName}
+                              onChange={(e) => setInvoiceFormData(prev => ({ ...prev, businessName: e.target.value }))}
+                              className="form-input w-full bg-neutral-700 border-neutral-600 focus:border-amber-500 focus:ring-amber-500 text-white"
+                              placeholder="Firma ApS"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-neutral-300 mb-2">
+                              <EditableContent contentKey="admin-bookings-invoice-business-cvr-label" fallback="CVR-nummer" />
+                            </label>
+                            <input
+                              type="text"
+                              value={invoiceFormData.businessCvr}
+                              onChange={(e) => setInvoiceFormData(prev => ({ ...prev, businessCvr: e.target.value }))}
+                              className="form-input w-full bg-neutral-700 border-neutral-600 focus:border-amber-500 focus:ring-amber-500 text-white"
+                              placeholder="12345678"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Address — always required */}
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-300 mb-2">
+                          <EditableContent contentKey="admin-bookings-invoice-address-label" fallback="Adresse *" />
+                        </label>
+                        <input
+                          type="text"
+                          value={invoiceFormData.address}
+                          onChange={(e) => setInvoiceFormData(prev => ({ ...prev, address: e.target.value }))}
+                          className="form-input w-full bg-neutral-700 border-neutral-600 focus:border-amber-500 focus:ring-amber-500 text-white"
+                          placeholder="Vejnavn 1, 1234 By"
+                          required
+                        />
+                        <p className="text-xs text-neutral-500 mt-1">
+                          <EditableContent contentKey="admin-bookings-invoice-address-hint" fallback="Adressen vises altid på fakturaen." />
+                        </p>
+                      </div>
+
+                      {/* Finalize-only toggle */}
+                      <div className="flex items-start gap-3 p-3 bg-neutral-700/30 rounded-lg border border-neutral-600">
+                        <input
+                          type="checkbox"
+                          id={`finalize-only-${booking.id}`}
+                          checked={invoiceFormData.finalizeOnly}
+                          onChange={(e) => setInvoiceFormData(prev => ({ ...prev, finalizeOnly: e.target.checked }))}
+                          className="mt-1"
+                        />
+                        <label htmlFor={`finalize-only-${booking.id}`} className="text-sm text-neutral-300">
+                          <EditableContent contentKey="admin-bookings-invoice-finalize-only-label" fallback="Finaliser kun (send ikke til kunden)" />
+                          <span className="block text-xs text-neutral-500 mt-0.5">
+                            <EditableContent contentKey="admin-bookings-invoice-finalize-only-hint" fallback="Fakturaen oprettes og PDF'en bliver klar, men sendes ikke automatisk til kunden." />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row justify-end gap-3">
+                      <button
+                        onClick={handleCloseInvoiceModal}
+                        disabled={sendingInvoice}
+                        className="px-5 py-2.5 bg-neutral-600 hover:bg-neutral-500 text-white rounded-lg transition-all font-medium disabled:opacity-50"
+                      >
+                        <EditableContent contentKey="bookings-manager-annuller-3" fallback="Annuller" />
+                      </button>
+                      <button
+                        onClick={handleSendInvoice}
+                        disabled={sendingInvoice}
+                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {sendingInvoice ? (
+                          <Loader size={16} className="mr-2 animate-spin" />
+                        ) : (
+                          <FileText size={16} className="mr-2" />
+                        )}
+                        {sendingInvoice
+                          ? <EditableContent contentKey="admin-bookings-invoice-sending" fallback="Sender..." />
+                          : invoiceFormData.finalizeOnly
+                            ? <EditableContent contentKey="admin-bookings-invoice-finalize-button" fallback="Finaliser Faktura" />
+                            : <EditableContent contentKey="admin-bookings-invoice-send-button" fallback="Send Faktura" />
+                        }
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
               {editingBooking === booking.id && (
                 <div className="mt-6 pt-6 border-t border-neutral-600">
                   <EditableContent
@@ -2280,6 +2519,48 @@ const BookingsManager: React.FC = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Result Popup — shown after a faktura is finalized/sent, with PDF download */}
+      {invoiceResult && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-neutral-800 rounded-2xl p-8 max-w-md w-full border-2 border-success/30 shadow-2xl shadow-success/20 text-center">
+            <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="text-success" size={32} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">
+              {invoiceResult.wasSent
+                ? <EditableContent contentKey="admin-bookings-invoice-result-sent-title" fallback="Faktura sendt!" />
+                : <EditableContent contentKey="admin-bookings-invoice-result-finalized-title" fallback="Faktura finaliseret!" />
+              }
+            </h3>
+            <p className="text-sm text-neutral-400 mb-6">
+              {invoiceResult.wasSent
+                ? <EditableContent contentKey="admin-bookings-invoice-result-sent-desc" fallback="Fakturaen er sendt til kunden via Stripe." />
+                : <EditableContent contentKey="admin-bookings-invoice-result-finalized-desc" fallback="Fakturaen er klar, men er ikke sendt til kunden." />
+              }
+            </p>
+            <div className="flex flex-col gap-3">
+              {invoiceResult.invoicePdf && (
+                <a
+                  href={invoiceResult.invoicePdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center px-5 py-2.5 bg-success text-white rounded-lg hover:bg-success/80 transition-colors font-medium"
+                >
+                  <Download size={16} className="mr-2" />
+                  <EditableContent contentKey="admin-bookings-invoice-result-download" fallback="Download PDF Faktura" />
+                </a>
+              )}
+              <button
+                onClick={() => setInvoiceResult(null)}
+                className="px-5 py-2.5 bg-neutral-600 hover:bg-neutral-500 text-white rounded-lg transition-all font-medium"
+              >
+                <EditableContent contentKey="bookings-manager-luk" fallback="Luk" />
+              </button>
+            </div>
           </div>
         </div>
       )}
