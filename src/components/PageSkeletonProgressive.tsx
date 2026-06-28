@@ -83,8 +83,8 @@ const PageSkeleton = () => {
       {/* Spacer pushes content to bottom — mirrors flex-1 in HomePage */}
       <div className="flex-1" />
 
-      {/* Hero content placeholders — matches HomePage's pb-16 sm:pb-20 + items-center */}
-      <div className="relative z-10 flex flex-col items-center pb-16 sm:pb-20">
+      {/* Hero content placeholders — matches HomePage's pb-10 sm:pb-14 + items-center */}
+      <div className="relative z-10 flex flex-col items-center pb-10 sm:pb-14">
         <div className="flex justify-center mb-6">
           <div className="h-16 w-48 rounded animate-pulse-slow" style={{ background: 'rgba(255,255,255,0.15)' }} />
         </div>
@@ -95,6 +95,22 @@ const PageSkeleton = () => {
           {/* Matches btn-secondary text-lg px-8 py-4 */}
           <div className="h-14 w-full sm:w-52 rounded-lg animate-pulse-slow" style={{ background: '#262626', border: '1px solid #404040' }} />
         </div>
+      </div>
+
+      {/* Reserved client-logos-bar slot — matches ClientLogosBar's overlay
+          variant exactly (px-6 pb-6 sm:pb-8 wrapper, 64px/44px logo-row slot)
+          so the Suspense swap to the real HomePage never shifts this content
+          up or down once logos pop in. Kept invisible (no shimmer) here since
+          the logos bar fades itself in — this skeleton only needs to hold
+          the same amount of space. */}
+      <div className="relative z-10 w-full max-w-screen-xl mx-auto px-6 pb-6 sm:pb-8">
+        <style>{`
+          .home-hero-skeleton-logo-slot { min-height: 64px; }
+          @media (max-width: 640px) {
+            .home-hero-skeleton-logo-slot { min-height: 44px; }
+          }
+        `}</style>
+        <div className="home-hero-skeleton-logo-slot flex items-center justify-center" />
       </div>
     </div>
   );
