@@ -186,13 +186,20 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     video.setAttribute('muted', '')
 
     let destroyed = false
+    let revealTimer: number | undefined
+    let attemptInFlight = false
 
     // Single code path to "ready". We wait for requestVideoFrameCallback so the
     // poster is only removed once a real decoded frame has been composited —
     // eliminating any black-gap frame. rVFC is baseline across all evergreen
     // browsers (Chrome 83+, Safari 15.4+, Firefox 132+ as of Oct 2024).
+    // Exposed on the element itself so the visibilitychange effect (a separate
+    // effect, with no access to these closures) can call the exact same path
+    // when resuming from a backgrounded tab — this is what was missing before
+    // and is why the poster used to stay stuck over a silently-resumed video.
     const markReady = () => {
       if (destroyed) return
+      window.clearTimeout(revealTimer)
       if (typeof (video as any).requestVideoFrameCallback === 'function') {
         // rVFC fires when the frame is sent to the compositor.
         // The nested rAF then waits for the *next screen paint* before
@@ -220,36 +227,53 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       }
     }
 
-    let revealTimer: number | undefined
-
+    // Re-entrant: safe to call from loadeddata, the IntersectionObserver, and
+    // the visibilitychange effect without stacking duplicate grace-period
+    // timers or play-button flashes (the old version queued a fresh 800ms
+    // timer + 'playing' listener on every call site, so two concurrent calls
+    // could race — one path's timer firing the play button right as the
+    // other path's play() was about to legitimately succeed).
     const attemptPlay = () => {
+      if (destroyed || attemptInFlight) return
+      attemptInFlight = true
+      window.clearTimeout(revealTimer)
       video.muted = true
       const p = video.play()
-      if (!p) return
+      if (!p) {
+        attemptInFlight = false
+        return
+      }
       p.then(() => {
+        attemptInFlight = false
         window.clearTimeout(revealTimer)
         setShowPlayButton(false)
       }).catch(() => {
+        attemptInFlight = false
         if (destroyed) return
         // Brief grace period before showing the play button — the 'playing'
-        // event may still fire quickly on fast connections.
+        // event may still fire quickly on fast connections, or a queued
+        // retry (e.g. from tab-visibility recovery) may succeed first.
         revealTimer = window.setTimeout(() => {
           if (destroyed || !video.paused) return
           setShowPlayButton(true)
           const gesturePlay = () => {
             video.muted = true
-            video.play()
-              .then(() => setShowPlayButton(false))
-              .catch(() => {})
+            video.play().then(markReady).catch(() => {})
             document.removeEventListener('touchstart', gesturePlay)
             document.removeEventListener('click',      gesturePlay)
           }
           document.addEventListener('touchstart', gesturePlay, { once: true })
           document.addEventListener('click',      gesturePlay, { once: true })
         }, 800)
-        video.addEventListener('playing', () => window.clearTimeout(revealTimer), { once: true })
       })
     }
+
+    // Stash on the element so the visibilitychange effect — which mounts as a
+    // separate useEffect and has no closure access to markReady/attemptPlay —
+    // can resume playback through the same ready-state path instead of
+    // calling video.play() directly and leaving videoReady permanently false.
+    ;(video as any).__heroMarkReady  = markReady
+    ;(video as any).__heroAttemptPlay = attemptPlay
 
     const onPlaying    = () => markReady()
     const onLoadedData = () => { if (!destroyed && video.paused) attemptPlay() }
@@ -258,7 +282,10 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       console.warn('[HeroVideo] error', video.error.code, video.error.message)
     }
 
-    video.addEventListener('playing',    onPlaying,    { once: true })
+    // NOT { once: true } — after a tab-visibility resume the video can pause
+    // and re-fire 'playing' again later (e.g. another background/foreground
+    // cycle), and we need markReady to run every time, not just the first.
+    video.addEventListener('playing',    onPlaying)
     video.addEventListener('loadeddata', onLoadedData, { once: true })
     video.addEventListener('error',      onError)
 
@@ -293,6 +320,8 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       video.removeEventListener('playing',    onPlaying)
       video.removeEventListener('error',      onError)
       video.removeEventListener('loadeddata', onLoadedData)
+      delete (video as any).__heroMarkReady
+      delete (video as any).__heroAttemptPlay
       video.pause()
       video.removeAttribute('src')
       video.load()
@@ -308,13 +337,32 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       if (!video) return
       if (document.visibilityState === 'hidden') {
         window.clearTimeout(retryTimer)
-        // Drop ready state so poster re-covers on tab return (avoids stale frame)
-        setVideoReady(false)
       } else {
         video.muted = true
         retryTimer = window.setTimeout(() => {
-          video.play().catch(() => {})
-          // markReady fires again via the 'playing' event in the main effect
+          const el = videoRef.current
+          if (!el) return
+          // Route through the SAME ready-state machinery the main effect
+          // uses, via the functions it stashed on the element. Calling
+          // el.play() directly here (the old behaviour) could genuinely
+          // resume playback while videoReady stayed stuck at false — the
+          // old code also force-set that to false on hide — leaving the
+          // poster frozen on top of an actually-playing video after a
+          // long backgrounded tab.
+          const attempt = (el as any).__heroAttemptPlay as (() => void) | undefined
+          if (attempt) {
+            attempt()
+          } else {
+            // Effect hasn't (re)mounted its listeners yet — fall back, but
+            // still resolve to the ready state once playback confirms.
+            el.play()
+              .then(() => {
+                const ready = (el as any).__heroMarkReady as (() => void) | undefined
+                if (ready) ready()
+                else setVideoReady(true)
+              })
+              .catch(() => {})
+          }
         }, 0)
       }
     }
