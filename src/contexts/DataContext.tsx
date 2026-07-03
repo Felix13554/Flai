@@ -51,6 +51,8 @@ interface SiteContent {
   category: string;
   created_at: string;
   updated_at: string;
+  /** When true, this key is excluded from "Deploy til GitHub" and stays database-only. */
+  no_deploy?: boolean;
 }
 interface HomeSection {
   id: string;
