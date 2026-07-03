@@ -11,6 +11,7 @@ interface NewContent {
   value: string;
   description: string;
   category: string;
+  no_deploy?: boolean;
 }
 
 function dispatchContentUpdated() {
@@ -90,19 +91,41 @@ export const useSiteContent = () => {
     if (!isAdmin) { toast.error('Du har ikke tilladelse til at redigere indhold'); return false; }
     try {
       const defaults = inferContentDefaults(key, value);
+      const existing = getContentItem(key);
       const { error: upsertError } = await supabase.from('site_content').upsert(
-        { key, value, type: defaults.type, category: defaults.category, description: defaults.description },
+        {
+          key, value, type: defaults.type, category: defaults.category, description: defaults.description,
+          // Preserve the existing no_deploy flag (upsert would otherwise reset it to NULL/default).
+          ...(existing ? { no_deploy: existing.no_deploy ?? false } : {}),
+        },
         { onConflict: 'key' }
       );
       if (upsertError) throw upsertError;
       await refreshSiteContent();
       dispatchContentUpdated();
       toast.success('Indhold opdateret');
-      scheduleAutoDeploy(getAccessToken);
+      if (!(existing?.no_deploy)) scheduleAutoDeploy(getAccessToken);
       return true;
     } catch (err: any) {
       console.error('Error updating content:', err);
       toast.error('Kunne ikke opdatere indhold');
+      return false;
+    }
+  };
+
+  /** Toggles whether a key is excluded from GitHub deploys and stays database-only. */
+  const setContentNoDeploy = async (key: string, noDeploy: boolean) => {
+    if (!isAdmin) { toast.error('Du har ikke tilladelse til at redigere indhold'); return false; }
+    try {
+      const { error } = await supabase.from('site_content').update({ no_deploy: noDeploy }).eq('key', key);
+      if (error) throw error;
+      await refreshSiteContent();
+      dispatchContentUpdated();
+      toast.success(noDeploy ? 'Nøgle udelukket fra GitHub-deploy' : 'Nøgle inkluderet i GitHub-deploy igen');
+      return true;
+    } catch (err: any) {
+      console.error('Error toggling no_deploy:', err);
+      toast.error('Kunne ikke opdatere deploy-status');
       return false;
     }
   };
@@ -152,7 +175,7 @@ export const useSiteContent = () => {
   const addContent = async (newContent: NewContent) => {
     if (!isAdmin) { toast.error('Du har ikke tilladelse til at tilføje indhold'); return false; }
     try {
-      const { error: insertError } = await supabase.from('site_content').insert([newContent]);
+      const { error: insertError } = await supabase.from('site_content').insert([{ no_deploy: false, ...newContent }]);
       if (insertError) throw insertError;
       await refreshSiteContent();
       dispatchContentUpdated();
@@ -173,6 +196,7 @@ export const useSiteContent = () => {
     loading: !isSiteContentLoaded,
     error: null,
     updateContent,
+    setContentNoDeploy,
     deleteContent,
     deleteManyContent,
     addContent,
