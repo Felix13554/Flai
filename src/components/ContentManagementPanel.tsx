@@ -5,6 +5,7 @@ import {
   Home, Phone, Info, Briefcase, Megaphone, Search, Eye, EyeOff,
   Database, FolderPlus, FolderInput, MoveRight, Globe, MousePointer2,
   Check, ChevronRight, Scan, RefreshCw, AlertTriangle, Sparkles, Rocket,
+  ShieldAlert, ShieldOff, Braces,
 } from 'lucide-react';
 import { useSiteContent, cancelAutoDeploy } from '../hooks/useSiteContent';
 import { supabase } from '../utils/supabase';
@@ -12,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ImageUpload from './ImageUpload';
 import toast from 'react-hot-toast';
 import { CONTENT_KEYS } from 'virtual:content-keys';
+import JsonFieldEditor, { detectJsonKind } from './JsonFieldEditor';
 
 // ─── Admin settings ────────────────────────────────────────────────────────
 export const ADMIN_SETTINGS_KEY = 'flai_admin_settings';
@@ -263,7 +265,7 @@ const CLICK_SELECT_PAGE_SIZE = 10;
 
 const ContentManagementPanel: React.FC = () => {
   const { isAdmin } = useAuth();
-  const { content, updateContent, deleteContent, deleteManyContent, addContent, loading } = useSiteContent();
+  const { content, updateContent, setContentNoDeploy, deleteContent, deleteManyContent, addContent, loading } = useSiteContent();
 
   const [isOpen, setIsOpen]                     = useState(false);
   const [deployStatus, setDeployStatus]         = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -712,8 +714,10 @@ const ContentManagementPanel: React.FC = () => {
 
   const renderDbItem = (item: typeof content[string]) => {
     const isEditing = editingItem === item.key;
+    const jsonKind = item.type === 'text' ? detectJsonKind(item.value) : null;
+    const isNoDeploy = !!item.no_deploy;
     return (
-      <div key={item.key} className="bg-neutral-700/20 rounded-lg p-4">
+      <div key={item.key} className={`rounded-lg p-4 ${isNoDeploy ? 'bg-sky-950/20 border border-sky-800/40' : 'bg-neutral-700/20'}`}>
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
@@ -725,10 +729,27 @@ const ContentManagementPanel: React.FC = () => {
               }`}>
                 {item.type === 'color' ? 'Farve' : item.type === 'image' ? 'Billede' : 'Tekst'}
               </span>
+              {jsonKind && (
+                <span className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-300 flex items-center gap-1">
+                  <Braces size={10} /> JSON
+                </span>
+              )}
+              {isNoDeploy && (
+                <span className="px-1.5 py-0.5 rounded text-xs bg-sky-500/20 text-sky-300 flex items-center gap-1" title="Deployes ikke til GitHub — forbliver kun i databasen">
+                  <ShieldAlert size={10} /> Kun database
+                </span>
+              )}
             </div>
             <p className="text-xs text-neutral-500 font-mono truncate">{item.key}</p>
           </div>
           <div className="flex items-center space-x-1 ml-2 shrink-0">
+            <button
+              onClick={() => setContentNoDeploy(item.key, !isNoDeploy)}
+              className={`p-1.5 transition-colors ${isNoDeploy ? 'text-sky-400 hover:text-sky-300' : 'text-neutral-400 hover:text-sky-300'}`}
+              title={isNoDeploy ? 'Inkluder i GitHub-deploy igen' : 'Udeluk fra GitHub-deploy (forbliv kun i database)'}
+            >
+              {isNoDeploy ? <ShieldAlert size={14} /> : <ShieldOff size={14} />}
+            </button>
             <button onClick={() => { setMovingKey(item.key); setMoveTarget(item.category); }}
               className="p-1.5 text-neutral-400 hover:text-blue-300 transition-colors" title="Flyt til anden kategori">
               <MoveRight size={14} />
@@ -776,6 +797,8 @@ const ContentManagementPanel: React.FC = () => {
                   <EditableContent contentKey="content-management-panel-du-kan-bruge-hex-0f52ba" fallback="Du kan bruge hex (#0F52BA), rgb(), hsl() eller CSS-variabler." />
                 </p>
               </div>
+            ) : jsonKind ? (
+              <JsonFieldEditor value={editValue} onChange={setEditValue} />
             ) : (
               <textarea
                 value={editValue}
@@ -809,6 +832,16 @@ const ContentManagementPanel: React.FC = () => {
                 <img src={item.value} alt={item.description} className="w-12 h-12 object-cover rounded" />
                 <span className="text-neutral-400 text-xs break-all">{item.value}</span>
               </div>
+            ) : jsonKind ? (
+              <button
+                onClick={() => handleEdit(item.key, item.value)}
+                className="w-full text-left text-xs text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-lg px-3 py-2 transition-colors flex items-center gap-2"
+              >
+                <Braces size={12} className="shrink-0" />
+                {jsonKind === 'array'
+                  ? `${(() => { try { return JSON.parse(item.value).length; } catch { return '?'; } })()} element(er) — klik for at redigere`
+                  : `${(() => { try { return Object.keys(JSON.parse(item.value)).length; } catch { return '?'; } })()} felt(er) — klik for at redigere`}
+              </button>
             ) : (
               <p className="text-neutral-300 text-sm">{item.value}</p>
             )}
@@ -872,6 +905,8 @@ const ContentManagementPanel: React.FC = () => {
               <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)}
                 className="form-input flex-1 text-sm font-mono" placeholder="#0F52BA" />
             </div>
+          ) : detectJsonKind(editValue) ? (
+            <JsonFieldEditor value={editValue} onChange={setEditValue} />
           ) : (
             <textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="form-input w-full text-sm" rows={2} autoFocus />
           )}
