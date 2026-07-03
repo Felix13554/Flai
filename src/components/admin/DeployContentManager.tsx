@@ -486,9 +486,16 @@ const DeployContentManager: React.FC = () => {
     return () => window.removeEventListener('autoDeployTimerUpdate', h);
   }, []);
 
+  const [excludedCount, setExcludedCount] = useState<number | null>(null);
+
   const loadCount = useCallback(async () => {
-    const { count } = await supabase.from('site_content').select('*', { count: 'exact', head: true });
+    // "or" covers legacy rows where no_deploy was never set (NULL treated as false).
+    const { count } = await supabase.from('site_content').select('*', { count: 'exact', head: true })
+      .or('no_deploy.is.null,no_deploy.eq.false');
     setContentCount(count ?? 0);
+    const { count: excluded } = await supabase.from('site_content').select('*', { count: 'exact', head: true })
+      .eq('no_deploy', true);
+    setExcludedCount(excluded ?? 0);
   }, []);
   useEffect(() => { loadCount(); }, [loadCount]);
 
@@ -612,6 +619,13 @@ const DeployContentManager: React.FC = () => {
           {deployStatus === 'error'   && <span className="flex items-center gap-2 text-sm text-red-400"><XCircle size={14} /> <EditableContent contentKey="deploy-content-manager-fejl" fallback="Fejl" /></span>}
         </div>
       </div>
+
+      {!!excludedCount && (
+        <p className="text-xs text-neutral-500 -mt-2 flex items-center gap-1.5">
+          <ShieldAlert size={12} className="text-amber-500" />
+          {excludedCount} nøgle{excludedCount !== 1 ? 'r' : ''} er markeret &ldquo;kun database&rdquo; og udelades fra deploy.
+        </p>
+      )}
 
       {/* Action buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
