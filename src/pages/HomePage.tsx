@@ -248,7 +248,7 @@ const Section_701f795b = (() => {
 
 // Section: Testimonials (9009b281-e411-445f-8c58-7b2470ce61b3)
 const Section_9009b281 = ((
-  useState, useEffect, useRef, useLayoutEffect
+  useState, useEffect, useRef
 ) => {
   // ─── Types ────────────────────────────────────────────────────────────────────
   //
@@ -296,14 +296,14 @@ const Section_9009b281 = ((
   // Desktop (>768px):
   //   - 8 or fewer reviews  -> single row, all reviews
   //   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2
-  //   - a row needs 4+ reviews to scroll; otherwise it's static
   // Mobile (<=768px):
   //   - 6 or fewer reviews  -> single row, all reviews
   //   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)
-  //   - a row needs just 1+ review to scroll (motion is effectively always on)
   //
-  // Hovering a row eases its scroll speed smoothly down to a stop, and eases back
-  // up to full speed on mouse-leave (no instant pause/resume).
+  // Each row is a horizontally scrollable strip. Left/right arrow buttons advance
+  // the row by exactly one card per click, clamped at both ends (no wraparound).
+  // On touch devices the row can also be swiped natively — no extra JS needed for
+  // that, since it's a plain scroll container.
 
   interface ReviewUser {
     name: string;
@@ -330,12 +330,7 @@ const Section_9009b281 = ((
   const DEFAULT_GOOGLE_LINK =
     'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';
 
-  const MOBILE_BREAKPOINT = 768;
-  const DESKTOP_SPLIT_THRESHOLD = 8;
-  const MOBILE_SPLIT_THRESHOLD = 6;
-  const DESKTOP_MIN_TO_ANIMATE = 4;
-  const MOBILE_MIN_TO_ANIMATE = 1;
-  const SCROLL_SPEED_PX_PER_SEC = 42;
+  const CARD_GAP_PX = 24;
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -383,20 +378,6 @@ const Section_9009b281 = ((
 
   function nameToHue(name: string): number {
     return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
-  }
-
-  function useIsMobile(breakpoint: number): boolean {
-    const [isMobile, setIsMobile] = useState(false);
-
-    useEffect(() => {
-      const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
-      const update = () => setIsMobile(mq.matches);
-      update();
-      mq.addEventListener('change', update);
-      return () => mq.removeEventListener('change', update);
-    }, [breakpoint]);
-
-    return isMobile;
   }
 
   // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -477,81 +458,73 @@ const Section_9009b281 = ((
     );
   }
 
-  function TestimonialRow({
-    reviews,
-    animated,
-    direction,
-  }: {
-    reviews: ReviewData[];
-    animated: boolean;
-    direction: 'left' | 'right';
-  }) {
+  function TestimonialRow({ reviews }: { reviews: ReviewData[] }) {
     const trackRef = useRef<HTMLDivElement>(null);
-    const hoverRef = useRef(false);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
 
-    // Duplicate the set so the loop is seamless (translate exactly one copy's width).
-    const cards = animated ? [...reviews, ...reviews] : reviews;
+    const updateArrowState = () => {
+      const track = trackRef.current;
+      if (!track) return;
+      setCanScrollLeft(track.scrollLeft > 4);
+      setCanScrollRight(track.scrollLeft < track.scrollWidth - track.clientWidth - 4);
+    };
 
-    useLayoutEffect(() => {
-      if (!animated) return;
+    useEffect(() => {
+      updateArrowState();
       const track = trackRef.current;
       if (!track) return;
 
-      let contentWidth = track.scrollWidth / 2;
-      const handleResize = () => {
-        contentWidth = track.scrollWidth / 2;
-      };
-      window.addEventListener('resize', handleResize);
+      // Re-check arrow availability if the row's size changes (e.g. resize
+      // across the mobile breakpoint, or fonts/images loading in late).
+      const resizeObserver = new ResizeObserver(updateArrowState);
+      resizeObserver.observe(track);
+      return () => resizeObserver.disconnect();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reviews]);
 
-      let offset = direction === 'right' ? -contentWidth : 0;
-      let currentSpeed = SCROLL_SPEED_PX_PER_SEC;
-      let lastTime = performance.now();
-      let rafId: number;
-
-      const loop = (time: number) => {
-        const dt = Math.min((time - lastTime) / 1000, 0.05);
-        lastTime = time;
-
-        // Ease current speed toward 0 while hovered, or back toward full speed otherwise —
-        // this is what makes the stop/resume feel smooth and gradual instead of instant.
-        const targetSpeed = hoverRef.current ? 0 : SCROLL_SPEED_PX_PER_SEC;
-        currentSpeed += (targetSpeed - currentSpeed) * Math.min(dt * 1.8, 1);
-
-        const delta = currentSpeed * dt;
-        if (direction === 'left') {
-          offset -= delta;
-          if (offset <= -contentWidth) offset += contentWidth;
-        } else {
-          offset += delta;
-          if (offset >= 0) offset -= contentWidth;
-        }
-
-        track.style.transform = `translateX(${offset}px)`;
-        rafId = requestAnimationFrame(loop);
-      };
-
-      rafId = requestAnimationFrame(loop);
-
-      return () => {
-        cancelAnimationFrame(rafId);
-        window.removeEventListener('resize', handleResize);
-      };
-    }, [animated, direction, reviews.length]);
+    const scrollByOneCard = (dir: 'left' | 'right') => {
+      const track = trackRef.current;
+      if (!track) return;
+      const firstCard = track.firstElementChild as HTMLElement | null;
+      if (!firstCard) return;
+      const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;
+      track.scrollBy({ left: dir === 'left' ? -cardWidth : cardWidth, behavior: 'smooth' });
+    };
 
     return (
-      <div
-        className="testi-row-viewport"
-        onMouseEnter={() => { hoverRef.current = true; }}
-        onMouseLeave={() => { hoverRef.current = false; }}
-      >
-        <div
-          ref={trackRef}
-          className={`testi-row-track${animated ? '' : ' testi-row-static'}`}
+      <div className="testi-row-wrap">
+        <button
+          type="button"
+          className="testi-arrow testi-arrow-left"
+          onClick={() => scrollByOneCard('left')}
+          disabled={!canScrollLeft}
+          aria-label="Se forrige anmeldelse"
         >
-          {cards.map((review, i) => (
-            <ReviewCard key={`${review.user.name}-${i}`} review={review} />
-          ))}
+          ‹
+        </button>
+
+        <div className="testi-row-viewport">
+          <div
+            ref={trackRef}
+            className="testi-row-track"
+            onScroll={updateArrowState}
+          >
+            {reviews.map((review, i) => (
+              <ReviewCard key={`${review.user.name}-${i}`} review={review} />
+            ))}
+          </div>
         </div>
+
+        <button
+          type="button"
+          className="testi-arrow testi-arrow-right"
+          onClick={() => scrollByOneCard('right')}
+          disabled={!canScrollRight}
+          aria-label="Se næste anmeldelse"
+        >
+          ›
+        </button>
       </div>
     );
   }
@@ -560,7 +533,6 @@ const Section_9009b281 = ((
 
   const Testimonials: React.FC = () => {
     const { getContent } = useData();
-    const isMobile = useIsMobile(MOBILE_BREAKPOINT);
 
     const allReviews = parseReviewArray(getContent(REVIEWS_KEY, ''));
     const total = allReviews.length;
@@ -569,14 +541,6 @@ const Section_9009b281 = ((
     if (total === 0) return null;
 
     const ratingData = parseRating(getContent(RATING_KEY, '')) ?? fallbackRating(allReviews);
-
-    const splitThreshold = isMobile ? MOBILE_SPLIT_THRESHOLD : DESKTOP_SPLIT_THRESHOLD;
-    const minToAnimate = isMobile ? MOBILE_MIN_TO_ANIMATE : DESKTOP_MIN_TO_ANIMATE;
-
-    const showSecondRow = total > splitThreshold;
-    const mid = Math.ceil(total / 2);
-    const row1 = showSecondRow ? allReviews.slice(0, mid) : allReviews;
-    const row2 = showSecondRow ? allReviews.slice(mid) : [];
 
     return (
       <section className="py-20">
@@ -622,22 +586,53 @@ const Section_9009b281 = ((
             flex-direction: column;
             gap: 24px;
           }
+          .testi-row-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
           .testi-row-viewport {
-            overflow: hidden;
-            width: 100%;
-            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
-            mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            flex: 1;
+            min-width: 0;
+            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+          }
+          .testi-row-viewport::-webkit-scrollbar {
+            display: none;
           }
           .testi-row-track {
             display: flex;
             gap: 24px;
             width: max-content;
-            will-change: transform;
           }
-          .testi-row-static {
-            width: 100%;
-            flex-wrap: wrap;
+          .testi-arrow {
+            flex-shrink: 0;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid #262626;
+            background: #141414;
+            color: #f0f0f0;
+            font-size: 1.4rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
             justify-content: center;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+          }
+          .testi-arrow:hover:not(:disabled) {
+            background: #1f1f1f;
+            border-color: #3a3a3a;
+          }
+          .testi-arrow:disabled {
+            opacity: 0.3;
+            cursor: default;
           }
           .testi-review-card {
             background: #141414;
@@ -735,6 +730,7 @@ const Section_9009b281 = ((
             .testi-review-card { width: 300px; padding: 24px; }
             .big-quote { font-size: 2.75rem; }
             .testi-quote-text { font-size: 0.95rem; }
+            .testi-arrow { width: 32px; height: 32px; font-size: 1.2rem; }
           }
         `}</style>
 
@@ -756,17 +752,14 @@ const Section_9009b281 = ((
         </div>
 
         <div className="testi-rows">
-          <TestimonialRow reviews={row1} animated={row1.length >= minToAnimate} direction="left" />
-          {showSecondRow && (
-            <TestimonialRow reviews={row2} animated={row2.length >= minToAnimate} direction="right" />
-          )}
+          <TestimonialRow reviews={allReviews} />
         </div>
       </section>
     );
   };
   return Testimonials;
 })(
-  React.useState, React.useEffect, React.useRef, React.useLayoutEffect
+  React.useState, React.useEffect, React.useRef
 ) as React.ComponentType;
 
 const CODE_SECTION_COMPONENTS: Record<string, React.ComponentType> = {
@@ -813,7 +806,7 @@ export const DEPLOYED_HOME_SECTIONS = [
     "code_language": null,
     "code_files": [
       {
-        "content": "import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';\nimport { useData } from '../contexts/DataContext';\n\n// ─── Types ────────────────────────────────────────────────────────────────────\n//\n// ONE content key holds every review as a JSON ARRAY. Items mirror the shape\n// coming from cached_reviews.reviews_data so you can copy-paste straight from\n// the Supabase table without reformatting.\n//\n// Required fields per item:  user.name, rating, snippet\n// Optional fields per item:  user.thumbnail, link, business\n//\n// Content key:\n//   testimonials-review-2   -> array of ALL reviews (top of array = shown first)\n//\n// Example value:\n// [\n//   {\n//     \"user\": { \"name\": \"Mette Christensen\", \"thumbnail\": \"https://lh3.googleusercontent.com/a/...\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Fantastisk service! Felix leverede utrolig flotte dronefotos.\",\n//     \"link\": \"https://maps.google.com/?cid=...\",\n//     \"business\": \"Christensen Ejendomme A/S\"\n//   },\n//   {\n//     \"user\": { \"name\": \"Jonas Berg\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Hurtig, professionel og super kvalitet.\"\n//   }\n// ]\n//\n// \"business\" is the only field that does NOT exist in cached_reviews — add it manually if wanted.\n// \"link\" maps to reviews_data[n].link in the cached_reviews table.\n// If \"business\" is omitted the label shows \"Verificeret Google-anmeldelse\".\n// If \"business\" is set it shows the business name only (replacing the default label).\n//\n// Content key for the header rating badge:\n//   testimonials-google-rating\n//\n// Example:\n// { \"rating\": 4.9, \"reviewCount\": 127, \"link\": \"https://search.google.com/local/writereview?placeid=...\" }\n//\n// If this key is left empty, the badge falls back to the average rating and count\n// of every configured review.\n//\n// ─── Layout rules ────────────────────────────────────────────────────────────\n// Desktop (>768px):\n//   - 8 or fewer reviews  -> single row, all reviews\n//   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2\n//   - a row needs 4+ reviews to scroll; otherwise it's static\n// Mobile (<=768px):\n//   - 6 or fewer reviews  -> single row, all reviews\n//   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)\n//   - a row needs just 1+ review to scroll (motion is effectively always on)\n//\n// Hovering a row eases its scroll speed smoothly down to a stop, and eases back\n// up to full speed on mouse-leave (no instant pause/resume).\n\ninterface ReviewUser {\n  name: string;\n  thumbnail?: string;\n}\n\ninterface ReviewData {\n  user: ReviewUser;\n  rating: number;\n  snippet: string;\n  link?: string;\n  /** Not in cached_reviews — add manually when editing the content key */\n  business?: string;\n}\n\ninterface GoogleRatingData {\n  rating: number;\n  reviewCount: number;\n  link?: string;\n}\n\nconst REVIEWS_KEY = 'testimonials-review-2';\nconst RATING_KEY = 'testimonials-google-rating';\nconst DEFAULT_GOOGLE_LINK =\n  'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';\n\nconst MOBILE_BREAKPOINT = 768;\nconst DESKTOP_SPLIT_THRESHOLD = 8;\nconst MOBILE_SPLIT_THRESHOLD = 6;\nconst DESKTOP_MIN_TO_ANIMATE = 4;\nconst MOBILE_MIN_TO_ANIMATE = 1;\nconst SCROLL_SPEED_PX_PER_SEC = 42;\n\n// ─── Helpers ─────────────────────────────────────────────────────────────────\n\nfunction isValidReview(item: unknown): item is ReviewData {\n  const r = item as ReviewData;\n  return !!r?.user?.name && !!r?.snippet;\n}\n\n/** Parses the content key holding a JSON array of review objects. */\nfunction parseReviewArray(raw: string): ReviewData[] {\n  if (!raw.trim()) return [];\n  try {\n    const parsed = JSON.parse(raw);\n    if (!Array.isArray(parsed)) return [];\n    return parsed.filter(isValidReview);\n  } catch {\n    return [];\n  }\n}\n\nfunction parseRating(raw: string): GoogleRatingData | null {\n  if (!raw.trim()) return null;\n  try {\n    const parsed = JSON.parse(raw) as GoogleRatingData;\n    if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;\n    return parsed;\n  } catch {\n    return null;\n  }\n}\n\nfunction fallbackRating(reviews: ReviewData[]): GoogleRatingData {\n  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;\n  return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };\n}\n\nfunction getInitials(name: string): string {\n  return name\n    .split(' ')\n    .map((n) => n[0])\n    .slice(0, 2)\n    .join('')\n    .toUpperCase();\n}\n\nfunction nameToHue(name: string): number {\n  return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;\n}\n\nfunction useIsMobile(breakpoint: number): boolean {\n  const [isMobile, setIsMobile] = useState(false);\n\n  useEffect(() => {\n    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);\n    const update = () => setIsMobile(mq.matches);\n    update();\n    mq.addEventListener('change', update);\n    return () => mq.removeEventListener('change', update);\n  }, [breakpoint]);\n\n  return isMobile;\n}\n\n// ─── Sub-components ───────────────────────────────────────────────────────────\n\nfunction GoogleG({ size = 14 }: { size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill=\"none\">\n      <path d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\" fill=\"#4285F4\" />\n      <path d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\" fill=\"#34A853\" />\n      <path d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\" fill=\"#FBBC05\" />\n      <path d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\" fill=\"#EA4335\" />\n    </svg>\n  );\n}\n\nfunction StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill={filled ? '#FBBF24' : '#404040'} stroke=\"none\">\n      <path d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\" />\n    </svg>\n  );\n}\n\nfunction ReviewCard({ review }: { review: ReviewData }) {\n  const hue = nameToHue(review.user.name);\n  // Business name fully replaces the default label when present.\n  const metaLabel = review.business || 'Verificeret Google-anmeldelse';\n  const googleLink = review.link || DEFAULT_GOOGLE_LINK;\n\n  return (\n    <div className=\"testi-review-card\">\n      <span className=\"big-quote\" aria-hidden=\"true\">\"</span>\n      <p className=\"testi-quote-text\">{review.snippet}</p>\n      <div className=\"testi-author-row\">\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"author-link\"\n          title=\"Se anmeldelse på Google\"\n        >\n          {review.user.thumbnail ? (\n            <img\n              src={review.user.thumbnail}\n              alt={review.user.name}\n              className=\"author-avatar\"\n              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}\n            />\n          ) : (\n            <div\n              className=\"author-avatar-fallback\"\n              style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}\n            >\n              {getInitials(review.user.name)}\n            </div>\n          )}\n          <div className=\"author-info\">\n            <div className=\"testi-stars\">\n              {[1, 2, 3, 4, 5].map((i) => (\n                <StarIcon key={i} filled={i <= Math.round(review.rating)} />\n              ))}\n            </div>\n            <p className=\"author-name\">{review.user.name}</p>\n            <p className=\"author-meta\">{metaLabel}</p>\n          </div>\n        </a>\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"google-badge\"\n          title=\"Se anmeldelse på Google\"\n        >\n          <GoogleG size={40} />\n        </a>\n      </div>\n    </div>\n  );\n}\n\nfunction TestimonialRow({\n  reviews,\n  animated,\n  direction,\n}: {\n  reviews: ReviewData[];\n  animated: boolean;\n  direction: 'left' | 'right';\n}) {\n  const trackRef = useRef<HTMLDivElement>(null);\n  const hoverRef = useRef(false);\n\n  // Duplicate the set so the loop is seamless (translate exactly one copy's width).\n  const cards = animated ? [...reviews, ...reviews] : reviews;\n\n  useLayoutEffect(() => {\n    if (!animated) return;\n    const track = trackRef.current;\n    if (!track) return;\n\n    let contentWidth = track.scrollWidth / 2;\n    const handleResize = () => {\n      contentWidth = track.scrollWidth / 2;\n    };\n    window.addEventListener('resize', handleResize);\n\n    let offset = direction === 'right' ? -contentWidth : 0;\n    let currentSpeed = SCROLL_SPEED_PX_PER_SEC;\n    let lastTime = performance.now();\n    let rafId: number;\n\n    const loop = (time: number) => {\n      const dt = Math.min((time - lastTime) / 1000, 0.05);\n      lastTime = time;\n\n      // Ease current speed toward 0 while hovered, or back toward full speed otherwise —\n      // this is what makes the stop/resume feel smooth and gradual instead of instant.\n      const targetSpeed = hoverRef.current ? 0 : SCROLL_SPEED_PX_PER_SEC;\n      currentSpeed += (targetSpeed - currentSpeed) * Math.min(dt * 1.8, 1);\n\n      const delta = currentSpeed * dt;\n      if (direction === 'left') {\n        offset -= delta;\n        if (offset <= -contentWidth) offset += contentWidth;\n      } else {\n        offset += delta;\n        if (offset >= 0) offset -= contentWidth;\n      }\n\n      track.style.transform = `translateX(${offset}px)`;\n      rafId = requestAnimationFrame(loop);\n    };\n\n    rafId = requestAnimationFrame(loop);\n\n    return () => {\n      cancelAnimationFrame(rafId);\n      window.removeEventListener('resize', handleResize);\n    };\n  }, [animated, direction, reviews.length]);\n\n  return (\n    <div\n      className=\"testi-row-viewport\"\n      onMouseEnter={() => { hoverRef.current = true; }}\n      onMouseLeave={() => { hoverRef.current = false; }}\n    >\n      <div\n        ref={trackRef}\n        className={`testi-row-track${animated ? '' : ' testi-row-static'}`}\n      >\n        {cards.map((review, i) => (\n          <ReviewCard key={`${review.user.name}-${i}`} review={review} />\n        ))}\n      </div>\n    </div>\n  );\n}\n\n// ─── Main component ───────────────────────────────────────────────────────────\n\nconst Testimonials: React.FC = () => {\n  const { getContent } = useData();\n  const isMobile = useIsMobile(MOBILE_BREAKPOINT);\n\n  const allReviews = parseReviewArray(getContent(REVIEWS_KEY, ''));\n  const total = allReviews.length;\n\n  // No reviews configured at all — render nothing.\n  if (total === 0) return null;\n\n  const ratingData = parseRating(getContent(RATING_KEY, '')) ?? fallbackRating(allReviews);\n\n  const splitThreshold = isMobile ? MOBILE_SPLIT_THRESHOLD : DESKTOP_SPLIT_THRESHOLD;\n  const minToAnimate = isMobile ? MOBILE_MIN_TO_ANIMATE : DESKTOP_MIN_TO_ANIMATE;\n\n  const showSecondRow = total > splitThreshold;\n  const mid = Math.ceil(total / 2);\n  const row1 = showSecondRow ? allReviews.slice(0, mid) : allReviews;\n  const row2 = showSecondRow ? allReviews.slice(mid) : [];\n\n  return (\n    <section className=\"py-20\">\n      <style>{`\n        .testi-header {\n          display: flex;\n          flex-direction: column;\n          align-items: center;\n          text-align: center;\n          gap: 20px;\n          margin-bottom: 48px;\n          padding: 0 24px;\n        }\n        .testi-rating-badge {\n          display: inline-flex;\n          align-items: center;\n          gap: 8px;\n          background: #1a1a1a;\n          border: 1px solid #2a2a2a;\n          border-radius: 999px;\n          padding: 8px 18px;\n          text-decoration: none;\n          color: #f0f0f0;\n          font-family: 'Inter', sans-serif;\n          font-size: 0.85rem;\n          font-weight: 600;\n        }\n        .testi-rating-badge .testi-badge-stars {\n          display: flex;\n          gap: 1px;\n        }\n        .testi-header h2 {\n          font-family: 'Inter', sans-serif;\n          font-size: clamp(1.75rem, 3.5vw, 2.75rem);\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0;\n          max-width: 700px;\n          line-height: 1.2;\n        }\n        .testi-rows {\n          display: flex;\n          flex-direction: column;\n          gap: 24px;\n        }\n        .testi-row-viewport {\n          overflow: hidden;\n          width: 100%;\n          -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);\n          mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);\n        }\n        .testi-row-track {\n          display: flex;\n          gap: 24px;\n          width: max-content;\n          will-change: transform;\n        }\n        .testi-row-static {\n          width: 100%;\n          flex-wrap: wrap;\n          justify-content: center;\n        }\n        .testi-review-card {\n          background: #141414;\n          border: 1px solid #262626;\n          border-radius: 20px;\n          padding: 32px;\n          width: 380px;\n          flex-shrink: 0;\n          display: flex;\n          flex-direction: column;\n        }\n        .big-quote {\n          font-size: 3.5rem;\n          line-height: 0.7;\n          color: #3B82F6;\n          font-family: Georgia, serif;\n          font-weight: 700;\n          user-select: none;\n          display: block;\n          margin-bottom: 8px;\n        }\n        .testi-quote-text {\n          font-family: 'Inter', sans-serif;\n          font-size: 1.05rem;\n          font-weight: 400;\n          color: #f0f0f0;\n          line-height: 1.6;\n          letter-spacing: -0.01em;\n          margin: 0;\n          flex: 1;\n        }\n        .testi-author-row {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          margin-top: 20px;\n          padding-top: 16px;\n          border-top: 1px solid #262626;\n        }\n        .author-avatar {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          object-fit: cover;\n          flex-shrink: 0;\n        }\n        .author-avatar-fallback {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          display: flex; align-items: center; justify-content: center;\n          font-size: 1.05rem; font-weight: 700; color: white;\n          flex-shrink: 0;\n        }\n        .author-link {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          flex: 1;\n          min-width: 0;\n          text-decoration: none;\n        }\n        .author-info { flex: 1; min-width: 0; }\n        .author-name {\n          font-size: 0.88rem;\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0 0 2px 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .author-meta {\n          font-size: 0.72rem;\n          color: #A3A3A3;\n          margin: 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .google-badge {\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          text-decoration: none;\n          background: transparent;\n          border: none;\n          padding: 0;\n          flex-shrink: 0;\n        }\n        .testi-stars {\n          display: flex;\n          gap: 2px;\n          margin-bottom: 6px;\n        }\n        @media (max-width: 768px) {\n          .testi-review-card { width: 300px; padding: 24px; }\n          .big-quote { font-size: 2.75rem; }\n          .testi-quote-text { font-size: 0.95rem; }\n        }\n      `}</style>\n\n      <div className=\"testi-header\">\n        <a\n          href={ratingData.link || DEFAULT_GOOGLE_LINK}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"testi-rating-badge\"\n        >\n          <span className=\"testi-badge-stars\">\n            {[1, 2, 3, 4, 5].map((i) => (\n              <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />\n            ))}\n          </span>\n          Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google\n        </a>\n        <h2>Andre glade kunder</h2>\n      </div>\n\n      <div className=\"testi-rows\">\n        <TestimonialRow reviews={row1} animated={row1.length >= minToAnimate} direction=\"left\" />\n        {showSecondRow && (\n          <TestimonialRow reviews={row2} animated={row2.length >= minToAnimate} direction=\"right\" />\n        )}\n      </div>\n    </section>\n  );\n};\n\nexport default Testimonials;",
+        "content": "import React, { useEffect, useRef, useState } from 'react';\nimport { useData } from '../contexts/DataContext';\n\n// ─── Types ────────────────────────────────────────────────────────────────────\n//\n// ONE content key holds every review as a JSON ARRAY. Items mirror the shape\n// coming from cached_reviews.reviews_data so you can copy-paste straight from\n// the Supabase table without reformatting.\n//\n// Required fields per item:  user.name, rating, snippet\n// Optional fields per item:  user.thumbnail, link, business\n//\n// Content key:\n//   testimonials-review-2   -> array of ALL reviews (top of array = shown first)\n//\n// Example value:\n// [\n//   {\n//     \"user\": { \"name\": \"Mette Christensen\", \"thumbnail\": \"https://lh3.googleusercontent.com/a/...\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Fantastisk service! Felix leverede utrolig flotte dronefotos.\",\n//     \"link\": \"https://maps.google.com/?cid=...\",\n//     \"business\": \"Christensen Ejendomme A/S\"\n//   },\n//   {\n//     \"user\": { \"name\": \"Jonas Berg\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Hurtig, professionel og super kvalitet.\"\n//   }\n// ]\n//\n// \"business\" is the only field that does NOT exist in cached_reviews — add it manually if wanted.\n// \"link\" maps to reviews_data[n].link in the cached_reviews table.\n// If \"business\" is omitted the label shows \"Verificeret Google-anmeldelse\".\n// If \"business\" is set it shows the business name only (replacing the default label).\n//\n// Content key for the header rating badge:\n//   testimonials-google-rating\n//\n// Example:\n// { \"rating\": 4.9, \"reviewCount\": 127, \"link\": \"https://search.google.com/local/writereview?placeid=...\" }\n//\n// If this key is left empty, the badge falls back to the average rating and count\n// of every configured review.\n//\n// ─── Layout rules ────────────────────────────────────────────────────────────\n// Desktop (>768px):\n//   - 8 or fewer reviews  -> single row, all reviews\n//   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2\n// Mobile (<=768px):\n//   - 6 or fewer reviews  -> single row, all reviews\n//   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)\n//\n// Each row is a horizontally scrollable strip. Left/right arrow buttons advance\n// the row by exactly one card per click, clamped at both ends (no wraparound).\n// On touch devices the row can also be swiped natively — no extra JS needed for\n// that, since it's a plain scroll container.\n\ninterface ReviewUser {\n  name: string;\n  thumbnail?: string;\n}\n\ninterface ReviewData {\n  user: ReviewUser;\n  rating: number;\n  snippet: string;\n  link?: string;\n  /** Not in cached_reviews — add manually when editing the content key */\n  business?: string;\n}\n\ninterface GoogleRatingData {\n  rating: number;\n  reviewCount: number;\n  link?: string;\n}\n\nconst REVIEWS_KEY = 'testimonials-review-2';\nconst RATING_KEY = 'testimonials-google-rating';\nconst DEFAULT_GOOGLE_LINK =\n  'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';\n\nconst CARD_GAP_PX = 24;\n\n// ─── Helpers ─────────────────────────────────────────────────────────────────\n\nfunction isValidReview(item: unknown): item is ReviewData {\n  const r = item as ReviewData;\n  return !!r?.user?.name && !!r?.snippet;\n}\n\n/** Parses the content key holding a JSON array of review objects. */\nfunction parseReviewArray(raw: string): ReviewData[] {\n  if (!raw.trim()) return [];\n  try {\n    const parsed = JSON.parse(raw);\n    if (!Array.isArray(parsed)) return [];\n    return parsed.filter(isValidReview);\n  } catch {\n    return [];\n  }\n}\n\nfunction parseRating(raw: string): GoogleRatingData | null {\n  if (!raw.trim()) return null;\n  try {\n    const parsed = JSON.parse(raw) as GoogleRatingData;\n    if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;\n    return parsed;\n  } catch {\n    return null;\n  }\n}\n\nfunction fallbackRating(reviews: ReviewData[]): GoogleRatingData {\n  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;\n  return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };\n}\n\nfunction getInitials(name: string): string {\n  return name\n    .split(' ')\n    .map((n) => n[0])\n    .slice(0, 2)\n    .join('')\n    .toUpperCase();\n}\n\nfunction nameToHue(name: string): number {\n  return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;\n}\n\n// ─── Sub-components ───────────────────────────────────────────────────────────\n\nfunction GoogleG({ size = 14 }: { size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill=\"none\">\n      <path d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\" fill=\"#4285F4\" />\n      <path d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\" fill=\"#34A853\" />\n      <path d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\" fill=\"#FBBC05\" />\n      <path d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\" fill=\"#EA4335\" />\n    </svg>\n  );\n}\n\nfunction StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill={filled ? '#FBBF24' : '#404040'} stroke=\"none\">\n      <path d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\" />\n    </svg>\n  );\n}\n\nfunction ReviewCard({ review }: { review: ReviewData }) {\n  const hue = nameToHue(review.user.name);\n  // Business name fully replaces the default label when present.\n  const metaLabel = review.business || 'Verificeret Google-anmeldelse';\n  const googleLink = review.link || DEFAULT_GOOGLE_LINK;\n\n  return (\n    <div className=\"testi-review-card\">\n      <span className=\"big-quote\" aria-hidden=\"true\">\"</span>\n      <p className=\"testi-quote-text\">{review.snippet}</p>\n      <div className=\"testi-author-row\">\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"author-link\"\n          title=\"Se anmeldelse på Google\"\n        >\n          {review.user.thumbnail ? (\n            <img\n              src={review.user.thumbnail}\n              alt={review.user.name}\n              className=\"author-avatar\"\n              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}\n            />\n          ) : (\n            <div\n              className=\"author-avatar-fallback\"\n              style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}\n            >\n              {getInitials(review.user.name)}\n            </div>\n          )}\n          <div className=\"author-info\">\n            <div className=\"testi-stars\">\n              {[1, 2, 3, 4, 5].map((i) => (\n                <StarIcon key={i} filled={i <= Math.round(review.rating)} />\n              ))}\n            </div>\n            <p className=\"author-name\">{review.user.name}</p>\n            <p className=\"author-meta\">{metaLabel}</p>\n          </div>\n        </a>\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"google-badge\"\n          title=\"Se anmeldelse på Google\"\n        >\n          <GoogleG size={40} />\n        </a>\n      </div>\n    </div>\n  );\n}\n\nfunction TestimonialRow({ reviews }: { reviews: ReviewData[] }) {\n  const trackRef = useRef<HTMLDivElement>(null);\n  const [canScrollLeft, setCanScrollLeft] = useState(false);\n  const [canScrollRight, setCanScrollRight] = useState(false);\n\n  const updateArrowState = () => {\n    const track = trackRef.current;\n    if (!track) return;\n    setCanScrollLeft(track.scrollLeft > 4);\n    setCanScrollRight(track.scrollLeft < track.scrollWidth - track.clientWidth - 4);\n  };\n\n  useEffect(() => {\n    updateArrowState();\n    const track = trackRef.current;\n    if (!track) return;\n\n    // Re-check arrow availability if the row's size changes (e.g. resize\n    // across the mobile breakpoint, or fonts/images loading in late).\n    const resizeObserver = new ResizeObserver(updateArrowState);\n    resizeObserver.observe(track);\n    return () => resizeObserver.disconnect();\n    // eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [reviews]);\n\n  const scrollByOneCard = (dir: 'left' | 'right') => {\n    const track = trackRef.current;\n    if (!track) return;\n    const firstCard = track.firstElementChild as HTMLElement | null;\n    if (!firstCard) return;\n    const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;\n    track.scrollBy({ left: dir === 'left' ? -cardWidth : cardWidth, behavior: 'smooth' });\n  };\n\n  return (\n    <div className=\"testi-row-wrap\">\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-left\"\n        onClick={() => scrollByOneCard('left')}\n        disabled={!canScrollLeft}\n        aria-label=\"Se forrige anmeldelse\"\n      >\n        ‹\n      </button>\n\n      <div className=\"testi-row-viewport\">\n        <div\n          ref={trackRef}\n          className=\"testi-row-track\"\n          onScroll={updateArrowState}\n        >\n          {reviews.map((review, i) => (\n            <ReviewCard key={`${review.user.name}-${i}`} review={review} />\n          ))}\n        </div>\n      </div>\n\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-right\"\n        onClick={() => scrollByOneCard('right')}\n        disabled={!canScrollRight}\n        aria-label=\"Se næste anmeldelse\"\n      >\n        ›\n      </button>\n    </div>\n  );\n}\n\n// ─── Main component ───────────────────────────────────────────────────────────\n\nconst Testimonials: React.FC = () => {\n  const { getContent } = useData();\n\n  const allReviews = parseReviewArray(getContent(REVIEWS_KEY, ''));\n  const total = allReviews.length;\n\n  // No reviews configured at all — render nothing.\n  if (total === 0) return null;\n\n  const ratingData = parseRating(getContent(RATING_KEY, '')) ?? fallbackRating(allReviews);\n\n  return (\n    <section className=\"py-20\">\n      <style>{`\n        .testi-header {\n          display: flex;\n          flex-direction: column;\n          align-items: center;\n          text-align: center;\n          gap: 20px;\n          margin-bottom: 48px;\n          padding: 0 24px;\n        }\n        .testi-rating-badge {\n          display: inline-flex;\n          align-items: center;\n          gap: 8px;\n          background: #1a1a1a;\n          border: 1px solid #2a2a2a;\n          border-radius: 999px;\n          padding: 8px 18px;\n          text-decoration: none;\n          color: #f0f0f0;\n          font-family: 'Inter', sans-serif;\n          font-size: 0.85rem;\n          font-weight: 600;\n        }\n        .testi-rating-badge .testi-badge-stars {\n          display: flex;\n          gap: 1px;\n        }\n        .testi-header h2 {\n          font-family: 'Inter', sans-serif;\n          font-size: clamp(1.75rem, 3.5vw, 2.75rem);\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0;\n          max-width: 700px;\n          line-height: 1.2;\n        }\n        .testi-rows {\n          display: flex;\n          flex-direction: column;\n          gap: 24px;\n        }\n        .testi-row-wrap {\n          display: flex;\n          align-items: center;\n          gap: 8px;\n        }\n        .testi-row-viewport {\n          overflow-x: auto;\n          overflow-y: hidden;\n          -webkit-overflow-scrolling: touch;\n          scroll-behavior: smooth;\n          scrollbar-width: none;\n          flex: 1;\n          min-width: 0;\n          -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n          mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n        }\n        .testi-row-viewport::-webkit-scrollbar {\n          display: none;\n        }\n        .testi-row-track {\n          display: flex;\n          gap: 24px;\n          width: max-content;\n        }\n        .testi-arrow {\n          flex-shrink: 0;\n          width: 40px;\n          height: 40px;\n          border-radius: 50%;\n          border: 1px solid #262626;\n          background: #141414;\n          color: #f0f0f0;\n          font-size: 1.4rem;\n          line-height: 1;\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          cursor: pointer;\n          transition: background 0.15s, border-color 0.15s, opacity 0.15s;\n        }\n        .testi-arrow:hover:not(:disabled) {\n          background: #1f1f1f;\n          border-color: #3a3a3a;\n        }\n        .testi-arrow:disabled {\n          opacity: 0.3;\n          cursor: default;\n        }\n        .testi-review-card {\n          background: #141414;\n          border: 1px solid #262626;\n          border-radius: 20px;\n          padding: 32px;\n          width: 380px;\n          flex-shrink: 0;\n          display: flex;\n          flex-direction: column;\n        }\n        .big-quote {\n          font-size: 3.5rem;\n          line-height: 0.7;\n          color: #3B82F6;\n          font-family: Georgia, serif;\n          font-weight: 700;\n          user-select: none;\n          display: block;\n          margin-bottom: 8px;\n        }\n        .testi-quote-text {\n          font-family: 'Inter', sans-serif;\n          font-size: 1.05rem;\n          font-weight: 400;\n          color: #f0f0f0;\n          line-height: 1.6;\n          letter-spacing: -0.01em;\n          margin: 0;\n          flex: 1;\n        }\n        .testi-author-row {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          margin-top: 20px;\n          padding-top: 16px;\n          border-top: 1px solid #262626;\n        }\n        .author-avatar {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          object-fit: cover;\n          flex-shrink: 0;\n        }\n        .author-avatar-fallback {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          display: flex; align-items: center; justify-content: center;\n          font-size: 1.05rem; font-weight: 700; color: white;\n          flex-shrink: 0;\n        }\n        .author-link {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          flex: 1;\n          min-width: 0;\n          text-decoration: none;\n        }\n        .author-info { flex: 1; min-width: 0; }\n        .author-name {\n          font-size: 0.88rem;\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0 0 2px 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .author-meta {\n          font-size: 0.72rem;\n          color: #A3A3A3;\n          margin: 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .google-badge {\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          text-decoration: none;\n          background: transparent;\n          border: none;\n          padding: 0;\n          flex-shrink: 0;\n        }\n        .testi-stars {\n          display: flex;\n          gap: 2px;\n          margin-bottom: 6px;\n        }\n        @media (max-width: 768px) {\n          .testi-review-card { width: 300px; padding: 24px; }\n          .big-quote { font-size: 2.75rem; }\n          .testi-quote-text { font-size: 0.95rem; }\n          .testi-arrow { width: 32px; height: 32px; font-size: 1.2rem; }\n        }\n      `}</style>\n\n      <div className=\"testi-header\">\n        <a\n          href={ratingData.link || DEFAULT_GOOGLE_LINK}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"testi-rating-badge\"\n        >\n          <span className=\"testi-badge-stars\">\n            {[1, 2, 3, 4, 5].map((i) => (\n              <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />\n            ))}\n          </span>\n          Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google\n        </a>\n        <h2>Andre glade kunder</h2>\n      </div>\n\n      <div className=\"testi-rows\">\n        <TestimonialRow reviews={allReviews} />\n      </div>\n    </section>\n  );\n};\n\nexport default Testimonials;",
         "filename": "component.tsx",
         "language": "tsx"
       }
