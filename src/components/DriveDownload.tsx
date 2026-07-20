@@ -34,7 +34,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Download, Home, Share2, Loader, AlertCircle, CheckCircle2,
-  Folder, ChevronDown, ChevronUp, File,
+  Folder, ChevronDown, ChevronUp, File, Film,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import EditableContent from "./EditableContent";
@@ -164,15 +164,76 @@ const BrowserWall: React.FC<BrowserWallProps> = ({ fileSizeBytes, shareUrl, onNa
   );
 };
 
+// ─── File kind detection ────────────────────────────────────────────────────────
+// Only extensions a plain <img> tag can actually render get a real thumbnail
+// request — everything else falls back to a placeholder icon instantly,
+// no network round-trip wasted on formats browsers can't decode (RAW, HEIC…).
+
+const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "svg"]);
+const VIDEO_EXT = new Set(["mp4", "mov", "avi", "mkv", "wmv", "m4v", "webm", "mts", "m2ts", "flv"]);
+
+function getExt(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i === -1 ? "" : name.slice(i + 1).toLowerCase();
+}
+
+function getFileKind(name: string): "image" | "video" | "other" {
+  const ext = getExt(name);
+  if (IMAGE_EXT.has(ext)) return "image";
+  if (VIDEO_EXT.has(ext)) return "video";
+  return "other";
+}
+
+// ─── File tile (Finder-style grid item) ────────────────────────────────────────
+
+interface FileTileProps {
+  file: FileEntry;
+  driveId: string;
+}
+
+const FileTile: React.FC<FileTileProps> = ({ file, driveId }) => {
+  const kind = getFileKind(file.name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = kind === "image" && !imgFailed;
+
+  return (
+    <div
+      className="flex flex-col items-center gap-1 p-1 rounded-md hover:bg-neutral-700/40 transition-colors"
+      title={file.name}
+    >
+      <div className="w-full aspect-square rounded-md bg-neutral-900/70 border border-neutral-700/50 overflow-hidden flex items-center justify-center">
+        {showImage ? (
+          <img
+            src={`/api/gofile-proxy?id=${encodeURIComponent(driveId)}&mode=thumb&path=${encodeURIComponent(file.path)}`}
+            alt={file.name}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+          />
+        ) : kind === "video" ? (
+          <Film size={18} className="text-neutral-500" />
+        ) : (
+          <File size={18} className="text-neutral-500" />
+        )}
+      </div>
+      <span className="text-[10px] text-neutral-400 leading-tight text-center w-full truncate">
+        {file.name}
+      </span>
+    </div>
+  );
+};
+
 // ─── Folder info panel ─────────────────────────────────────────────────────────
 
 interface FolderInfoPanelProps {
   folderInfo: FolderInfo;
   expanded: boolean;
   onToggle: () => void;
+  driveId: string;
 }
 
-const FolderInfoPanel: React.FC<FolderInfoPanelProps> = ({ folderInfo, expanded, onToggle }) => (
+const FolderInfoPanel: React.FC<FolderInfoPanelProps> = ({ folderInfo, expanded, onToggle, driveId }) => (
   <div className="bg-neutral-800/60 border border-neutral-700/60 rounded-lg mb-4 text-left overflow-hidden">
     <button
       onClick={onToggle}
@@ -185,14 +246,15 @@ const FolderInfoPanel: React.FC<FolderInfoPanelProps> = ({ folderInfo, expanded,
       {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
     </button>
     {expanded && (
-      <div className="border-t border-neutral-700/60 max-h-48 overflow-y-auto">
-        {folderInfo.files.map((f) => (
-          <div key={f.path} className="flex items-center gap-2 px-4 py-2 text-xs text-neutral-400 border-b border-neutral-800/60 last:border-0">
-            <File size={12} className="shrink-0 text-neutral-500" />
-            <span className="truncate flex-1">{f.path}</span>
-            <span className="shrink-0 text-neutral-500">{fmtBytes(f.size)}</span>
-          </div>
-        ))}
+      <div className="border-t border-neutral-700/60 max-h-64 overflow-y-auto p-1.5">
+        <div
+          className="grid gap-1"
+          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))" }}
+        >
+          {folderInfo.files.map((f) => (
+            <FileTile key={f.path} file={f} driveId={driveId} />
+          ))}
+        </div>
       </div>
     )}
   </div>
@@ -700,6 +762,7 @@ const DriveDownload: React.FC = () => {
               folderInfo={folderInfo}
               expanded={folderInfoExpanded}
               onToggle={() => setFolderInfoExpanded((v) => !v)}
+              driveId={id}
             />
           )}
 
