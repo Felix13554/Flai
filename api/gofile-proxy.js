@@ -602,6 +602,54 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── MODE: thumb — extract ONE file's real bytes from the ZIP index ─────────
+  // Used by the folder-info grid to show genuine image thumbnails (not just
+  // an icon). Only ever called for extensions the browser can actually
+  // render (see IMAGE_EXT on the frontend) — anything else gets a placeholder
+  // icon client-side and never hits this endpoint.
+  if (mode === "thumb") {
+    const { path } = req.query;
+    if (!path) return res.status(400).json({ error: "Missing ?path= parameter" });
+
+    let accessToken, fileMetadata;
+    try {
+      ({ accessToken, fileMetadata } = await resolveFileInfo(id, apiKey));
+    } catch (err) {
+      return res.status(err.statusCode || 502).json({ error: err.message });
+    }
+    if (!accessToken) return res.status(403).json({ error: "Service account required for thumbnails" });
+
+    const totalSize = parseInt(fileMetadata.size || "0", 10);
+    if (!totalSize) return res.status(400).json({ error: "Cannot determine file size" });
+
+    let allEntries;
+    try {
+      allEntries = await listZipEntries(id, accessToken, totalSize);
+    } catch (err) {
+      return res.status(502).json({ error: `Failed to read ZIP index: ${err.message}` });
+    }
+
+    const entry = allEntries.find((e) => !e.isDir && e.path === path);
+    if (!entry) return res.status(404).json({ error: "File not found in ZIP" });
+
+    let data;
+    try {
+      data = await fetchAndInflate(id, accessToken, entry);
+    } catch (err) {
+      return res.status(502).json({ error: `Failed to extract file: ${err.message}` });
+    }
+
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    const CONTENT_TYPES = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+      gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
+      avif: "image/avif", svg: "image/svg+xml",
+    };
+    res.setHeader("Content-Type", CONTENT_TYPES[ext] || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    return res.status(200).send(data);
+  }
+
   // ── MODE: stream — extract ZIP and stream stored ZIP to browser ───────────
   if (mode === "stream") {
     let accessToken, fileMetadata;
