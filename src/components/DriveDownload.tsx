@@ -238,32 +238,80 @@ interface FolderInfoPanelProps {
   driveId: string;
 }
 
-const FolderInfoPanel: React.FC<FolderInfoPanelProps> = ({ folderInfo, expanded, onToggle, driveId }) => (
-  <div className="bg-neutral-800/60 border border-neutral-700/60 rounded-lg mb-4 text-left overflow-hidden">
-    <button
-      onClick={onToggle}
-      className="w-full flex items-center justify-between px-4 py-3 text-sm text-neutral-300 hover:text-white hover:bg-neutral-700/40 transition-colors"
-    >
-      <span className="flex items-center gap-2">
-        <Folder size={15} className="text-primary" />
-        <span>{folderInfo.fileCount} <EditableContent contentKey="drive-download-filer" fallback="filer ·" /> {fmtBytes(folderInfo.totalUncompressedBytes)}</span>
-      </span>
-      {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-    </button>
-    {expanded && (
-      <div className="border-t border-neutral-700/60 max-h-64 overflow-y-auto p-1.5">
-        <div
-          className="grid gap-1"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))" }}
-        >
-          {folderInfo.files.map((f) => (
-            <FileTile key={f.path} file={f} driveId={driveId} />
+// ─── Folder grouping ────────────────────────────────────────────────────────────
+
+interface FileGroup {
+  dirPath: string;   // "" for files at the root of the ZIP
+  dirName: string;   // last path segment, for display
+  files: FileEntry[];
+}
+
+function groupFilesByFolder(files: FileEntry[]): FileGroup[] {
+  const groups = new Map<string, FileEntry[]>();
+  for (const f of files) {
+    const slash = f.path.lastIndexOf("/");
+    const dirPath = slash === -1 ? "" : f.path.slice(0, slash);
+    if (!groups.has(dirPath)) groups.set(dirPath, []);
+    groups.get(dirPath)!.push(f);
+  }
+  // Root files first, then subfolders alphabetically.
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)))
+    .map(([dirPath, groupFiles]) => ({
+      dirPath,
+      dirName: dirPath === "" ? "" : dirPath.split("/").pop() || dirPath,
+      files: groupFiles,
+    }));
+}
+
+const FolderInfoPanel: React.FC<FolderInfoPanelProps> = ({ folderInfo, expanded, onToggle, driveId }) => {
+  const groups = React.useMemo(() => groupFilesByFolder(folderInfo.files), [folderInfo.files]);
+  const hasSubfolders = groups.length > 1 || groups[0]?.dirPath !== "";
+
+  return (
+    <div className="bg-neutral-800/60 border border-neutral-700/60 rounded-lg mb-4 text-left overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm text-neutral-300 hover:text-white hover:bg-neutral-700/40 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Folder size={15} className="text-primary" />
+          <span>{folderInfo.fileCount} <EditableContent contentKey="drive-download-filer" fallback="filer ·" /> {fmtBytes(folderInfo.totalUncompressedBytes)}</span>
+        </span>
+        {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+      </button>
+      {expanded && (
+        <div className="border-t border-neutral-700/60 max-h-80 overflow-y-auto p-2 space-y-2">
+          {groups.map((group) => (
+            <div key={group.dirPath} className="rounded-md border border-neutral-700/50 bg-neutral-900/30 overflow-hidden">
+              {hasSubfolders && (
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] font-medium text-neutral-300 bg-neutral-800/50 border-b border-neutral-700/50">
+                  <Folder size={12} className="text-primary shrink-0" />
+                  <span className="truncate">
+                    {group.dirPath === "" ? (
+                      <EditableContent contentKey="drive-download-root-folder" fallback="Rodmappe" />
+                    ) : group.dirName}
+                  </span>
+                  <span className="text-neutral-500 shrink-0">· {group.files.length}</span>
+                </div>
+              )}
+              <div className="p-1.5">
+                <div
+                  className="grid gap-1"
+                  style={{ gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))" }}
+                >
+                  {group.files.map((f) => (
+                    <FileTile key={f.path} file={f} driveId={driveId} />
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+    </div>
+  );
+};
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
