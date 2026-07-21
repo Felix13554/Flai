@@ -194,6 +194,7 @@ interface FileTileProps {
 const FileTile: React.FC<FileTileProps> = ({ file, driveId }) => {
   const kind = getFileKind(file.name);
   const [imgFailed, setImgFailed] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const showImage = kind === "image" && !imgFailed;
 
   return (
@@ -201,14 +202,18 @@ const FileTile: React.FC<FileTileProps> = ({ file, driveId }) => {
       className="flex flex-col items-center gap-1 p-1 rounded-md hover:bg-neutral-700/40 transition-colors"
       title={file.name}
     >
-      <div className="w-full aspect-square rounded-md bg-neutral-900/70 border border-neutral-700/50 overflow-hidden flex items-center justify-center">
+      <div className="w-full aspect-square rounded-md bg-neutral-900/70 border border-neutral-700/50 overflow-hidden flex items-center justify-center relative">
+        {showImage && !imgLoaded && (
+          <div className="absolute inset-0 animate-pulse bg-neutral-700/40" />
+        )}
         {showImage ? (
           <img
             src={`/api/gofile-proxy?id=${encodeURIComponent(driveId)}&mode=thumb&path=${encodeURIComponent(file.path)}`}
             alt={file.name}
             loading="lazy"
             decoding="async"
-            className="w-full h-full object-cover"
+            className={`w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+            onLoad={() => setImgLoaded(true)}
             onError={() => setImgFailed(true)}
           />
         ) : kind === "video" ? (
@@ -280,7 +285,7 @@ const DriveDownload: React.FC = () => {
   const [folderInfo,         setFolderInfo]         = useState<FolderInfo | null>(null);
   const [folderInfoLoading,  setFolderInfoLoading]  = useState(false);
   const [folderInfoError,    setFolderInfoError]    = useState<string | null>(null);
-  const [folderInfoExpanded, setFolderInfoExpanded] = useState(false);
+  const [folderInfoExpanded, setFolderInfoExpanded] = useState(true);
 
   const [downloading,   setDownloading]   = useState(false);
   const [downloadDone,  setDownloadDone]  = useState(false);
