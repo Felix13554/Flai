@@ -29,6 +29,7 @@
 
 import { createSign, createPrivateKey } from "crypto";
 import { createInflateRaw } from "node:zlib";
+import sharp from "sharp";
 
 export const config = {
   api: {
@@ -645,9 +646,32 @@ export default async function handler(req, res) {
       gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
       avif: "image/avif", svg: "image/svg+xml",
     };
-    res.setHeader("Content-Type", CONTENT_TYPES[ext] || "application/octet-stream");
+
+    // Downscale + recompress — full-res drone photos can be tens of MB, but
+    // the grid only ever displays them at a few dozen pixels. Shipping a
+    // small JPEG instead of the original is the difference between a thumb
+    // loading instantly and one that takes as long as the full download.
+    // SVGs are already tiny and vector, so they're served as-is.
+    let outBuf = data;
+    let outType = CONTENT_TYPES[ext] || "application/octet-stream";
+    if (ext !== "svg") {
+      try {
+        outBuf = await sharp(data, { failOn: "none" })
+          .rotate() // respect EXIF orientation before cropping
+          .resize(160, 160, { fit: "cover" })
+          .jpeg({ quality: 60, mozjpeg: true })
+          .toBuffer();
+        outType = "image/jpeg";
+      } catch {
+        // Format sharp couldn't decode — fall back to the original bytes
+        // rather than failing the request outright.
+        outBuf = data;
+      }
+    }
+
+    res.setHeader("Content-Type", outType);
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-    return res.status(200).send(data);
+    return res.status(200).send(outBuf);
   }
 
   // ── MODE: stream — extract ZIP and stream stored ZIP to browser ───────────
