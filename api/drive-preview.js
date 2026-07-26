@@ -276,6 +276,9 @@ export default async function handler(req, res) {
         name: meta.name,
         mimeType: meta.mimeType,
         durationMs: meta.videoMediaMetadata?.durationMillis ? Number(meta.videoMediaMetadata.durationMillis) : null,
+        width: meta.videoMediaMetadata?.width || null,
+        height: meta.videoMediaMetadata?.height || null,
+        poster: resizeThumbnailLink(meta.thumbnailLink, 1600),
       });
     }
 
