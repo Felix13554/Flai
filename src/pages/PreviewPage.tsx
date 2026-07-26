@@ -166,35 +166,38 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <div
-          className="flex-1 relative bg-black"
-          style={meta.poster ? {
-            backgroundImage: `url(${meta.poster})`,
-            backgroundSize: 'contain',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-          } : undefined}
-        >
-          {/* Iframe is always mounted (src empty until clicked) so we can hand off
-              the click's user-activation to it synchronously. The poster is the
-              container's own background (not a separate <img>), so there's never
-              a black flash while the iframe paints — no timing/state needed. */}
+        <div className="flex-1 relative bg-black">
+          {/* Iframe is always mounted (src empty until clicked) and always laid out
+              normally — never toggled via display:none/block or unmounted. Safari
+              can fail to actually paint an iframe's content after switching it
+              from display:none to block, which shows up as a black screen until
+              you click directly inside the frame. The poster below is an opaque
+              <img> layered on top of it (not a CSS background on the container),
+              so it fully hides the iframe regardless of how a blank/loading
+              iframe happens to render underneath — no ambiguity either way. */}
           <iframe
             ref={videoIframeRef}
             className="absolute inset-0 w-full h-full border-0"
             allow="autoplay; fullscreen"
             allowFullScreen
             title={link.title}
-            style={{ display: videoStarted ? 'block' : 'none' }}
           />
 
           {!videoStarted && (
             <button
+              type="button"
               onClick={startVideo}
               className="absolute inset-0 w-full h-full flex items-center justify-center cursor-pointer"
               aria-label="Afspil video"
             >
-              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
+              {meta.poster && (
+                <img
+                  src={meta.poster}
+                  alt={meta.name}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                />
+              )}
+              <div className="relative z-10 flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
                 <Play size={28} className="text-white ml-1" fill="white" />
               </div>
             </button>
@@ -220,6 +223,7 @@ const PreviewPage: React.FC = () => {
               {items.map((item, i) => (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => setLightboxIndex(i)}
                   style={{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '1 / 1' }}
                   className="relative w-full rounded-lg overflow-hidden bg-neutral-800 border border-neutral-700 hover:border-primary/60 transition-colors group"
@@ -251,6 +255,7 @@ const PreviewPage: React.FC = () => {
           onClick={closeLightbox}
         >
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
             className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors z-10"
           >
@@ -260,12 +265,14 @@ const PreviewPage: React.FC = () => {
           {items.length > 1 && (
             <>
               <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); showPrev(); }}
                 className="absolute left-2 sm:left-4 p-2 text-white/70 hover:text-white transition-colors z-10"
               >
                 <ChevronLeft size={32} />
               </button>
               <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); showNext(); }}
                 className="absolute right-2 sm:right-4 p-2 text-white/70 hover:text-white transition-colors z-10"
               >
