@@ -47,6 +47,7 @@ const FinancePage = lazy(() => import('./pages/FinancePage'));
 const DriveDownload = lazy(() => import('./components/DriveDownload'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const PanoramaViewerPage = lazy(() => import('./pages/PanoramaViewerPage'));
+const PreviewPage = lazy(() => import('./pages/PreviewPage'));
 
 function AppContent() {
   useRoutePreloader();
@@ -59,6 +60,9 @@ function AppContent() {
       <Routes>
         <Route path="/panorama" element={
           <Suspense fallback={null}><PanoramaViewerPage /></Suspense>
+        } />
+        <Route path="/preview/:id" element={
+          <Suspense fallback={null}><PreviewPage /></Suspense>
         } />
 
         {/* All other routes get the full site shell */}
