@@ -3,21 +3,27 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: embeds Google Drive's own player (`/file/d/ID/preview`) directly,
- * using Google's own default paused state and play button — one click. This
- * is Google's officially supported embed mechanism — it streams adaptively
- * straight from Google's CDN with native seeking, so playback never touches
- * Flai's server and has no file-size ceiling.
+ * VIDEO: shows our own poster (Drive's `thumbnailLink`) with a play button,
+ * letterboxed via object-contain so portrait/vertical videos aren't cropped —
+ * Google's own poster center-crops to fill a landscape box regardless of the
+ * video's real aspect ratio, which is the "zoomed in" look this avoids. Only
+ * once clicked does a fresh <iframe> mount, embedding Google Drive's own
+ * player (`/file/d/ID/preview`) with its own default paused state and play
+ * button — a second, native click actually starts playback. This is Google's
+ * officially supported embed mechanism — it streams adaptively straight from
+ * Google's CDN with native seeking, so playback never touches Flai's server
+ * and has no file-size ceiling.
  *
  * Two things were deliberately tried and reverted here, worth knowing if this
  * ever needs revisiting:
- *   - A custom poster + play button layered on top (to avoid Google's own
- *     poster cropping portrait/vertical videos to fill a landscape box) meant
- *     two clicks — ours, then Google's own button underneath. Removed in
- *     favor of a single click.
- *   - Appending `?autoplay=1` to skip that second click entirely is an
- *     undocumented parameter that reliably produced a broken black-screen
- *     state in Safari. Removed for reliability.
+ *   - Keeping the iframe permanently mounted and toggling it via CSS
+ *     display:none/block (to hand off autoplay permission from a click)
+ *     caused a broken black-screen state in Safari that only cleared once you
+ *     clicked again inside the frame. Mounting the iframe fresh on click,
+ *     instead of toggling display on an already-existing node, avoids it.
+ *   - Appending `?autoplay=1` to skip the second click entirely is an
+ *     undocumented parameter that reliably reproduced that same Safari bug.
+ *     Removed for reliability — the trade-off is one extra, native click.
  *
  * PHOTOS: a single image, or a full folder gallery. The grid uses Google's
  * `thumbnailLink` CDN (fast, zero cost to Flai) and the lightbox loads a
@@ -32,7 +38,7 @@ import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, Play,
 } from 'lucide-react';
 
 interface FolderItem {
@@ -57,6 +63,7 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [videoStarted, setVideoStarted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +72,7 @@ const PreviewPage: React.FC = () => {
       if (!id) { setError('Intet preview-ID angivet'); setLoading(false); return; }
       try {
         setLoading(true);
+        setVideoStarted(false);
 
         const { data: linkRow, error: linkErr } = await supabase
           .from('preview_links')
@@ -157,18 +165,41 @@ const PreviewPage: React.FC = () => {
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
         <div className="flex-1 relative bg-black">
-          {/* Plain embed of Google's own player, showing Google's own default
-              paused state and play button — no custom poster/overlay on top.
-              (Trade-off: Google's own poster crops portrait/vertical videos
-              to fill the landscape box during this paused state, which looks
-              zoomed-in until played — that's Google's rendering, not ours.) */}
-          <iframe
-            src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
-            className="absolute inset-0 w-full h-full border-0"
-            allow="autoplay; fullscreen"
-            allowFullScreen
-            title={link.title}
-          />
+          {!videoStarted ? (
+            <button
+              type="button"
+              onClick={() => setVideoStarted(true)}
+              className="absolute inset-0 w-full h-full flex items-center justify-center cursor-pointer"
+              aria-label="Afspil video"
+            >
+              {/* Our own poster, letterboxed with object-contain (not cropped)
+                  to match the video's real orientation — Google's own poster
+                  center-crops portrait/vertical videos to fill a landscape
+                  box, which is the "zoomed in" look this replaces. */}
+              {meta.poster && (
+                <img
+                  src={meta.poster}
+                  alt={meta.name}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                />
+              )}
+              <div className="relative z-10 flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
+                <Play size={28} className="text-white ml-1" fill="white" />
+              </div>
+            </button>
+          ) : (
+            // Mounted fresh only now (not toggled via display:none/block on an
+            // already-existing node) — that display-toggle approach is what
+            // caused a black-screen bug in Safari earlier. A newly-created
+            // iframe with its src set from the start doesn't have that issue.
+            <iframe
+              src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
+              className="absolute inset-0 w-full h-full border-0"
+              allow="autoplay; fullscreen"
+              allowFullScreen
+              title={link.title}
+            />
+          )}
         </div>
       )}
 
