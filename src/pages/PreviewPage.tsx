@@ -3,27 +3,30 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: shows our own poster (Drive's `thumbnailLink`) with a play button,
- * letterboxed via object-contain so portrait/vertical videos aren't cropped —
- * Google's own poster center-crops to fill a landscape box regardless of the
- * video's real aspect ratio, which is the "zoomed in" look this avoids. Only
- * once clicked does a fresh <iframe> mount, embedding Google Drive's own
- * player (`/file/d/ID/preview`) with its own default paused state and play
- * button — a second, native click actually starts playback. This is Google's
- * officially supported embed mechanism — it streams adaptively straight from
- * Google's CDN with native seeking, so playback never touches Flai's server
- * and has no file-size ceiling.
+ * VIDEO: embeds Google Drive's own player (`/file/d/ID/preview`) directly —
+ * one click, on Google's own default play button, no custom overlay. This is
+ * Google's officially supported embed mechanism — it streams adaptively
+ * straight from Google's CDN with native seeking, so playback never touches
+ * Flai's server and has no file-size ceiling.
+ *
+ * The iframe is wrapped in a box that's measured and sized in JS (see the
+ * ResizeObserver effect below) to match the video's real aspect ratio,
+ * letterboxed with our own black bars, instead of stretched full-bleed.
+ * `object-fit` has no effect on <iframe> elements (browsers explicitly don't
+ * apply it there), so this is the only lever we have — but it works because
+ * it leaves Google's own poster/player nothing extra to crop into: the box
+ * we hand it already matches the content's real shape. Without this, Google's
+ * own poster center-crops portrait/vertical videos to fill a landscape box,
+ * which looks zoomed-in until played.
  *
  * Two things were deliberately tried and reverted here, worth knowing if this
  * ever needs revisiting:
- *   - Keeping the iframe permanently mounted and toggling it via CSS
- *     display:none/block (to hand off autoplay permission from a click)
- *     caused a broken black-screen state in Safari that only cleared once you
- *     clicked again inside the frame. Mounting the iframe fresh on click,
- *     instead of toggling display on an already-existing node, avoids it.
- *   - Appending `?autoplay=1` to skip the second click entirely is an
- *     undocumented parameter that reliably reproduced that same Safari bug.
- *     Removed for reliability — the trade-off is one extra, native click.
+ *   - A custom poster + play button layered on top of the iframe (another way
+ *     to avoid Google's cropped poster) meant two clicks — ours, then
+ *     Google's own button underneath. Reverted in favor of a single click.
+ *   - Appending `?autoplay=1` to the iframe URL is an undocumented parameter
+ *     that reliably produced a broken black-screen state in Safari. Removed
+ *     for reliability.
  *
  * PHOTOS: a single image, or a full folder gallery. The grid uses Google's
  * `thumbnailLink` CDN (fast, zero cost to Flai) and the lightbox loads a
@@ -32,13 +35,13 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, Play,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
 
 interface FolderItem {
@@ -63,7 +66,8 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [videoStarted, setVideoStarted] = useState(false);
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
+  const [videoBoxSize, setVideoBoxSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +76,6 @@ const PreviewPage: React.FC = () => {
       if (!id) { setError('Intet preview-ID angivet'); setLoading(false); return; }
       try {
         setLoading(true);
-        setVideoStarted(false);
 
         const { data: linkRow, error: linkErr } = await supabase
           .from('preview_links')
@@ -110,6 +113,34 @@ const PreviewPage: React.FC = () => {
     load();
     return () => { cancelled = true; };
   }, [id]);
+
+  // Size the video box to the content's real aspect ratio, computed from the
+  // actual measured container space rather than left to CSS auto-sizing —
+  // aspect-ratio on a box with both width and height left auto is fragile
+  // depending on flex/grid stretch defaults, and can end up wrong specifically
+  // for landscape videos in a narrow/portrait viewport. Measuring guarantees
+  // correct "contain" behavior (letterboxed either direction) in every case.
+  useEffect(() => {
+    if (!(link?.type === 'video' && meta?.type === 'video')) return;
+    const container = videoContainerRef.current;
+    if (!container) return;
+
+    const ratio = meta.width && meta.height ? meta.width / meta.height : 16 / 9;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      if (!clientWidth || !clientHeight) return;
+      const containerRatio = clientWidth / clientHeight;
+      const width = containerRatio > ratio ? clientHeight * ratio : clientWidth;
+      const height = containerRatio > ratio ? clientHeight : clientWidth / ratio;
+      setVideoBoxSize({ width, height });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [link?.type, meta]);
 
   const items: FolderItem[] =
     meta?.type === 'folder' ? meta.items
@@ -164,34 +195,19 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <div className="flex-1 relative bg-black">
-          {!videoStarted ? (
-            <button
-              type="button"
-              onClick={() => setVideoStarted(true)}
-              className="absolute inset-0 w-full h-full flex items-center justify-center cursor-pointer"
-              aria-label="Afspil video"
-            >
-              {/* Our own poster, letterboxed with object-contain (not cropped)
-                  to match the video's real orientation — Google's own poster
-                  center-crops portrait/vertical videos to fill a landscape
-                  box, which is the "zoomed in" look this replaces. */}
-              {meta.poster && (
-                <img
-                  src={meta.poster}
-                  alt={meta.name}
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                />
-              )}
-              <div className="relative z-10 flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
-                <Play size={28} className="text-white ml-1" fill="white" />
-              </div>
-            </button>
-          ) : (
-            // Mounted fresh only now (not toggled via display:none/block on an
-            // already-existing node) — that display-toggle approach is what
-            // caused a black-screen bug in Safari earlier. A newly-created
-            // iframe with its src set from the start doesn't have that issue.
+        <div ref={videoContainerRef} className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+          {/* The iframe itself doesn't respect object-fit (browsers explicitly
+              don't apply it to <iframe>), so instead we measure the available
+              space and size THIS wrapper in JS to the video's real aspect
+              ratio, letterboxed with our own black bars. That leaves Google's
+              own poster/player nothing to crop — the box we hand it already
+              matches the content's real shape, landscape or portrait. Falls
+              back to 16:9 until measured, or if Drive didn't report the
+              video's dimensions. */}
+          <div
+            className="relative"
+            style={videoBoxSize ? { width: videoBoxSize.width, height: videoBoxSize.height } : { width: '100%', height: '100%' }}
+          >
             <iframe
               src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
               className="absolute inset-0 w-full h-full border-0"
@@ -199,7 +215,7 @@ const PreviewPage: React.FC = () => {
               allowFullScreen
               title={link.title}
             />
-          )}
+          </div>
         </div>
       )}
 
