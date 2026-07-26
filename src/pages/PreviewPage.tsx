@@ -21,7 +21,7 @@ import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, ExternalLink, X, ChevronLeft, ChevronRight, Images,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
 
 interface FolderItem {
@@ -34,7 +34,7 @@ interface FolderItem {
 
 type MetaResult =
   | { type: 'video'; id: string; name: string }
-  | { type: 'image'; id: string; name: string; gridThumb: string | null }
+  | { type: 'image'; id: string; name: string; width: number | null; height: number | null; gridThumb: string | null }
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
 
@@ -94,8 +94,16 @@ const PreviewPage: React.FC = () => {
 
   const items: FolderItem[] =
     meta?.type === 'folder' ? meta.items
-    : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: null, height: null, gridThumb: meta.gridThumb }]
+    : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: meta.width, height: meta.height, gridThumb: meta.gridThumb }]
     : [];
+
+  // Request a lightbox image sized for the viewport at the device's actual pixel
+  // density, so photos look sharp on retina/high-DPI screens instead of a fixed
+  // 1920px regardless of screen size. Capped at 2400 to match the API's max.
+  const lightboxWidth = Math.min(
+    2400,
+    Math.round((typeof window !== 'undefined' ? window.innerWidth : 1920) * (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1))
+  );
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
@@ -135,19 +143,6 @@ const PreviewPage: React.FC = () => {
     <div className="min-h-screen bg-neutral-950 flex flex-col">
       <SEO title={link.title} noIndex />
 
-      {/* Slim header — matches PanoramaViewerPage styling for consistency */}
-      <div
-        className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-        style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          {link.type === 'video'
-            ? <ExternalLink size={18} className="text-primary flex-shrink-0" />
-            : <Images size={18} className="text-primary flex-shrink-0" />}
-          <span className="text-white font-semibold text-sm truncate">{link.title}</span>
-        </div>
-      </div>
-
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
         <div className="flex-1 relative bg-black">
@@ -175,12 +170,13 @@ const PreviewPage: React.FC = () => {
               Ingen billeder fundet.
             </div>
           ) : (
-            <div className="grid gap-3 max-w-6xl mx-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+            <div className="grid gap-3 max-w-6xl mx-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gridAutoRows: 'max-content' }}>
               {items.map((item, i) => (
                 <button
                   key={item.id}
                   onClick={() => setLightboxIndex(i)}
-                  className="relative aspect-square rounded-lg overflow-hidden bg-neutral-800 border border-neutral-700 hover:border-primary/60 transition-colors group"
+                  style={{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '1 / 1' }}
+                  className="relative w-full rounded-lg overflow-hidden bg-neutral-800 border border-neutral-700 hover:border-primary/60 transition-colors group"
                 >
                   {item.gridThumb ? (
                     <img
@@ -234,7 +230,7 @@ const PreviewPage: React.FC = () => {
 
           <img
             key={items[lightboxIndex].id}
-            src={`/api/drive-preview?id=${encodeURIComponent(items[lightboxIndex].id)}&mode=image&w=1920`}
+            src={`/api/drive-preview?id=${encodeURIComponent(items[lightboxIndex].id)}&mode=image&w=${lightboxWidth}`}
             alt={items[lightboxIndex].name}
             className="max-w-[92vw] max-h-[88vh] object-contain"
             onClick={(e) => e.stopPropagation()}
