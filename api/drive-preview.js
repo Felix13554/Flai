@@ -263,7 +263,7 @@ export default async function handler(req, res) {
           name: f.name,
           width: f.imageMediaMetadata?.width || null,
           height: f.imageMediaMetadata?.height || null,
-          gridThumb: resizeThumbnailLink(f.thumbnailLink, 500),
+          gridThumb: resizeThumbnailLink(f.thumbnailLink, 1000),
         })),
       });
     }
@@ -288,7 +288,7 @@ export default async function handler(req, res) {
         mimeType: meta.mimeType,
         width: meta.imageMediaMetadata?.width || null,
         height: meta.imageMediaMetadata?.height || null,
-        gridThumb: resizeThumbnailLink(meta.thumbnailLink, 500),
+        gridThumb: resizeThumbnailLink(meta.thumbnailLink, 1000),
       });
     }
 
