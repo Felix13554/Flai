@@ -51,7 +51,6 @@ const PreviewPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [videoStarted, setVideoStarted] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
@@ -62,7 +61,6 @@ const PreviewPage: React.FC = () => {
       try {
         setLoading(true);
         setVideoStarted(false);
-        setVideoReady(false);
         if (videoIframeRef.current) videoIframeRef.current.src = 'about:blank';
 
         const { data: linkRow, error: linkErr } = await supabase
@@ -128,9 +126,6 @@ const PreviewPage: React.FC = () => {
     if (videoIframeRef.current) {
       videoIframeRef.current.src = `https://drive.google.com/file/d/${link.drive_id}/preview?autoplay=1`;
     }
-    // Safety net: if Google's iframe is slow to fire onLoad, reveal it anyway
-    // after a beat so we never get stuck showing a stale poster.
-    window.setTimeout(() => setVideoReady(true), 1200);
   }, [link]);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
   const showNext = useCallback(() => setLightboxIndex(i => (i === null ? null : (i + 1) % items.length)), [items.length]);
@@ -171,41 +166,36 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <div className="flex-1 relative bg-black">
+        <div
+          className="flex-1 relative bg-black"
+          style={meta.poster ? {
+            backgroundImage: `url(${meta.poster})`,
+            backgroundSize: 'contain',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          } : undefined}
+        >
           {/* Iframe is always mounted (src empty until clicked) so we can hand off
-              the click's user-activation to it synchronously. It stays invisible
-              until it's actually ready, so there's never a blank/black gap. */}
+              the click's user-activation to it synchronously. The poster is the
+              container's own background (not a separate <img>), so there's never
+              a black flash while the iframe paints — no timing/state needed. */}
           <iframe
             ref={videoIframeRef}
-            className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            className="absolute inset-0 w-full h-full border-0"
             allow="autoplay; fullscreen"
             allowFullScreen
             title={link.title}
-            onLoad={() => { if (videoStarted) setVideoReady(true); }}
+            style={{ display: videoStarted ? 'block' : 'none' }}
           />
 
-          {!videoReady && (
+          {!videoStarted && (
             <button
               onClick={startVideo}
-              className="absolute inset-0 w-full h-full flex items-center justify-center group cursor-pointer"
+              className="absolute inset-0 w-full h-full flex items-center justify-center cursor-pointer"
               aria-label="Afspil video"
-              disabled={videoStarted}
             >
-              {meta.poster ? (
-                <img
-                  src={meta.poster}
-                  alt={meta.name}
-                  className="absolute inset-0 w-full h-full object-contain"
-                  style={meta.width && meta.height ? { aspectRatio: `${meta.width} / ${meta.height}` } : undefined}
-                />
-              ) : null}
-
-              <div className="relative z-10 flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-neutral-900 border border-white/20 group-hover:bg-primary transition-colors">
-                {videoStarted ? (
-                  <Loader2 size={26} className="text-white animate-spin" />
-                ) : (
-                  <Play size={30} className="text-white ml-1" fill="currentColor" />
-                )}
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
+                <Play size={28} className="text-white ml-1" fill="white" />
               </div>
             </button>
           )}
