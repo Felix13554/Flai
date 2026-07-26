@@ -178,6 +178,40 @@ export function extractGoogleDriveId(url: string): string | null {
   return null;
 }
 
+/**
+ * extractGoogleDriveIdOrFolder
+ *
+ * Like extractGoogleDriveId, but also recognises Drive *folder* URLs and tells
+ * the caller whether the resolved ID is a folder or a single file. Used by the
+ * preview-link admin form, where the admin can paste either a link to one
+ * photo/video file, or a link to a folder containing multiple photos.
+ *
+ * Recognised formats:
+ *   https://drive.google.com/drive/folders/FOLDER_ID
+ *   https://drive.google.com/drive/u/0/folders/FOLDER_ID
+ *   https://drive.google.com/file/d/FILE_ID/view
+ *   https://drive.google.com/open?id=FILE_ID
+ *   a bare ID pasted directly
+ */
+export function extractGoogleDriveIdOrFolder(
+  url: string
+): { id: string; isFolder: boolean } | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return { id: folderMatch[1], isFolder: true };
+
+  const fileId = extractGoogleDriveId(trimmed);
+  if (fileId) return { id: fileId, isFolder: false };
+
+  // Bare ID pasted with no URL wrapper at all — assume a file, the backend
+  // /api/drive-preview?mode=meta call will correct this if it's actually a folder.
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(trimmed)) return { id: trimmed, isFolder: false };
+
+  return null;
+}
+
 // ─── Drive folder search ───────────────────────────────────────────────────────
 
 export interface DriveFolderSearchResult {
