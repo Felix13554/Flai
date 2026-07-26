@@ -19,7 +19,7 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
@@ -51,6 +51,8 @@ const PreviewPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [videoStarted, setVideoStarted] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const videoIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +61,9 @@ const PreviewPage: React.FC = () => {
       if (!id) { setError('Intet preview-ID angivet'); setLoading(false); return; }
       try {
         setLoading(true);
+        setVideoStarted(false);
+        setVideoReady(false);
+        if (videoIframeRef.current) videoIframeRef.current.src = 'about:blank';
 
         const { data: linkRow, error: linkErr } = await supabase
           .from('preview_links')
@@ -111,6 +116,22 @@ const PreviewPage: React.FC = () => {
   );
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+
+  const startVideo = useCallback(() => {
+    if (!link) return;
+    setVideoStarted(true);
+    // Set src imperatively, synchronously inside the click handler, rather than
+    // letting React create the <iframe> on the next render. Some browsers only
+    // carry the "user activation" needed for autoplay into an iframe when the
+    // src is assigned in the same task as the click — going through a state
+    // update + re-render can land a tick too late and silently lose it.
+    if (videoIframeRef.current) {
+      videoIframeRef.current.src = `https://drive.google.com/file/d/${link.drive_id}/preview?autoplay=1`;
+    }
+    // Safety net: if Google's iframe is slow to fire onLoad, reveal it anyway
+    // after a beat so we never get stuck showing a stale poster.
+    window.setTimeout(() => setVideoReady(true), 1200);
+  }, [link]);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
   const showNext = useCallback(() => setLightboxIndex(i => (i === null ? null : (i + 1) % items.length)), [items.length]);
 
@@ -151,11 +172,24 @@ const PreviewPage: React.FC = () => {
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
         <div className="flex-1 relative bg-black">
-          {!videoStarted ? (
+          {/* Iframe is always mounted (src empty until clicked) so we can hand off
+              the click's user-activation to it synchronously. It stays invisible
+              until it's actually ready, so there's never a blank/black gap. */}
+          <iframe
+            ref={videoIframeRef}
+            className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            allow="autoplay; fullscreen"
+            allowFullScreen
+            title={link.title}
+            onLoad={() => { if (videoStarted) setVideoReady(true); }}
+          />
+
+          {!videoReady && (
             <button
-              onClick={() => setVideoStarted(true)}
+              onClick={startVideo}
               className="absolute inset-0 w-full h-full flex items-center justify-center group cursor-pointer"
               aria-label="Afspil video"
+              disabled={videoStarted}
             >
               {meta.poster ? (
                 <img
@@ -165,18 +199,15 @@ const PreviewPage: React.FC = () => {
                   style={meta.width && meta.height ? { aspectRatio: `${meta.width} / ${meta.height}` } : undefined}
                 />
               ) : null}
-              <div className="relative z-10 flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/50 border border-white/30 backdrop-blur-sm group-hover:bg-primary/80 group-hover:border-primary transition-colors">
-                <Play size={30} className="text-white ml-1" fill="currentColor" />
+
+              <div className="relative z-10 flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-neutral-900 border border-white/20 group-hover:bg-primary transition-colors">
+                {videoStarted ? (
+                  <Loader2 size={26} className="text-white animate-spin" />
+                ) : (
+                  <Play size={30} className="text-white ml-1" fill="currentColor" />
+                )}
               </div>
             </button>
-          ) : (
-            <iframe
-              src={`https://drive.google.com/file/d/${link.drive_id}/preview?autoplay=1`}
-              className="absolute inset-0 w-full h-full border-0"
-              allow="autoplay; fullscreen"
-              allowFullScreen
-              title={link.title}
-            />
           )}
         </div>
       )}
