@@ -3,10 +3,14 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: embeds Google Drive's own player (`/file/d/ID/preview`). This is
- * Google's officially supported embed mechanism — it streams adaptively
- * straight from Google's CDN with native seeking, so playback never touches
- * Flai's server and has no file-size ceiling.
+ * VIDEO: shows our own poster (Drive's `thumbnailLink`, sized to the video's
+ * real orientation) with a play button. Only once clicked does the page embed
+ * Google Drive's own player (`/file/d/ID/preview`). This is Google's
+ * officially supported embed mechanism — it streams adaptively straight from
+ * Google's CDN with native seeking, so playback never touches Flai's server
+ * and has no file-size ceiling. We avoid Google's own poster frame because it
+ * center-crops to fill a landscape box regardless of the video's real aspect
+ * ratio, which looks zoomed-in/wrong for portrait (vertical) videos.
  *
  * PHOTOS: a single image, or a full folder gallery. The grid uses Google's
  * `thumbnailLink` CDN (fast, zero cost to Flai) and the lightbox loads a
@@ -21,7 +25,7 @@ import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, Play,
 } from 'lucide-react';
 
 interface FolderItem {
@@ -33,7 +37,7 @@ interface FolderItem {
 }
 
 type MetaResult =
-  | { type: 'video'; id: string; name: string }
+  | { type: 'video'; id: string; name: string; width: number | null; height: number | null; poster: string | null }
   | { type: 'image'; id: string; name: string; width: number | null; height: number | null; gridThumb: string | null }
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
@@ -46,6 +50,7 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [videoStarted, setVideoStarted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,13 +151,33 @@ const PreviewPage: React.FC = () => {
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
         <div className="flex-1 relative bg-black">
-          <iframe
-            src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
-            className="absolute inset-0 w-full h-full border-0"
-            allow="autoplay; fullscreen"
-            allowFullScreen
-            title={link.title}
-          />
+          {!videoStarted ? (
+            <button
+              onClick={() => setVideoStarted(true)}
+              className="absolute inset-0 w-full h-full flex items-center justify-center group cursor-pointer"
+              aria-label="Afspil video"
+            >
+              {meta.poster ? (
+                <img
+                  src={meta.poster}
+                  alt={meta.name}
+                  className="absolute inset-0 w-full h-full object-contain"
+                  style={meta.width && meta.height ? { aspectRatio: `${meta.width} / ${meta.height}` } : undefined}
+                />
+              ) : null}
+              <div className="relative z-10 flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/50 border border-white/30 backdrop-blur-sm group-hover:bg-primary/80 group-hover:border-primary transition-colors">
+                <Play size={30} className="text-white ml-1" fill="currentColor" />
+              </div>
+            </button>
+          ) : (
+            <iframe
+              src={`https://drive.google.com/file/d/${link.drive_id}/preview?autoplay=1`}
+              className="absolute inset-0 w-full h-full border-0"
+              allow="autoplay; fullscreen"
+              allowFullScreen
+              title={link.title}
+            />
+          )}
         </div>
       )}
 
