@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   ScanLine,
   Building2,
+  Link2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -40,6 +41,7 @@ import DeployContentManager from '../components/admin/DeployContentManager';
 import SeoDocumentsManager from '../components/admin/SeoDocumentsManager';
 import ShopManager from '../components/admin/ShopManager';
 import Preview360Manager from '../components/admin/Preview360Manager';
+import PreviewLinksManager from '../components/admin/PreviewLinksManager';
 
 type TabId =
   | 'bookings'
@@ -58,13 +60,14 @@ type TabId =
   | 'deploy'
   | 'seo-documents'
   | 'shop'
-  | 'preview-360';
+  | 'preview-360'
+  | 'preview-links';
 
 const VALID_SECTIONS = new Set<TabId>([
   'bookings', 'booking-config', 'products', 'portfolio', 'client-logos',
   'zones', 'home-sections', 'newsletter',
   'external-images', 'donations', 'video', 'meilisearch', 'users', 'deploy',
-  'seo-documents', 'shop', 'preview-360',
+  'seo-documents', 'shop', 'preview-360', 'preview-links',
 ]);
 
 const DEFAULT_TAB: TabId = 'bookings';
@@ -166,6 +169,7 @@ const AdminPage: React.FC = () => {
     { id: 'deploy',          label: 'Deploy til GitHub',      icon: GitBranch },
     { id: 'shop',            label: 'Shop',                   icon: ShoppingBag },
     { id: 'preview-360',     label: '360° Preview',           icon: ScanLine  },
+    { id: 'preview-links',   label: 'Preview Links',          icon: Link2     },
   ];
 
   const renderTabContent = () => {
@@ -186,6 +190,7 @@ const AdminPage: React.FC = () => {
       case 'seo-documents':   return <ErrorBoundary><SeoDocumentsManager /></ErrorBoundary>;
       case 'shop':            return <ErrorBoundary><ShopManager /></ErrorBoundary>;
       case 'preview-360':     return <ErrorBoundary><Preview360Manager /></ErrorBoundary>;
+      case 'preview-links':   return <ErrorBoundary><PreviewLinksManager /></ErrorBoundary>;
       default:                return null;
     }
   };
