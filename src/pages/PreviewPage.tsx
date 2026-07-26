@@ -123,8 +123,16 @@ const PreviewPage: React.FC = () => {
     // carry the "user activation" needed for autoplay into an iframe when the
     // src is assigned in the same task as the click — going through a state
     // update + re-render can land a tick too late and silently lose it.
+    //
+    // Deliberately NOT appending ?autoplay=1 here: it's an unofficial param
+    // (Google doesn't document it for the /preview embed) and it reliably
+    // triggers a broken black-screen state in Safari that only clears once you
+    // click again inside the frame. Without it, Google's player loads its own
+    // normal paused state immediately and correctly in every browser — the
+    // trade-off is one extra click (on Google's own play button) instead of
+    // instant playback, but it actually works.
     if (videoIframeRef.current) {
-      videoIframeRef.current.src = `https://drive.google.com/file/d/${link.drive_id}/preview?autoplay=1`;
+      videoIframeRef.current.src = `https://drive.google.com/file/d/${link.drive_id}/preview`;
     }
   }, [link]);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
