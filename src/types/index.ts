@@ -178,6 +178,19 @@ export interface DonationLink {
   updated_at: string;
 }
 
+export interface PreviewLink {
+  id: string;
+  type: 'video' | 'photos';
+  drive_id: string;
+  is_folder: boolean;
+  title: string;
+  is_active: boolean;
+  view_count: number;
+  last_viewed_at?: string;
+  created_by?: string;
+  created_at: string;
+}
+
 export interface Donation {
   id: string;
   donation_link_id: string;
