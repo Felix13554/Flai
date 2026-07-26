@@ -3,14 +3,21 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: shows our own poster (Drive's `thumbnailLink`, sized to the video's
- * real orientation) with a play button. Only once clicked does the page embed
- * Google Drive's own player (`/file/d/ID/preview`). This is Google's
- * officially supported embed mechanism — it streams adaptively straight from
- * Google's CDN with native seeking, so playback never touches Flai's server
- * and has no file-size ceiling. We avoid Google's own poster frame because it
- * center-crops to fill a landscape box regardless of the video's real aspect
- * ratio, which looks zoomed-in/wrong for portrait (vertical) videos.
+ * VIDEO: embeds Google Drive's own player (`/file/d/ID/preview`) directly,
+ * using Google's own default paused state and play button — one click. This
+ * is Google's officially supported embed mechanism — it streams adaptively
+ * straight from Google's CDN with native seeking, so playback never touches
+ * Flai's server and has no file-size ceiling.
+ *
+ * Two things were deliberately tried and reverted here, worth knowing if this
+ * ever needs revisiting:
+ *   - A custom poster + play button layered on top (to avoid Google's own
+ *     poster cropping portrait/vertical videos to fill a landscape box) meant
+ *     two clicks — ours, then Google's own button underneath. Removed in
+ *     favor of a single click.
+ *   - Appending `?autoplay=1` to skip that second click entirely is an
+ *     undocumented parameter that reliably produced a broken black-screen
+ *     state in Safari. Removed for reliability.
  *
  * PHOTOS: a single image, or a full folder gallery. The grid uses Google's
  * `thumbnailLink` CDN (fast, zero cost to Flai) and the lightbox loads a
@@ -19,13 +26,13 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, Play,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
 
 interface FolderItem {
@@ -50,8 +57,6 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [videoStarted, setVideoStarted] = useState(false);
-  const videoIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,8 +65,6 @@ const PreviewPage: React.FC = () => {
       if (!id) { setError('Intet preview-ID angivet'); setLoading(false); return; }
       try {
         setLoading(true);
-        setVideoStarted(false);
-        if (videoIframeRef.current) videoIframeRef.current.src = 'about:blank';
 
         const { data: linkRow, error: linkErr } = await supabase
           .from('preview_links')
@@ -114,27 +117,6 @@ const PreviewPage: React.FC = () => {
   );
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
-
-  const startVideo = useCallback(() => {
-    if (!link) return;
-    setVideoStarted(true);
-    // Set src imperatively, synchronously inside the click handler, rather than
-    // letting React create the <iframe> on the next render. Some browsers only
-    // carry the "user activation" needed for autoplay into an iframe when the
-    // src is assigned in the same task as the click — going through a state
-    // update + re-render can land a tick too late and silently lose it.
-    //
-    // Deliberately NOT appending ?autoplay=1 here: it's an unofficial param
-    // (Google doesn't document it for the /preview embed) and it reliably
-    // triggers a broken black-screen state in Safari that only clears once you
-    // click again inside the frame. Without it, Google's player loads its own
-    // normal paused state immediately and correctly in every browser — the
-    // trade-off is one extra click (on Google's own play button) instead of
-    // instant playback, but it actually works.
-    if (videoIframeRef.current) {
-      videoIframeRef.current.src = `https://drive.google.com/file/d/${link.drive_id}/preview`;
-    }
-  }, [link]);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
   const showNext = useCallback(() => setLightboxIndex(i => (i === null ? null : (i + 1) % items.length)), [items.length]);
 
@@ -175,41 +157,18 @@ const PreviewPage: React.FC = () => {
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
         <div className="flex-1 relative bg-black">
-          {/* Iframe is always mounted (src empty until clicked) and always laid out
-              normally — never toggled via display:none/block or unmounted. Safari
-              can fail to actually paint an iframe's content after switching it
-              from display:none to block, which shows up as a black screen until
-              you click directly inside the frame. The poster below is an opaque
-              <img> layered on top of it (not a CSS background on the container),
-              so it fully hides the iframe regardless of how a blank/loading
-              iframe happens to render underneath — no ambiguity either way. */}
+          {/* Plain embed of Google's own player, showing Google's own default
+              paused state and play button — no custom poster/overlay on top.
+              (Trade-off: Google's own poster crops portrait/vertical videos
+              to fill the landscape box during this paused state, which looks
+              zoomed-in until played — that's Google's rendering, not ours.) */}
           <iframe
-            ref={videoIframeRef}
+            src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
             className="absolute inset-0 w-full h-full border-0"
             allow="autoplay; fullscreen"
             allowFullScreen
             title={link.title}
           />
-
-          {!videoStarted && (
-            <button
-              type="button"
-              onClick={startVideo}
-              className="absolute inset-0 w-full h-full flex items-center justify-center cursor-pointer"
-              aria-label="Afspil video"
-            >
-              {meta.poster && (
-                <img
-                  src={meta.poster}
-                  alt={meta.name}
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                />
-              )}
-              <div className="relative z-10 flex items-center justify-center w-16 h-16 rounded-full bg-black/60">
-                <Play size={28} className="text-white ml-1" fill="white" />
-              </div>
-            </button>
-          )}
         </div>
       )}
 
