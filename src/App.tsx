@@ -49,6 +49,23 @@ const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const PanoramaViewerPage = lazy(() => import('./pages/PanoramaViewerPage'));
 const PreviewPage = lazy(() => import('./pages/PreviewPage'));
 
+// Create this helper function/component near your App component
+function PreviewRedirectHandler() {
+  const { id } = useParams();
+  
+  // Map old preview IDs to their target destination
+  const redirectMap = {
+    "3905659f-ba2e-4ade-89e9-993e32cb761c": "/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb",
+    "2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb": "/preview/434448bc-fb67-4dc6-ac59-1b76b2b78153"
+  };
+
+  if (redirectMap[id]) {
+    return <Navigate to={redirectMap[id]} replace />;
+  }
+
+  return <PreviewPage />;
+}
+
 function AppContent() {
   useRoutePreloader();
 
@@ -65,17 +82,10 @@ function AppContent() {
           <Suspense fallback={null}><PreviewPage /></Suspense>
         } />
 
-        {/* 1. Put the redirect HERE so it catches the specific ID first */}
-        <Route 
-          path="/preview/3905659f-ba2e-4ade-89e9-993e32cb761c" 
-          element={<Navigate to="/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb" replace />} 
-        />
-
-              {/* 1. Put the redirect HERE so it catches the specific ID first */}
-        <Route 
-          path="/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb" 
-          element={<Navigate to="/preview/434448bc-fb67-4dc6-ac59-1b76b2b78153" replace />} 
-        />
+       {/* Single catch-all handler for preview IDs that checks against old mappings */}
+        <Route path="/preview/:id" element={
+          <Suspense fallback={null}><PreviewRedirectHandler /></Suspense>
+        } />
 
         {/* All other routes get the full site shell */}
         <Route path="*" element={<SiteShell />} />
