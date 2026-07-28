@@ -67,8 +67,14 @@ function AppContent() {
 
         {/* 1. Put the redirect HERE so it catches the specific ID first */}
         <Route 
-          path="/preview/3905659f-ba2e-4ade-89e9-993e32cb761c" 
+          path="/preview/fc960f17-5758-4f30-94dd-2a664e5e0bab" 
           element={<Navigate to="/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb" replace />} 
+        />
+
+              {/* 1. Put the redirect HERE so it catches the specific ID first */}
+        <Route 
+          path="/preview/3905659f-ba2e-4ade-89e9-993e32cb761c" 
+          element={<Navigate to="/preview/434448bc-fb67-4dc6-ac59-1b76b2b78153" replace />} 
         />
 
         {/* All other routes get the full site shell */}
