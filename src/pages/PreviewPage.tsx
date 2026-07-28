@@ -35,34 +35,14 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, ExternalLink,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
-
-// In-app browsers (Zoho Mail, Gmail, Facebook, Instagram, LinkedIn, etc.) run
-// on iOS's WKWebView with `allowsInlineMediaPlayback` OFF by default — a
-// setting only the *host app* controls, not any web page. With it off, iOS
-// forces playing video into its own native fullscreen controller regardless
-// of what Google's iframe does internally, which visually collides with
-// Google's own custom controls (scrubber/mute/expand). This can't be fixed
-// from our HTML/CSS or Google's — the only real mitigation is pointing
-// people at their actual browser. Real Safari/Chrome (with allowsInline on)
-// don't have this problem, which is why it looks fine there.
-function isLikelyInAppBrowser(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  const isIOS = /iPhone|iPad|iPod/.test(ua);
-  // Real mobile Safari always includes a "Safari/" token; most iOS in-app
-  // WebViews omit it even though they still report "Mobile/...".
-  if (isIOS && /Mobile\//.test(ua) && !/Safari\//.test(ua)) return true;
-  if (/FBAN|FBAV|Instagram|LinkedInApp|Line\/|Twitter|GSA\/|ZohoMail/i.test(ua)) return true;
-  return false;
-}
 
 interface FolderItem {
   id: string;
@@ -86,11 +66,8 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [inAppBrowser, setInAppBrowser] = useState(false);
-
-  useEffect(() => {
-    setInAppBrowser(isLikelyInAppBrowser());
-  }, []);
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
+  const [videoBoxSize, setVideoBoxSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,13 +114,38 @@ const PreviewPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [id]);
 
+  // Size the video box to the content's real aspect ratio, computed from the
+  // actual measured container space rather than left to CSS auto-sizing —
+  // aspect-ratio on a box with both width and height left auto is fragile
+  // depending on flex/grid stretch defaults, and can end up wrong specifically
+  // for landscape videos in a narrow/portrait viewport. Measuring guarantees
+  // correct "contain" behavior (letterboxed either direction) in every case.
+  useEffect(() => {
+    if (!(link?.type === 'video' && meta?.type === 'video')) return;
+    const container = videoContainerRef.current;
+    if (!container) return;
+
+    const ratio = meta.width && meta.height ? meta.width / meta.height : 16 / 9;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      if (!clientWidth || !clientHeight) return;
+      const containerRatio = clientWidth / clientHeight;
+      const width = containerRatio > ratio ? clientHeight * ratio : clientWidth;
+      const height = containerRatio > ratio ? clientHeight : clientWidth / ratio;
+      setVideoBoxSize({ width, height });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [link?.type, meta]);
+
   const items: FolderItem[] =
     meta?.type === 'folder' ? meta.items
     : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: meta.width, height: meta.height, gridThumb: meta.gridThumb }]
     : [];
-
-  const ratio =
-    meta?.type === 'video' && meta.width && meta.height ? meta.width / meta.height : 16 / 9;
 
   // Request a lightbox image sized for the viewport at the device's actual pixel
   // density, so photos look sharp on retina/high-DPI screens instead of a fixed
@@ -188,60 +190,33 @@ const PreviewPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-neutral-950 flex flex-col">
+    <div className="min-h-screen bg-neutral-950 flex flex-col">
       <SEO title={link.title} noIndex />
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <>
-          {inAppBrowser && (
-            <a
-              href={typeof window !== 'undefined' ? window.location.href : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-200 text-sm py-2.5 px-4 text-center"
-            >
-              <ExternalLink size={15} className="shrink-0" />
-              <EditableContent
-                contentKey="preview-page-in-app-browser-warning"
-                fallback="Videokontroller virker upålideligt her — tryk for at åbne i Safari/Chrome"
-              />
-            </a>
-          )}
-          <div
-            className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
-            style={{ containerType: 'size' }}
-          >
+        <div ref={videoContainerRef} className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
           {/* The iframe itself doesn't respect object-fit (browsers explicitly
-              don't apply it to <iframe>), so instead this box is sized with
-              CSS container-query units (cqw/cqh) to "contain" the real video
-              aspect ratio inside whatever space is actually available right
-              now, letterboxed with our own black bars. Being pure CSS, this
-              is recalculated by the browser every frame — there's no JS
-              measurement to go stale or freeze at a wrong size, which a
-              ResizeObserver-based approach is prone to on mobile (e.g. an
-              in-app browser's slide-in transition, or the address bar
-              collapsing on tap, could catch a wrong intermediate size and
-              never correct it). Falls back to 16:9 if Drive didn't report
-              the video's dimensions. */}
+              don't apply it to <iframe>), so instead we measure the available
+              space and size THIS wrapper in JS to the video's real aspect
+              ratio, letterboxed with our own black bars. That leaves Google's
+              own poster/player nothing to crop — the box we hand it already
+              matches the content's real shape, landscape or portrait. Falls
+              back to 16:9 until measured, or if Drive didn't report the
+              video's dimensions. */}
           <div
             className="relative"
-            style={{
-              width: `min(100cqw, 100cqh * ${ratio})`,
-              height: `min(100cqh, 100cqw / ${ratio})`,
-            }}
+            style={videoBoxSize ? { width: videoBoxSize.width, height: videoBoxSize.height } : { width: '100%', height: '100%' }}
           >
             <iframe
               src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
               className="absolute inset-0 w-full h-full border-0"
-              style={{ touchAction: 'manipulation' }}
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allow="autoplay; fullscreen"
               allowFullScreen
               title={link.title}
             />
           </div>
-          </div>
-        </>
+        </div>
       )}
 
       {link.type === 'video' && meta?.type !== 'video' && (
