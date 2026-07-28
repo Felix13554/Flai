@@ -78,11 +78,8 @@ function AppContent() {
         <Route path="/panorama" element={
           <Suspense fallback={null}><PanoramaViewerPage /></Suspense>
         } />
-        <Route path="/preview/:id" element={
-          <Suspense fallback={null}><PreviewPage /></Suspense>
-        } />
 
-       {/* Single catch-all handler for preview IDs that checks against old mappings */}
+        {/* Single catch-all handler for preview IDs that checks against old mappings */}
         <Route path="/preview/:id" element={
           <Suspense fallback={null}><PreviewRedirectHandler /></Suspense>
         } />
