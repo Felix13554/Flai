@@ -3,13 +3,23 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: embeds Google Drive's own player (`/file/d/ID/preview`) directly —
- * one click, on Google's own default play button, no custom overlay. This is
- * Google's officially supported embed mechanism — it streams adaptively
- * straight from Google's CDN with native seeking, so playback never touches
- * Flai's server and has no file-size ceiling.
+ * VIDEO: on desktop, embeds Google Drive's own player (`/file/d/ID/preview`)
+ * directly — one click, Google's own default play button, no custom overlay.
+ * It streams adaptively straight from Google's CDN with native seeking, so
+ * playback never touches Flai's server and has no file-size ceiling.
  *
- * The iframe is wrapped in a box that's measured and sized in JS (see the
+ * On MOBILE, that same iframe is unreliable-to-broken: in-app browsers
+ * (Zoho Mail, Gmail, Outlook, etc.) wrap the page in a locked-down WebView
+ * that blocks the cross-origin storage Google's player needs and often can't
+ * delegate fullscreen/autoplay permissions into a nested third-party iframe
+ * — symptom is the player's control bar rendering over a black, non-playing
+ * canvas. There's no reliable code-level fix for a host WebView's own
+ * restrictions, so mobile gets a first-party `<video>` element instead,
+ * fed by api/drive-preview.js's `mode=video` Range-passthrough proxy. This
+ * does cost Flai bandwidth (unlike the iframe), traded deliberately for
+ * mobile actually working; desktop is untouched and still bandwidth-free.
+ *
+ * The iframe/video box is wrapped in a container that's measured and sized in JS (see the
  * ResizeObserver effect below) to match the video's real aspect ratio,
  * letterboxed with our own black bars, instead of stretched full-bleed.
  * `object-fit` has no effect on <iframe> elements (browsers explicitly don't
@@ -53,7 +63,7 @@ interface FolderItem {
 }
 
 type MetaResult =
-  | { type: 'video'; id: string; name: string; width: number | null; height: number | null; poster: string | null }
+  | { type: 'video'; id: string; name: string; mimeType: string | null; width: number | null; height: number | null; poster: string | null }
   | { type: 'image'; id: string; name: string; width: number | null; height: number | null; gridThumb: string | null }
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
@@ -68,6 +78,12 @@ const PreviewPage: React.FC = () => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const [videoBoxSize, setVideoBoxSize] = useState<{ width: number; height: number } | null>(null);
+
+  // Device-type check (not viewport width) — we want "is this actually a
+  // phone/in-app browser" rather than "is the desktop window narrow right
+  // now", since the Drive iframe's failure mode is tied to the mobile
+  // WebKit/in-app-WebView stack, not screen size.
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,13 +224,32 @@ const PreviewPage: React.FC = () => {
             className="relative"
             style={videoBoxSize ? { width: videoBoxSize.width, height: videoBoxSize.height } : { width: '100%', height: '100%' }}
           >
-            <iframe
-              src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
-              className="absolute inset-0 w-full h-full border-0"
-              allow="autoplay; fullscreen"
-              allowFullScreen
-              title={link.title}
-            />
+            {isMobile ? (
+              // First-party <video>, fed by our own Range-passthrough proxy —
+              // sidesteps the mobile/in-app-browser iframe breakage entirely
+              // by never depending on Google's cross-origin player.
+              <video
+                key={link.drive_id}
+                className="absolute inset-0 w-full h-full"
+                controls
+                playsInline
+                preload="metadata"
+                poster={meta.poster || undefined}
+              >
+                <source
+                  src={`/api/drive-preview?id=${encodeURIComponent(link.drive_id)}&mode=video`}
+                  type={meta.mimeType || 'video/mp4'}
+                />
+              </video>
+            ) : (
+              <iframe
+                src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
+                className="absolute inset-0 w-full h-full border-0"
+                allow="autoplay; fullscreen"
+                allowFullScreen
+                title={link.title}
+              />
+            )}
           </div>
         </div>
       )}
