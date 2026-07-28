@@ -2,38 +2,23 @@
  * api/drive-preview.js — Vercel Serverless Function
  *
  * Backend for the "Preview Links" feature: admin pastes a Google Drive URL
- * (single video, single photo, or a folder of photos) and Flai generates a
+ * for a single photo or a folder of photos, and Flai generates a
  * flai.dk/preview/[ID] link that clients open to view the content.
  *
- * ── Why this design ────────────────────────────────────────────────────────
+ * VIDEO doesn't touch this endpoint (or Google Drive) at all any more — the
+ * client page embeds YouTube's own iframe player against an unlisted video
+ * the admin uploads by hand. That replaced an earlier Google Drive
+ * `/preview` iframe design, which was unreliable-to-broken on mobile and
+ * inside in-app browsers (Zoho Mail, Gmail, Outlook, etc.): those wrap the
+ * page in a locked-down WebView that blocks the cross-origin storage
+ * Google's player needed. See src/pages/PreviewPage.tsx for the current
+ * video path — this file only ever handles photos now.
  *
- *  VIDEO (desktop) — the client page embeds Google's own player directly:
+ * ── Why this design (photos) ─────────────────────────────────────────────
  *
- *      <iframe src="https://drive.google.com/file/d/FILE_ID/preview">
- *
- *  Google's player already does adaptive streaming, range-based seeking, and
- *  is served from Google's own CDN — zero bandwidth cost to Flai, no
- *  timeout/size ceiling. Kept for desktop because it works fine there.
- *
- *  VIDEO (mobile) — the Drive iframe is unreliable on mobile WebKit, and
- *  outright broken inside in-app browsers (Zoho Mail, Gmail, Outlook, etc.):
- *  those wrap pages in a locked-down WebView that Safari's own Intelligent
- *  Tracking Prevention (or the WebView's equivalent) uses to block the
- *  cross-origin storage Google's player needs, and that often can't delegate
- *  fullscreen/autoplay permissions down into a nested third-party iframe.
- *  Symptom: the player's control bar renders but the video canvas stays
- *  black. There's no code-level fix for a locked-down host WebView, so on
- *  mobile we route around the iframe entirely with `mode=video`: a
- *  Range-request passthrough proxy feeding a plain first-party <video>
- *  element. This DOES cost Flai bandwidth (unlike the iframe), but unlike
- *  the old file-download problem this project solved earlier, it streams
- *  each Range chunk straight through (Google → this function → client)
- *  without ever buffering the file in memory, so a single request stays
- *  small and fast regardless of the video's total size.
- *
- *  PHOTOS — direct hotlinking (the old `drive.google.com/uc?export=view`
- *  trick) has returned 403 for all users since Google's Jan 2024 third-party
- *  cookie change, so it can't be used. Two remaining options:
+ *  Direct hotlinking (the old `drive.google.com/uc?export=view` trick) has
+ *  returned 403 for all users since Google's Jan 2024 third-party cookie
+ *  change, so it can't be used. Two remaining options:
  *
  *    a) Drive API `thumbnailLink` (`lh3.googleusercontent.com/...=sNNN`) —
  *       Google's own image CDN, extremely fast, no bandwidth cost to Flai.
@@ -51,17 +36,13 @@
  * ENDPOINTS:
  *
  *   GET /api/drive-preview?id=ID&mode=meta
- *     → { type: 'video' | 'image' | 'folder' | 'unsupported', ... }
+ *     → { type: 'image' | 'folder' | 'unsupported', ... }
  *
  *   GET /api/drive-preview?id=ID&mode=image&w=1600
  *     → resized JPEG bytes, long-cached
- *
- *   GET /api/drive-preview?id=ID&mode=video
- *     → raw video bytes, Range-request passthrough (mobile-only client usage)
  */
 
 import { createSign, createPrivateKey } from "crypto";
-import { Readable } from "node:stream";
 import sharp from "sharp";
 
 export const config = {
@@ -160,7 +141,7 @@ async function getAccessToken() {
 
 // ─── Drive helpers ─────────────────────────────────────────────────────────────
 
-const FILE_FIELDS = "id,name,mimeType,size,thumbnailLink,imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis)";
+const FILE_FIELDS = "id,name,mimeType,size,thumbnailLink,imageMediaMetadata(width,height,rotation)";
 const FOLDER_ID_RE = /^[a-zA-Z0-9_-]+$/;
 
 async function driveGetFile(id, token) {
@@ -256,49 +237,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── mode=video — Range-request passthrough for the mobile <video> element ──
-  // Streams bytes straight through without buffering, so this stays fast and
-  // memory-light no matter how large the source file is. Forwards whatever
-  // Range header the <video> element sent (browsers request video in chunks,
-  // not all at once) and mirrors Drive's response status/headers back.
-  if (mode === "video") {
-    try {
-      const token = await getAccessToken();
-      const range = req.headers.range;
-      const driveRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`,
-        { headers: { Authorization: `Bearer ${token}`, ...(range ? { Range: range } : {}) } }
-      );
-      if (!driveRes.ok) {
-        return res.status(driveRes.status === 404 ? 404 : 502).json({ error: `Could not fetch video (${driveRes.status})` });
-      }
-      if (!driveRes.body) {
-        return res.status(502).json({ error: "Drive returned no video body" });
-      }
-
-      res.status(driveRes.status); // 200 (full) or 206 (partial, when Range was honoured)
-      ["content-type", "content-length", "content-range"].forEach((h) => {
-        const v = driveRes.headers.get(h);
-        if (v) res.setHeader(h, v);
-      });
-      res.setHeader("Accept-Ranges", "bytes");
-      res.setHeader("Cache-Control", "public, max-age=3600");
-
-      await new Promise((resolve, reject) => {
-        const stream = Readable.fromWeb(driveRes.body);
-        stream.pipe(res);
-        stream.on("error", reject);
-        res.on("finish", resolve);
-        res.on("close", resolve);
-      });
-      return;
-    } catch (err) {
-      console.error("[drive-preview] video error:", err.message);
-      if (!res.headersSent) return res.status(err.statusCode || 502).json({ error: err.message });
-      return res.end();
-    }
-  }
-
   // ── mode=meta (default) — resolve type + (for folders) list contents ───────
   try {
     const token = await getAccessToken();
@@ -321,20 +259,6 @@ export default async function handler(req, res) {
           height: f.imageMediaMetadata?.height || null,
           gridThumb: resizeThumbnailLink(f.thumbnailLink, 1000),
         })),
-      });
-    }
-
-    if ((meta.mimeType || "").startsWith("video/")) {
-      res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=300");
-      return res.status(200).json({
-        type: "video",
-        id,
-        name: meta.name,
-        mimeType: meta.mimeType,
-        durationMs: meta.videoMediaMetadata?.durationMillis ? Number(meta.videoMediaMetadata.durationMillis) : null,
-        width: meta.videoMediaMetadata?.width || null,
-        height: meta.videoMediaMetadata?.height || null,
-        poster: resizeThumbnailLink(meta.thumbnailLink, 1600),
       });
     }
 
