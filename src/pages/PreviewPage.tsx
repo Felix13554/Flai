@@ -145,7 +145,7 @@ const PreviewPage: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col bg-neutral-950">
         <NavBar />
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center pt-20">
           <Loader2 className="animate-spin text-neutral-500" size={32} />
         </div>
         <Suspense fallback={null}><Footer /></Suspense>
@@ -157,7 +157,7 @@ const PreviewPage: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col bg-neutral-950">
         <NavBar />
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-20">
           <AlertCircle className="text-red-400 mb-4" size={40} />
           <p className="text-neutral-300 max-w-sm">
             <EditableContent contentKey="preview-page-error" fallback={error || 'Preview ikke fundet'} />
