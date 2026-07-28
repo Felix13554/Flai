@@ -62,6 +62,7 @@ type MetaResult =
 // already used elsewhere on this page (loading / error states) so the
 // video lines up with everything else instead of running underneath it.
 const NAVBAR_OFFSET = 80;
+const BOTTOM_GAP = 5;
 const VIDEO_ASPECT = 16 / 9;
 
 const PreviewPage: React.FC = () => {
@@ -82,7 +83,7 @@ const PreviewPage: React.FC = () => {
   const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 0, height: 0 };
     const availableWidth = window.innerWidth;
-    const availableHeight = window.innerHeight - NAVBAR_OFFSET;
+    const availableHeight = window.innerHeight - NAVBAR_OFFSET - BOTTOM_GAP;
     let width = availableWidth;
     let height = width / VIDEO_ASPECT;
     if (height > availableHeight) {
@@ -97,7 +98,7 @@ const PreviewPage: React.FC = () => {
 
     const computeSize = () => {
       const availableWidth = videoWrapRef.current?.clientWidth ?? window.innerWidth;
-      const availableHeight = window.innerHeight - NAVBAR_OFFSET;
+      const availableHeight = window.innerHeight - NAVBAR_OFFSET - BOTTOM_GAP;
 
       let width = availableWidth;
       let height = width / VIDEO_ASPECT;
@@ -231,14 +232,14 @@ const PreviewPage: React.FC = () => {
         <div
           ref={videoWrapRef}
           className="w-full bg-black flex items-center justify-center overflow-hidden"
-          style={{ paddingTop: NAVBAR_OFFSET, height: '100vh' }}
+          style={{ paddingTop: NAVBAR_OFFSET, paddingBottom: BOTTOM_GAP, height: '100vh' }}
         >
           <div
             style={{
               width: videoSize.width || '100%',
               height: videoSize.height || undefined,
               maxWidth: '100%',
-              maxHeight: `calc(100vh - ${NAVBAR_OFFSET}px)`,
+              maxHeight: `calc(100vh - ${NAVBAR_OFFSET + BOTTOM_GAP}px)`,
             }}
           >
             <iframe
