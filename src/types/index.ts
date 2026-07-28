@@ -181,7 +181,8 @@ export interface DonationLink {
 export interface PreviewLink {
   id: string;
   type: 'video' | 'photos';
-  drive_id: string;
+  drive_id: string | null;
+  youtube_id: string | null;
   is_folder: boolean;
   title: string;
   is_active: boolean;
