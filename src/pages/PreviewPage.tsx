@@ -14,9 +14,13 @@
  * mobile-only fix next, but that traded the problem for ongoing Flai
  * bandwidth cost. YouTube's embed is the industry-standard solution for
  * exactly this (robust across desktop, mobile, and in-app browsers) and
- * needs no backend involvement at all — it's a plain `aspect-video` iframe,
- * no per-video dimension lookup or manual letterboxing required, since
- * YouTube's player already letterboxes/pillarboxes itself correctly.
+ * needs no backend involvement at all — it's a plain iframe.
+ *
+ * The video is sized dynamically (in JS, not pure CSS) so it always fits
+ * the viewport that's actually left over below the fixed NavBar: it scales
+ * to the available width, unless that would make it taller than the
+ * available height, in which case it scales to the available height
+ * instead — classic "contain" behavior, recalculated on every resize.
  *
  * PHOTOS: unchanged — a single image, or a full folder gallery, still via
  * Google Drive. The grid uses Google's `thumbnailLink` CDN (fast, zero cost
@@ -24,13 +28,12 @@
  * /api/drive-preview?mode=image, which is long-cached at Vercel's edge
  * after the first request.
  *
- * The video embed runs full viewport width (no max-width cap). The page
- * also carries the site's normal NavBar + Footer, rather than being fully
- * standalone chrome-less like /panorama.
+ * The page also carries the site's normal NavBar + Footer, rather than
+ * being fully standalone chrome-less like /panorama.
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
+import React, { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
@@ -55,6 +58,12 @@ type MetaResult =
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
 
+// Height (px) reserved for the fixed NavBar. Matches the `pt-20` offset
+// already used elsewhere on this page (loading / error states) so the
+// video lines up with everything else instead of running underneath it.
+const NAVBAR_OFFSET = 80;
+const VIDEO_ASPECT = 16 / 9;
+
 const PreviewPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
 
@@ -63,6 +72,50 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // ── Dynamic video sizing ────────────────────────────────────────────
+  // Scales the player to fill the available width, unless that would push
+  // it taller than the available viewport height — in which case it scales
+  // to the available height instead. Recomputed on every window resize so
+  // dragging the browser window bigger/smaller keeps it perfectly fitted.
+  const videoWrapRef = useRef<HTMLDivElement>(null);
+  const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
+    if (typeof window === 'undefined') return { width: 0, height: 0 };
+    const availableWidth = window.innerWidth;
+    const availableHeight = window.innerHeight - NAVBAR_OFFSET;
+    let width = availableWidth;
+    let height = width / VIDEO_ASPECT;
+    if (height > availableHeight) {
+      height = availableHeight;
+      width = height * VIDEO_ASPECT;
+    }
+    return { width, height };
+  });
+
+  useEffect(() => {
+    if (link?.type !== 'video' || !link.youtube_id) return;
+
+    const computeSize = () => {
+      const availableWidth = videoWrapRef.current?.clientWidth ?? window.innerWidth;
+      const availableHeight = window.innerHeight - NAVBAR_OFFSET;
+
+      let width = availableWidth;
+      let height = width / VIDEO_ASPECT;
+
+      // Width-first fit overflows the available height — switch to
+      // height-first fit instead.
+      if (height > availableHeight) {
+        height = availableHeight;
+        width = height * VIDEO_ASPECT;
+      }
+
+      setVideoSize({ width, height });
+    };
+
+    computeSize();
+    window.addEventListener('resize', computeSize);
+    return () => window.removeEventListener('resize', computeSize);
+  }, [link?.type, link?.youtube_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,8 +228,19 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && link.youtube_id && (
-        <div className="w-full bg-black">
-          <div className="w-full aspect-video">
+        <div
+          ref={videoWrapRef}
+          className="w-full bg-black flex items-center justify-center overflow-hidden"
+          style={{ paddingTop: NAVBAR_OFFSET, height: '100vh' }}
+        >
+          <div
+            style={{
+              width: videoSize.width || '100%',
+              height: videoSize.height || undefined,
+              maxWidth: '100%',
+              maxHeight: `calc(100vh - ${NAVBAR_OFFSET}px)`,
+            }}
+          >
             <iframe
               src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
               className="w-full h-full border-0"
@@ -189,14 +253,14 @@ const PreviewPage: React.FC = () => {
       )}
 
       {link.type === 'video' && !link.youtube_id && (
-        <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center py-20">
+        <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center py-20 pt-20">
           Videoen kunne ikke indlæses. Kontakt afsenderen af linket.
         </div>
       )}
 
       {/* ── Photos ────────────────────────────────────────────────────────── */}
       {link.type === 'photos' && (
-        <div className="flex-1 p-4 sm:p-6">
+        <div className="flex-1 p-4 sm:p-6 pt-20">
           {items.length === 0 ? (
             <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
               Ingen billeder fundet.
