@@ -23,17 +23,24 @@
  * to Flai) and the lightbox loads a larger version through
  * /api/drive-preview?mode=image, which is long-cached at Vercel's edge
  * after the first request.
+ *
+ * The video embed runs full viewport width (no max-width cap). The page
+ * also carries the site's normal NavBar + Footer, rather than being fully
+ * standalone chrome-less like /panorama.
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
+import NavBar from '../components/NavBar';
 import {
   Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
+
+const Footer = lazy(() => import('../components/Footer'));
 
 interface FolderItem {
   id: string;
@@ -136,19 +143,27 @@ const PreviewPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950">
-        <Loader2 className="animate-spin text-neutral-500" size={32} />
+      <div className="min-h-screen flex flex-col bg-neutral-950">
+        <NavBar />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="animate-spin text-neutral-500" size={32} />
+        </div>
+        <Suspense fallback={null}><Footer /></Suspense>
       </div>
     );
   }
 
   if (error || !link) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-950 text-center px-6">
-        <AlertCircle className="text-red-400 mb-4" size={40} />
-        <p className="text-neutral-300 max-w-sm">
-          <EditableContent contentKey="preview-page-error" fallback={error || 'Preview ikke fundet'} />
-        </p>
+      <div className="min-h-screen flex flex-col bg-neutral-950">
+        <NavBar />
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+          <AlertCircle className="text-red-400 mb-4" size={40} />
+          <p className="text-neutral-300 max-w-sm">
+            <EditableContent contentKey="preview-page-error" fallback={error || 'Preview ikke fundet'} />
+          </p>
+        </div>
+        <Suspense fallback={null}><Footer /></Suspense>
       </div>
     );
   }
@@ -156,11 +171,12 @@ const PreviewPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col">
       <SEO title={link.title} noIndex />
+      <NavBar />
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && link.youtube_id && (
-        <div className="flex-1 flex items-center justify-center bg-black p-0 sm:p-6">
-          <div className="w-full sm:max-w-5xl aspect-video">
+        <div className="w-full bg-black">
+          <div className="w-full aspect-video">
             <iframe
               src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
               className="w-full h-full border-0"
@@ -173,7 +189,7 @@ const PreviewPage: React.FC = () => {
       )}
 
       {link.type === 'video' && !link.youtube_id && (
-        <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center">
+        <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center py-20">
           Videoen kunne ikke indlæses. Kontakt afsenderen af linket.
         </div>
       )}
@@ -263,6 +279,8 @@ const PreviewPage: React.FC = () => {
           )}
         </div>
       )}
+
+      <Suspense fallback={null}><Footer /></Suspense>
     </div>
   );
 };
