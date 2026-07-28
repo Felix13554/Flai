@@ -41,8 +41,28 @@ import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import {
-  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
+  Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images, ExternalLink,
 } from 'lucide-react';
+
+// In-app browsers (Zoho Mail, Gmail, Facebook, Instagram, LinkedIn, etc.) run
+// on iOS's WKWebView with `allowsInlineMediaPlayback` OFF by default — a
+// setting only the *host app* controls, not any web page. With it off, iOS
+// forces playing video into its own native fullscreen controller regardless
+// of what Google's iframe does internally, which visually collides with
+// Google's own custom controls (scrubber/mute/expand). This can't be fixed
+// from our HTML/CSS or Google's — the only real mitigation is pointing
+// people at their actual browser. Real Safari/Chrome (with allowsInline on)
+// don't have this problem, which is why it looks fine there.
+function isLikelyInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  // Real mobile Safari always includes a "Safari/" token; most iOS in-app
+  // WebViews omit it even though they still report "Mobile/...".
+  if (isIOS && /Mobile\//.test(ua) && !/Safari\//.test(ua)) return true;
+  if (/FBAN|FBAV|Instagram|LinkedInApp|Line\/|Twitter|GSA\/|ZohoMail/i.test(ua)) return true;
+  return false;
+}
 
 interface FolderItem {
   id: string;
@@ -66,6 +86,11 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [inAppBrowser, setInAppBrowser] = useState(false);
+
+  useEffect(() => {
+    setInAppBrowser(isLikelyInAppBrowser());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,10 +193,25 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <div
-          className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
-          style={{ containerType: 'size' }}
-        >
+        <>
+          {inAppBrowser && (
+            <a
+              href={typeof window !== 'undefined' ? window.location.href : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-200 text-sm py-2.5 px-4 text-center"
+            >
+              <ExternalLink size={15} className="shrink-0" />
+              <EditableContent
+                contentKey="preview-page-in-app-browser-warning"
+                fallback="Videokontroller virker upålideligt her — tryk for at åbne i Safari/Chrome"
+              />
+            </a>
+          )}
+          <div
+            className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
+            style={{ containerType: 'size' }}
+          >
           {/* The iframe itself doesn't respect object-fit (browsers explicitly
               don't apply it to <iframe>), so instead this box is sized with
               CSS container-query units (cqw/cqh) to "contain" the real video
@@ -200,7 +240,8 @@ const PreviewPage: React.FC = () => {
               title={link.title}
             />
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {link.type === 'video' && meta?.type !== 'video' && (
