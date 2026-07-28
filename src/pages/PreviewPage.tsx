@@ -58,11 +58,11 @@ type MetaResult =
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
 
-// Height (px) reserved for the fixed NavBar. Matches the `pt-20` offset
-// already used elsewhere on this page (loading / error states) so the
-// video lines up with everything else instead of running underneath it.
-const NAVBAR_OFFSET = 80;
-const BOTTOM_GAP = 5;
+// Symmetric vertical breathing room (px) reserved above and below the
+// video: it clears the fixed NavBar on top (matches the `pt-20` used
+// elsewhere on this page) and leaves an equal-sized gap before the footer
+// on the bottom, so both gaps always match regardless of viewport size.
+const VERTICAL_OFFSET = 80;
 const VIDEO_ASPECT = 16 / 9;
 
 const PreviewPage: React.FC = () => {
@@ -83,7 +83,7 @@ const PreviewPage: React.FC = () => {
   const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 0, height: 0 };
     const availableWidth = window.innerWidth;
-    const availableHeight = window.innerHeight - NAVBAR_OFFSET - BOTTOM_GAP;
+    const availableHeight = window.innerHeight - VERTICAL_OFFSET * 2;
     let width = availableWidth;
     let height = width / VIDEO_ASPECT;
     if (height > availableHeight) {
@@ -98,7 +98,7 @@ const PreviewPage: React.FC = () => {
 
     const computeSize = () => {
       const availableWidth = videoWrapRef.current?.clientWidth ?? window.innerWidth;
-      const availableHeight = window.innerHeight - NAVBAR_OFFSET - BOTTOM_GAP;
+      const availableHeight = window.innerHeight - VERTICAL_OFFSET * 2;
 
       let width = availableWidth;
       let height = width / VIDEO_ASPECT;
@@ -197,7 +197,7 @@ const PreviewPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-neutral-950">
+      <div className="min-h-screen flex flex-col bg-neutral-900">
         <NavBar />
         <div className="flex-1 flex items-center justify-center pt-20">
           <Loader2 className="animate-spin text-neutral-500" size={32} />
@@ -209,7 +209,7 @@ const PreviewPage: React.FC = () => {
 
   if (error || !link) {
     return (
-      <div className="min-h-screen flex flex-col bg-neutral-950">
+      <div className="min-h-screen flex flex-col bg-neutral-900">
         <NavBar />
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-20">
           <AlertCircle className="text-red-400 mb-4" size={40} />
@@ -223,7 +223,7 @@ const PreviewPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col">
+    <div className="min-h-screen bg-neutral-900 flex flex-col">
       <SEO title={link.title} noIndex />
       <NavBar />
 
@@ -231,15 +231,15 @@ const PreviewPage: React.FC = () => {
       {link.type === 'video' && link.youtube_id && (
         <div
           ref={videoWrapRef}
-          className="w-full bg-black flex items-center justify-center overflow-hidden"
-          style={{ paddingTop: NAVBAR_OFFSET, paddingBottom: BOTTOM_GAP, height: '100vh' }}
+          className="w-full bg-neutral-900 flex items-center justify-center overflow-hidden"
+          style={{ paddingTop: VERTICAL_OFFSET, paddingBottom: VERTICAL_OFFSET, height: '100vh' }}
         >
           <div
             style={{
               width: videoSize.width || '100%',
               height: videoSize.height || undefined,
               maxWidth: '100%',
-              maxHeight: `calc(100vh - ${NAVBAR_OFFSET + BOTTOM_GAP}px)`,
+              maxHeight: `calc(100vh - ${VERTICAL_OFFSET * 2}px)`,
             }}
           >
             <iframe
