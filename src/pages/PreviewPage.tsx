@@ -35,7 +35,7 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
@@ -66,8 +66,6 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const videoContainerRef = useRef<HTMLDivElement | null>(null);
-  const [videoBoxSize, setVideoBoxSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,61 +112,13 @@ const PreviewPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [id]);
 
-  // Size the video box to the content's real aspect ratio, computed from the
-  // actual measured container space rather than left to CSS auto-sizing —
-  // aspect-ratio on a box with both width and height left auto is fragile
-  // depending on flex/grid stretch defaults, and can end up wrong specifically
-  // for landscape videos in a narrow/portrait viewport. Measuring guarantees
-  // correct "contain" behavior (letterboxed either direction) in every case.
-  useEffect(() => {
-    if (!(link?.type === 'video' && meta?.type === 'video')) return;
-    const container = videoContainerRef.current;
-    if (!container) return;
-
-    const ratio = meta.width && meta.height ? meta.width / meta.height : 16 / 9;
-    let lastWidth = 0;
-    let debounceTimer: number | undefined;
-
-    const computeAndSet = () => {
-      const { clientWidth, clientHeight } = container;
-      if (!clientWidth || !clientHeight) return;
-      const containerRatio = clientWidth / clientHeight;
-      const width = containerRatio > ratio ? clientHeight * ratio : clientWidth;
-      const height = containerRatio > ratio ? clientHeight : clientWidth / ratio;
-      setVideoBoxSize({ width, height });
-      lastWidth = clientWidth;
-    };
-
-    computeAndSet();
-
-    // Mobile-only bug fix: tapping the embedded Google player collapses the
-    // browser's address bar/toolbar, which changes the viewport height (and
-    // therefore this container's height) at the exact moment the tap lands.
-    // That resized the iframe out from under the user's finger, making
-    // Google's own controls feel broken/unresponsive — a purely mobile
-    // symptom, since desktop browser chrome never collapses on interaction.
-    // Fix: only ever re-measure on a genuine *width* change (real resize or
-    // orientation change) and ignore height-only fluctuations, debounced so
-    // a burst of resize events from the toolbar animation settles once.
-    const observer = new ResizeObserver(() => {
-      if (debounceTimer) window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => {
-        const { clientWidth } = container;
-        if (Math.abs(clientWidth - lastWidth) < 2) return; // height-only jitter — ignore
-        computeAndSet();
-      }, 150);
-    });
-    observer.observe(container);
-    return () => {
-      observer.disconnect();
-      if (debounceTimer) window.clearTimeout(debounceTimer);
-    };
-  }, [link?.type, meta]);
-
   const items: FolderItem[] =
     meta?.type === 'folder' ? meta.items
     : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: meta.width, height: meta.height, gridThumb: meta.gridThumb }]
     : [];
+
+  const ratio =
+    meta?.type === 'video' && meta.width && meta.height ? meta.width / meta.height : 16 / 9;
 
   // Request a lightbox image sized for the viewport at the device's actual pixel
   // density, so photos look sharp on retina/high-DPI screens instead of a fixed
@@ -218,18 +168,28 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {link.type === 'video' && meta?.type === 'video' && (
-        <div ref={videoContainerRef} className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+        <div
+          className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
+          style={{ containerType: 'size' }}
+        >
           {/* The iframe itself doesn't respect object-fit (browsers explicitly
-              don't apply it to <iframe>), so instead we measure the available
-              space and size THIS wrapper in JS to the video's real aspect
-              ratio, letterboxed with our own black bars. That leaves Google's
-              own poster/player nothing to crop — the box we hand it already
-              matches the content's real shape, landscape or portrait. Falls
-              back to 16:9 until measured, or if Drive didn't report the
-              video's dimensions. */}
+              don't apply it to <iframe>), so instead this box is sized with
+              CSS container-query units (cqw/cqh) to "contain" the real video
+              aspect ratio inside whatever space is actually available right
+              now, letterboxed with our own black bars. Being pure CSS, this
+              is recalculated by the browser every frame — there's no JS
+              measurement to go stale or freeze at a wrong size, which a
+              ResizeObserver-based approach is prone to on mobile (e.g. an
+              in-app browser's slide-in transition, or the address bar
+              collapsing on tap, could catch a wrong intermediate size and
+              never correct it). Falls back to 16:9 if Drive didn't report
+              the video's dimensions. */}
           <div
             className="relative"
-            style={videoBoxSize ? { width: videoBoxSize.width, height: videoBoxSize.height } : { width: '100%', height: '100%' }}
+            style={{
+              width: `min(100cqw, 100cqh * ${ratio})`,
+              height: `min(100cqh, 100cqw / ${ratio})`,
+            }}
           >
             <iframe
               src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
