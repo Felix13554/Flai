@@ -126,20 +126,43 @@ const PreviewPage: React.FC = () => {
     if (!container) return;
 
     const ratio = meta.width && meta.height ? meta.width / meta.height : 16 / 9;
+    let lastWidth = 0;
+    let debounceTimer: number | undefined;
 
-    const updateSize = () => {
+    const computeAndSet = () => {
       const { clientWidth, clientHeight } = container;
       if (!clientWidth || !clientHeight) return;
       const containerRatio = clientWidth / clientHeight;
       const width = containerRatio > ratio ? clientHeight * ratio : clientWidth;
       const height = containerRatio > ratio ? clientHeight : clientWidth / ratio;
       setVideoBoxSize({ width, height });
+      lastWidth = clientWidth;
     };
 
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
+    computeAndSet();
+
+    // Mobile-only bug fix: tapping the embedded Google player collapses the
+    // browser's address bar/toolbar, which changes the viewport height (and
+    // therefore this container's height) at the exact moment the tap lands.
+    // That resized the iframe out from under the user's finger, making
+    // Google's own controls feel broken/unresponsive — a purely mobile
+    // symptom, since desktop browser chrome never collapses on interaction.
+    // Fix: only ever re-measure on a genuine *width* change (real resize or
+    // orientation change) and ignore height-only fluctuations, debounced so
+    // a burst of resize events from the toolbar animation settles once.
+    const observer = new ResizeObserver(() => {
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        const { clientWidth } = container;
+        if (Math.abs(clientWidth - lastWidth) < 2) return; // height-only jitter — ignore
+        computeAndSet();
+      }, 150);
+    });
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+    };
   }, [link?.type, meta]);
 
   const items: FolderItem[] =
@@ -190,7 +213,7 @@ const PreviewPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col">
+    <div className="min-h-screen min-h-[100dvh] bg-neutral-950 flex flex-col">
       <SEO title={link.title} noIndex />
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
@@ -211,7 +234,8 @@ const PreviewPage: React.FC = () => {
             <iframe
               src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
               className="absolute inset-0 w-full h-full border-0"
-              allow="autoplay; fullscreen"
+              style={{ touchAction: 'manipulation' }}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
               title={link.title}
             />
