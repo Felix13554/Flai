@@ -65,6 +65,12 @@ function AppContent() {
           <Suspense fallback={null}><PreviewPage /></Suspense>
         } />
 
+        {/* 1. Put the redirect HERE so it catches the specific ID first */}
+        <Route 
+          path="/preview/3905659f-ba2e-4ade-89e9-993e32cb761c" 
+          element={<Navigate to="/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb" replace />} 
+        />
+
         {/* All other routes get the full site shell */}
         <Route path="*" element={<SiteShell />} />
       </Routes>
@@ -116,7 +122,6 @@ function SiteShell() {
           <Route path="/ratings" element={<RatingsPage />} />
           <Route path="/file/gdrive/:id" element={<DriveDownload />} />
 <Route path="/file/gdrive/1aGBpYj4Sv9oN8aVcw0Us0uocU-fpPTXn" element={<Navigate to="/file/gdrive/1vLSWbe2v8Lg-W4-Bw6igHR-TYnxlE3qG" replace />} />
-          <Route path="/preview/3905659f-ba2e-4ade-89e9-993e32cb761c" element={<Navigate to="/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb" replace />} />
           
 
           <Route path="/profile" element={
