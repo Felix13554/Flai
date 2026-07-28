@@ -55,8 +55,8 @@ function PreviewRedirectHandler() {
   
   // Map old preview IDs to their target destination
   const redirectMap = {
-    "3905659f-ba2e-4ade-89e9-993e32cb761c": "/preview/2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb",
-    "2b0cf0ad-59bc-4b26-b0de-fe82bbc27afb": "/preview/434448bc-fb67-4dc6-ac59-1b76b2b78153"
+    "3905659f-ba2e-4ade-89e9-993e32cb761c": "/preview/53bde0d2-3cbb-4425-b80a-443e24575257",
+    "fc960f17-5758-4f30-94dd-2a664e5e0bab": "/preview/434448bc-fb67-4dc6-ac59-1b76b2b78153"
   };
 
   if (redirectMap[id]) {
