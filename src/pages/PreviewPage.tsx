@@ -3,49 +3,30 @@
  *
  * Client-facing page for flai.dk/preview/[ID].
  *
- * VIDEO: on desktop, embeds Google Drive's own player (`/file/d/ID/preview`)
- * directly — one click, Google's own default play button, no custom overlay.
- * It streams adaptively straight from Google's CDN with native seeking, so
- * playback never touches Flai's server and has no file-size ceiling.
+ * VIDEO: embeds YouTube's own iframe player (`youtube.com/embed/ID`) against
+ * an unlisted video the admin uploaded by hand. This replaced an earlier
+ * design that embedded Google Drive's `/preview` iframe — that was
+ * unreliable-to-broken specifically on mobile, and outright broken inside
+ * in-app browsers (Zoho Mail, Gmail, Outlook, etc.): those wrap the page in
+ * a locked-down WebView that blocks the cross-origin storage Google's Drive
+ * player needed and often can't delegate fullscreen/autoplay permissions
+ * into a nested third-party iframe. A first-party proxy was tried as a
+ * mobile-only fix next, but that traded the problem for ongoing Flai
+ * bandwidth cost. YouTube's embed is the industry-standard solution for
+ * exactly this (robust across desktop, mobile, and in-app browsers) and
+ * needs no backend involvement at all — it's a plain `aspect-video` iframe,
+ * no per-video dimension lookup or manual letterboxing required, since
+ * YouTube's player already letterboxes/pillarboxes itself correctly.
  *
- * On MOBILE, that same iframe is unreliable-to-broken: in-app browsers
- * (Zoho Mail, Gmail, Outlook, etc.) wrap the page in a locked-down WebView
- * that blocks the cross-origin storage Google's player needs and often can't
- * delegate fullscreen/autoplay permissions into a nested third-party iframe
- * — symptom is the player's control bar rendering over a black, non-playing
- * canvas. There's no reliable code-level fix for a host WebView's own
- * restrictions, so mobile gets a first-party `<video>` element instead,
- * fed by api/drive-preview.js's `mode=video` Range-passthrough proxy. This
- * does cost Flai bandwidth (unlike the iframe), traded deliberately for
- * mobile actually working; desktop is untouched and still bandwidth-free.
- *
- * The iframe/video box is wrapped in a container that's measured and sized in JS (see the
- * ResizeObserver effect below) to match the video's real aspect ratio,
- * letterboxed with our own black bars, instead of stretched full-bleed.
- * `object-fit` has no effect on <iframe> elements (browsers explicitly don't
- * apply it there), so this is the only lever we have — but it works because
- * it leaves Google's own poster/player nothing extra to crop into: the box
- * we hand it already matches the content's real shape. Without this, Google's
- * own poster center-crops portrait/vertical videos to fill a landscape box,
- * which looks zoomed-in until played.
- *
- * Two things were deliberately tried and reverted here, worth knowing if this
- * ever needs revisiting:
- *   - A custom poster + play button layered on top of the iframe (another way
- *     to avoid Google's cropped poster) meant two clicks — ours, then
- *     Google's own button underneath. Reverted in favor of a single click.
- *   - Appending `?autoplay=1` to the iframe URL is an undocumented parameter
- *     that reliably produced a broken black-screen state in Safari. Removed
- *     for reliability.
- *
- * PHOTOS: a single image, or a full folder gallery. The grid uses Google's
- * `thumbnailLink` CDN (fast, zero cost to Flai) and the lightbox loads a
- * larger version through /api/drive-preview?mode=image, which is
- * long-cached at Vercel's edge after the first request.
+ * PHOTOS: unchanged — a single image, or a full folder gallery, still via
+ * Google Drive. The grid uses Google's `thumbnailLink` CDN (fast, zero cost
+ * to Flai) and the lightbox loads a larger version through
+ * /api/drive-preview?mode=image, which is long-cached at Vercel's edge
+ * after the first request.
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
@@ -63,7 +44,6 @@ interface FolderItem {
 }
 
 type MetaResult =
-  | { type: 'video'; id: string; name: string; mimeType: string | null; width: number | null; height: number | null; poster: string | null }
   | { type: 'image'; id: string; name: string; width: number | null; height: number | null; gridThumb: string | null }
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
@@ -76,14 +56,6 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const videoContainerRef = useRef<HTMLDivElement | null>(null);
-  const [videoBoxSize, setVideoBoxSize] = useState<{ width: number; height: number } | null>(null);
-
-  // Device-type check (not viewport width) — we want "is this actually a
-  // phone/in-app browser" rather than "is the desktop window narrow right
-  // now", since the Drive iframe's failure mode is tied to the mobile
-  // WebKit/in-app-WebView stack, not screen size.
-  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,11 +84,15 @@ const PreviewPage: React.FC = () => {
           .eq('id', id)
           .then(() => {});
 
-        const metaRes = await fetch(`/api/drive-preview?id=${encodeURIComponent(linkRow.drive_id)}&mode=meta`);
-        const metaJson = await metaRes.json();
-        if (!metaRes.ok) throw new Error(metaJson.error || 'Kunne ikke hente indhold fra Google Drive');
-        if (cancelled) return;
-        setMeta(metaJson as MetaResult);
+        // Video needs no backend lookup — it's just a YouTube ID we already
+        // have on the link row. Only photos go via the Drive-backed API.
+        if (linkRow.type === 'photos') {
+          const metaRes = await fetch(`/api/drive-preview?id=${encodeURIComponent(linkRow.drive_id)}&mode=meta`);
+          const metaJson = await metaRes.json();
+          if (!metaRes.ok) throw new Error(metaJson.error || 'Kunne ikke hente indhold fra Google Drive');
+          if (cancelled) return;
+          setMeta(metaJson as MetaResult);
+        }
       } catch (err) {
         console.error('Error loading preview:', err);
         const message = err instanceof Error ? err.message : 'Der opstod en fejl';
@@ -129,34 +105,6 @@ const PreviewPage: React.FC = () => {
     load();
     return () => { cancelled = true; };
   }, [id]);
-
-  // Size the video box to the content's real aspect ratio, computed from the
-  // actual measured container space rather than left to CSS auto-sizing —
-  // aspect-ratio on a box with both width and height left auto is fragile
-  // depending on flex/grid stretch defaults, and can end up wrong specifically
-  // for landscape videos in a narrow/portrait viewport. Measuring guarantees
-  // correct "contain" behavior (letterboxed either direction) in every case.
-  useEffect(() => {
-    if (!(link?.type === 'video' && meta?.type === 'video')) return;
-    const container = videoContainerRef.current;
-    if (!container) return;
-
-    const ratio = meta.width && meta.height ? meta.width / meta.height : 16 / 9;
-
-    const updateSize = () => {
-      const { clientWidth, clientHeight } = container;
-      if (!clientWidth || !clientHeight) return;
-      const containerRatio = clientWidth / clientHeight;
-      const width = containerRatio > ratio ? clientHeight * ratio : clientWidth;
-      const height = containerRatio > ratio ? clientHeight : clientWidth / ratio;
-      setVideoBoxSize({ width, height });
-    };
-
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [link?.type, meta]);
 
   const items: FolderItem[] =
     meta?.type === 'folder' ? meta.items
@@ -210,51 +158,21 @@ const PreviewPage: React.FC = () => {
       <SEO title={link.title} noIndex />
 
       {/* ── Video ─────────────────────────────────────────────────────────── */}
-      {link.type === 'video' && meta?.type === 'video' && (
-        <div ref={videoContainerRef} className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-          {/* The iframe itself doesn't respect object-fit (browsers explicitly
-              don't apply it to <iframe>), so instead we measure the available
-              space and size THIS wrapper in JS to the video's real aspect
-              ratio, letterboxed with our own black bars. That leaves Google's
-              own poster/player nothing to crop — the box we hand it already
-              matches the content's real shape, landscape or portrait. Falls
-              back to 16:9 until measured, or if Drive didn't report the
-              video's dimensions. */}
-          <div
-            className="relative"
-            style={videoBoxSize ? { width: videoBoxSize.width, height: videoBoxSize.height } : { width: '100%', height: '100%' }}
-          >
-            {isMobile ? (
-              // First-party <video>, fed by our own Range-passthrough proxy —
-              // sidesteps the mobile/in-app-browser iframe breakage entirely
-              // by never depending on Google's cross-origin player.
-              <video
-                key={link.drive_id}
-                className="absolute inset-0 w-full h-full"
-                controls
-                playsInline
-                preload="metadata"
-                poster={meta.poster || undefined}
-              >
-                <source
-                  src={`/api/drive-preview?id=${encodeURIComponent(link.drive_id)}&mode=video`}
-                  type={meta.mimeType || 'video/mp4'}
-                />
-              </video>
-            ) : (
-              <iframe
-                src={`https://drive.google.com/file/d/${link.drive_id}/preview`}
-                className="absolute inset-0 w-full h-full border-0"
-                allow="autoplay; fullscreen"
-                allowFullScreen
-                title={link.title}
-              />
-            )}
+      {link.type === 'video' && link.youtube_id && (
+        <div className="flex-1 flex items-center justify-center bg-black p-0 sm:p-6">
+          <div className="w-full sm:max-w-5xl aspect-video">
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
+              className="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              title={link.title}
+            />
           </div>
         </div>
       )}
 
-      {link.type === 'video' && meta?.type !== 'video' && (
+      {link.type === 'video' && !link.youtube_id && (
         <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center">
           Videoen kunne ikke indlæses. Kontakt afsenderen af linket.
         </div>
