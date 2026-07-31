@@ -103,8 +103,8 @@ const SEO: React.FC<SEOProps> = ({
     : DEFAULT_DESCRIPTION;
 
   const fullTitle = title
-    ? `Flai - ${title} - Dronefoto og video i Trekantsområdet - En ny verden`
-    : `Flai - Dronefoto og video i Trekantsområdet - En ny verden`;
+    ? `Flai - ${title} - Dronevideo og foto i Trekantsområdet - En ny verden`
+    : `Flai - Dronevideo og foto i Trekantsområdet - En ny verden`;
   // Use the explicit canonical prop when provided; otherwise derive from the
   // current pathname so every page gets its own correct canonical URL instead
   // of falling back to the homepage.
