@@ -49,6 +49,15 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
       style={isOverlay ? undefined : { backgroundColor: '#262626' }}
     >
       <style>{`
+        .client-logos-bar .clb-title {
+          text-align: center;
+          font-size: 13px;
+          font-weight: 500;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.55);
+          margin: 0 0 20px;
+        }
         .client-logos-bar .clb-row {
           display: flex;
           flex-wrap: nowrap;
@@ -84,11 +93,14 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
           .client-logos-bar .clb-logo-link { height: 44px; }
           .client-logos-bar .clb-row { gap: 36px; }
           .client-logos-bar.clb-overlay .clb-slot { min-height: ${confirmedEmpty ? '0px' : '44px'}; }
+          .client-logos-bar .clb-title { font-size: 12px; margin-bottom: 14px; }
         }
       `}</style>
       <div className={isOverlay ? `w-full max-w-screen-xl mx-auto px-6 transition-[padding] duration-300 ${confirmedEmpty ? 'pb-0' : 'pb-6 sm:pb-8'}` : 'w-full max-w-screen-xl mx-auto px-6 py-5 md:py-6'}>
         <div className={isOverlay ? 'clb-slot' : undefined}>
-          <div className="clb-row">
+          <div style={isOverlay ? { width: '100%' } : undefined}>
+            <p className="clb-title">I tidligere samarbejde med</p>
+            <div className="clb-row">
             {logos.map((logo) => (
               <a
                 key={logo.id}
@@ -101,6 +113,7 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
                 <img src={logo.logo_url} alt={logo.name} className="clb-logo-img" loading="lazy" />
               </a>
             ))}
+            </div>
           </div>
         </div>
       </div>
