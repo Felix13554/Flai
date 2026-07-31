@@ -14,7 +14,7 @@ interface SEOProps {
 
 const BASE_URL = 'https://flai.dk';
 const DEFAULT_OG_IMAGE = `${BASE_URL}/og-image.jpg`;
-const DEFAULT_DESCRIPTION = 'Flai - Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti. Book nemt og hurtigt på vores hjemmeside. Vi dækker Kolding, Vejle, Fredericia, Haderslev, Middelfart, Hedensted, Vejen, Vojens, Børkop, Strib, Bogense, Juelsminde, Taulov, Nørre Åby.';
+const DEFAULT_DESCRIPTION = 'Flai - Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti. Book nemt og hurtigt på vores hjemmeside. Vi dækker Kolding, Vejle, Fredericia, Haderslev, Middelfart, Hedensted, Vejen, Vojens, Børkop, Strib, Bogense, Juelsminde, Taulov, Nørre Åby.';
 
 // Maps each canonical path to its page subtitle content key and fallback text.
 // This ensures the SEO description always matches what's shown as the header
