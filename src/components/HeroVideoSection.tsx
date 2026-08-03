@@ -474,18 +474,6 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         )}
       </div>
 
-      {/* z=2 — gradient overlay */}
-      <div
-        aria-hidden="true"
-        style={{
-          position:      'absolute',
-          inset:         0,
-          zIndex:        2,
-          background:    'linear-gradient(to top, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)',
-          pointerEvents: 'none',
-        }}
-      />
-
       {/* z=3 — content */}
       <div className="relative w-full h-full" style={{ zIndex: 3 }}>
         {children}
