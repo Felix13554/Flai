@@ -883,7 +883,7 @@ export const DEPLOYED_HOME_SECTIONS = [
     "description": "Interactive Code Section",
     "image_url": null,
     "order_index": 0,
-    "is_active": true,
+    "is_active": false,
     "created_at": null,
     "updated_at": null,
     "section_type": "code",
