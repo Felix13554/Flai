@@ -315,14 +315,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProducts = useCallback(async () => {
     try {
       setLoadingMessage('Henter produkter...');
-const { data, error } = await supabase
-  .from('products')
-  .select('*');
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('array', { ascending: false });
       if (error) throw error;
       setProducts(data || []);
-      setIsProductsLoaded(true);
     } catch (err: any) {
       console.error('Error fetching products:', err);
+    } finally {
+      // Always unblock the UI, even on error, so the skeleton doesn't spin forever.
+      setIsProductsLoaded(true);
     }
   }, [setLoadingMessage]);
 
@@ -336,9 +339,10 @@ const { data, error } = await supabase
         .order('order_index');
       if (error) throw error;
       setHomeSections(data || []);
-      setIsHomeSectionsLoaded(true);
     } catch (err: any) {
       console.error('Error fetching home sections:', err);
+    } finally {
+      setIsHomeSectionsLoaded(true);
     }
   }, [setLoadingMessage]);
 
@@ -357,9 +361,11 @@ const { data, error } = await supabase
         .order('created_at', { ascending: false });
       if (error) throw error;
       setPortfolioImages(data || []);
-      setIsPortfolioLoaded(true);
     } catch (err: any) {
       console.error('Error fetching portfolio:', err);
+    } finally {
+      // Always unblock the UI, even on error, so the skeleton doesn't spin forever.
+      setIsPortfolioLoaded(true);
     }
   }, [setLoadingMessage]);
 
@@ -371,9 +377,10 @@ const { data, error } = await supabase
         .order('sort_order', { ascending: true });
       if (error) throw error;
       setClientLogos(data || []);
-      setIsClientLogosLoaded(true);
     } catch (err: any) {
       console.error('Error fetching client logos:', err);
+    } finally {
+      setIsClientLogosLoaded(true);
     }
   }, []);
 
@@ -413,12 +420,12 @@ const { data, error } = await supabase
         .order('created_at', { ascending: false });
       if (error) throw error;
       setBookings(data || []);
-      setIsBookingsLoaded(true);
       setBookingsError(null);
     } catch (err: any) {
       console.error('Error fetching bookings:', err);
       setBookingsError(err.message);
     } finally {
+      setIsBookingsLoaded(true);
       setBookingsLoading(false);
     }
   }, [user, isAdmin, setLoadingMessage]);
@@ -436,9 +443,10 @@ const { data, error } = await supabase
         .order('created_at', { ascending: false });
       if (error) throw error;
       setDiscountCodes(data || []);
-      setIsDiscountCodesLoaded(true);
     } catch (err: any) {
       console.error('Error fetching discount codes:', err);
+    } finally {
+      setIsDiscountCodesLoaded(true);
     }
   }, [isAdmin, setLoadingMessage]);
 
@@ -455,9 +463,10 @@ const { data, error } = await supabase
         .order('sent_at', { ascending: false });
       if (error) throw error;
       setNewsletters(data || []);
-      setIsNewslettersLoaded(true);
     } catch (err: any) {
       console.error('Error fetching newsletters:', err);
+    } finally {
+      setIsNewslettersLoaded(true);
     }
   }, [isAdmin, setLoadingMessage]);
 
@@ -473,9 +482,10 @@ const { data, error } = await supabase
         .order('created_at', { ascending: false });
       if (error) throw error;
       setNewsletterSubscribers(data || []);
-      setIsNewsletterSubscribersLoaded(true);
     } catch (err: any) {
       console.error('Error fetching newsletter subscribers:', err);
+    } finally {
+      setIsNewsletterSubscribersLoaded(true);
     }
   }, [isAdmin]);
 
@@ -491,9 +501,10 @@ const { data, error } = await supabase
         .order('created_at', { ascending: false });
       if (error) throw error;
       setNewsletterTemplates(data || []);
-      setIsNewsletterTemplatesLoaded(true);
     } catch (err: any) {
       console.error('Error fetching newsletter templates:', err);
+    } finally {
+      setIsNewsletterTemplatesLoaded(true);
     }
   }, [isAdmin]);
 
@@ -505,9 +516,10 @@ const { data, error } = await supabase
         .order('name');
       if (error) throw error;
       setAddressZones(data || []);
-      setIsAddressZonesLoaded(true);
     } catch (err: any) {
       console.error('Error fetching address zones:', err);
+    } finally {
+      setIsAddressZonesLoaded(true);
     }
   }, []);
 
