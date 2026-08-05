@@ -21,114 +21,6 @@ interface GoogleLoginButtonProps {
   className?: string;
 }
 
-// Detect mobile devices — they don't support the popup OAuth flow reliably
-const isMobile = () =>
-  /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(
-    typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  );
-
-// ── PKCE verifier cookie helpers ──────────────────────────────────────────────
-// The PKCE code_verifier is written to localStorage by Supabase during
-// signInWithOAuth. In the popup flow the callback runs in a *different*
-// window, so it cannot read the parent's localStorage. Copying the verifier
-// into a same-site cookie (readable by all windows on the same origin) fixes
-// the "PKCE code verifier not found" error.
-
-const VERIFIER_COOKIE = 'sb-pkce-verifier';
-
-/**
- * After Supabase writes the verifier to localStorage, find it and mirror it
- * into a session cookie so the callback window can read it.
- */
-const copyVerifierToCookie = () => {
-  // Supabase stores the verifier under a key like:
-  //   sb-<project-ref>-auth-code-verifier   (older SDKs)
-  // or inside the JSON blob at:
-  //   sb-<project-ref>-auth-token-code-verifier  (newer SDKs)
-  // We scan all localStorage keys to be SDK-version agnostic.
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key.includes('code-verifier') || key.includes('code_verifier')) {
-      const value = localStorage.getItem(key);
-      if (value) {
-        // SameSite=Lax is sufficient — the callback is same-origin.
-        document.cookie = `${VERIFIER_COOKIE}=${encodeURIComponent(value)}; path=/; SameSite=Lax`;
-        return;
-      }
-    }
-  }
-};
-
-/**
- * Read the verifier cookie (called from the callback window / page).
- * Returns null if not found.
- */
-export const readVerifierFromCookie = (): string | null => {
-  const match = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith(`${VERIFIER_COOKIE}=`));
-  return match ? decodeURIComponent(match.split('=')[1]) : null;
-};
-
-/**
- * Delete the verifier cookie once it has been consumed.
- */
-export const clearVerifierCookie = () => {
-  document.cookie = `${VERIFIER_COOKIE}=; path=/; max-age=0`;
-};
-
-/**
- * Restore the verifier from the cookie back into localStorage so Supabase's
- * exchangeCodeForSession can find it. Call this at the TOP of your
- * /auth/callback page/component, before calling exchangeCodeForSession.
- *
- * Usage in your AuthCallback component:
- *
- *   import { restoreVerifierFromCookie } from '../components/GoogleLoginButton';
- *
- *   // at the very start of the callback handler:
- *   restoreVerifierFromCookie();
- *   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
- */
-export const restoreVerifierFromCookie = () => {
-  const verifier = readVerifierFromCookie();
-  if (!verifier) return;
-
-  // Mirror into every plausible key pattern Supabase might look for.
-  // The SDK resolves the storage key from the project URL, so we match
-  // whatever key is already present in localStorage (or write both patterns).
-  let wrote = false;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key.includes('code-verifier') || key.includes('code_verifier')) {
-      localStorage.setItem(key, verifier);
-      wrote = true;
-    }
-  }
-
-  // If localStorage was empty (fresh popup callback window), derive the key
-  // from the Supabase URL env var — works for CRA / Vite / Next public envs.
-  if (!wrote) {
-    const supabaseUrl =
-      (typeof process !== 'undefined' && (process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)) ||
-      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) ||
-      '';
-    if (supabaseUrl) {
-      try {
-        const ref = new URL(supabaseUrl).hostname.split('.')[0];
-        localStorage.setItem(`sb-${ref}-auth-code-verifier`, verifier);
-      } catch {
-        // Best-effort — exchangeCodeForSession will surface a clear error if
-        // the key still can't be found.
-      }
-    }
-  }
-
-  clearVerifierCookie();
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({
@@ -164,8 +56,8 @@ const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({
     }
   };
 
-  // ── Mobile: full-page redirect flow ────────────────────────────────────────
-  const handleRedirectFlow = async () => {
+  // ── Full-page redirect flow (used on all devices) ──────────────────────────
+  const handleGoogleLogin = async () => {
     try {
       setLoading(true);
       persistState();
@@ -184,10 +76,10 @@ const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({
 
       if (error) {
         if (isPKCEError(error)) {
-          console.warn('[Google Login Redirect] PKCE error, cleaning storage and reloading');
+          console.warn('[Google Login] PKCE error, cleaning storage and reloading');
           safeCleanupAuthStorage('google-redirect-pkce-error');
           toast.error('Autentifikationsfejl. Siden genindlæses...');
-          
+
           // Reload page to get fresh state
           setTimeout(() => window.location.reload(), 1500);
         } else {
@@ -201,160 +93,6 @@ const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({
       setLoading(false);
     }
   };
-
-  // ── Desktop: popup flow ─────────────────────────────────────────────────────
-  const handlePopupFlow = async () => {
-    try {
-      setLoading(true);
-
-      const width = 500;
-      const height = 620;
-      const left = window.screenX + Math.round((window.outerWidth - width) / 2);
-      const top  = window.screenY + Math.round((window.outerHeight - height) / 2);
-
-      const popup = window.open(
-        'about:blank',
-        'google-oauth',
-        `width=${width},height=${height},left=${left},top=${top},` +
-          `toolbar=no,menubar=no,scrollbars=yes,resizable=yes,status=no`
-      );
-
-      // Popup blocked → fall back to redirect flow
-      if (!popup) return handleRedirectFlow();
-
-      popup.document.write(`
-        <html><head><title>Logger ind…</title>
-        <style>
-          body { margin:0; display:flex; align-items:center; justify-content:center;
-                 height:100vh; background:#171717; font-family:sans-serif; }
-          p { color:#9ca3af; font-size:14px; }
-        </style></head>
-        <body><p>Logger ind med Google…</p></body></html>
-      `);
-
-      persistState();
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          skipBrowserRedirect: true,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'select_account',
-          },
-        },
-      });
-
-      if (error || !data?.url) {
-        popup.close();
-        
-        if (error && isPKCEError(error)) {
-          console.warn('[Google Login Popup] PKCE error, cleaning storage');
-          safeCleanupAuthStorage('google-popup-pkce-error');
-          toast.error('Autentifikationsfejl. Prøv igen om et øjeblik.');
-          setLoading(false);
-          return;
-        }
-        
-        throw error ?? new Error('No OAuth URL returned');
-      }
-
-      // ⚡ Key fix: Supabase has now written the PKCE verifier to localStorage.
-      // Copy it to a cookie so the popup's callback window can restore it.
-      copyVerifierToCookie();
-
-      // Write a marker into the popup's sessionStorage so AuthCallback can
-      // detect it's running inside a popup. This is more reliable than
-      // checking window.opener, which COOP severs on many hosts.
-      try {
-        popup.sessionStorage.setItem('sb-oauth-popup-open', '1');
-      } catch {
-        // Cross-origin: the popup is on about:blank still and the write
-        // should succeed; if it throws for any reason we fall through
-        // gracefully — the poll-based fallback will still close the popup.
-      }
-
-      popup.location.href = data.url;
-
-      let settled = false;
-
-      const onSuccess = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        try { popup.close(); } catch { /* COOP may block */ }
-        setLoading(false);
-        toast.success('Velkommen! 👋');
-
-        if (redirectTo) {
-          try {
-            new URL(redirectTo);
-            window.location.href = redirectTo;
-          } catch {
-            window.location.pathname = redirectTo;
-          }
-        }
-      };
-
-      const onCancel = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        setLoading(false);
-        // Silent — user just closed the popup without completing login
-      };
-
-      const cleanup = () => {
-        window.removeEventListener('storage', onStorage);
-        clearInterval(pollInterval);
-      };
-
-      // Primary signal: Supabase writes sb-*-auth-token to localStorage
-      // on our origin when the session is established in AuthCallback.
-      const onStorage = (e: StorageEvent) => {
-        if (!e.key?.includes('-auth-token')) return;
-        if (!e.newValue) return; // key removed, not added
-        onSuccess();
-      };
-
-      window.addEventListener('storage', onStorage);
-
-      // Fallback poll: check session directly every 600ms.
-      const pollInterval = setInterval(async () => {
-        if (settled) return;
-
-        let popupClosed = false;
-        try { popupClosed = Boolean(popup.closed); } catch { /* COOP blocked */ }
-
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session) {
-          onSuccess();
-          return;
-        }
-
-        if (popupClosed) {
-          onCancel();
-        }
-      }, 600);
-
-    } catch (error: any) {
-      console.error('Error logging in with Google:', error);
-      
-      if (isPKCEError(error)) {
-        safeCleanupAuthStorage('google-popup-catch-pkce-error');
-        toast.error('Autentifikationsfejl. Prøv igen.');
-      } else {
-        toast.error('Kunne ikke logge ind med Google. Prøv venligst igen.');
-      }
-      
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = () =>
-    isMobile() ? handleRedirectFlow() : handlePopupFlow();
 
   // ── Compact variant ─────────────────────────────────────────────────────────
   if (compact) {
