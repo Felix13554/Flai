@@ -119,16 +119,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // NOTE: We intentionally do NOT handle postAuthRedirect here.
       //
-      // Desktop popup: GoogleLoginButton's storage-event listener detects the
-      // session, shows the toast, and navigates — all in the parent tab.
-      //
-      // Mobile redirect: AuthCallback sets showWelcomeToast in sessionStorage
-      // and calls window.location.replace(redirect) directly before this
-      // event even fires in the new page context.
-      //
-      // Handling it here as well caused double-navigation on desktop (the
-      // popup's SIGNED_IN fired in the parent tab too, racing with the
-      // storage listener) and swallowed the mobile toast timing.
+      // AuthCallback sets showWelcomeToast in sessionStorage and calls
+      // window.location.replace(redirect) directly before this event even
+      // fires in the new page context, so handling it again here would
+      // cause a double-navigation / toast race.
 
       if (event === 'SIGNED_OUT') {
         setIsAdmin(false);
