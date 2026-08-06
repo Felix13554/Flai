@@ -96,11 +96,11 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
 
   if (!hasExtras) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-12 items-start">
         <div className={isReversed ? 'md:order-2' : 'md:order-1'}>
-          <h2 className="text-3xl font-bold mb-6 text-white">{section.title}</h2>
+          <h2 className="text-3xl font-bold mb-2 md:mb-6 text-white">{section.title}</h2>
           <div
-            className={`mb-8 ${descriptionClasses}`}
+            className={`mb-4 md:mb-8 ${descriptionClasses}`}
             dangerouslySetInnerHTML={{ __html: section.description ?? '' }}
           />
         </div>
@@ -118,13 +118,13 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-12 items-start">
       <div className={isReversed ? 'md:order-2' : 'md:order-1'}>
-        <h2 className="text-3xl font-bold mb-6 text-white">{section.title}</h2>
+        <h2 className="text-3xl font-bold mb-2 md:mb-6 text-white">{section.title}</h2>
         {/* Mobile: text + extra images side-by-side */}
         <div className="flex gap-3 items-start md:hidden">
           <div
-            className={`flex-1 min-w-0 mb-8 ${descriptionClasses}`}
+            className={`flex-1 min-w-0 mb-4 ${descriptionClasses}`}
             dangerouslySetInnerHTML={{ __html: section.description ?? '' }}
           />
           <div
@@ -187,7 +187,7 @@ const HomeSectionCard: React.FC<HomeSectionCardProps> = ({ section, index, isPre
   }
 
   return (
-    <section className="bg-neutral-800 border-0 outline-none py-10 md:py-20">
+    <section className="bg-neutral-800 border-0 outline-none py-6 md:py-20">
       <div className="container">
         <HomeSectionCardInner section={section} index={index} />
       </div>
