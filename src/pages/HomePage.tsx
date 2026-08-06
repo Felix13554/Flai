@@ -1023,7 +1023,7 @@ const HomePage: React.FC = () => {
             <div className="text-xl mb-5 sm:mb-8 text-neutral-100 drop-shadow-lg text-center">
               <EditableContent
                 contentKey="hero-subtitle"
-                fallback="Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti."
+                fallback="Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti."
               />
             </div>
             <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full px-6 sm:px-0 sm:w-auto">

@@ -86,7 +86,7 @@ const Footer: React.FC = () => {
               contentKey="footer-description"
               as="p"
               className="text-white/90 mb-4"
-              fallback="Dronefoto og video i Trekantsområdet. 100% tilfredshedsgaranti."
+              fallback="Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti."
             />
             <div className="flex space-x-4">
 
