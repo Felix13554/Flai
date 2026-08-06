@@ -15,6 +15,7 @@
  */
 
 import React from 'react';
+import PanoramaViewer from './PanoramaViewer';
 
 export interface StandardSection {
   id: string;
@@ -47,6 +48,39 @@ export const descriptionClasses = `
   [&_div]:!font-sans [&_div]:!text-base
 `.trim();
 
+/**
+ * Renders a single media value stored on a home section.
+ * Values are stored with a prefix to indicate special media types:
+ *   "youtube:VIDEO_ID"   → YouTube embed
+ *   "panorama:https://…" → 360° panorama viewer
+ *   anything else        → plain <img>
+ */
+const MediaSlot: React.FC<{ url: string; alt: string; className: string }> = ({ url, alt, className }) => {
+  if (url.startsWith('youtube:')) {
+    const videoId = url.slice('youtube:'.length);
+    return (
+      <div className={`relative w-full aspect-video ${className}`}>
+        <iframe
+          className="absolute inset-0 w-full h-full rounded-lg"
+          src={`https://www.youtube.com/embed/${videoId}`}
+          title={alt}
+          loading="lazy"
+          frameBorder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
+
+  if (url.startsWith('panorama:')) {
+    const rawUrl = url.slice('panorama:'.length);
+    return <PanoramaViewer url={rawUrl} className={className} autoRotate={0.5} />;
+  }
+
+  return <img src={url} alt={alt} loading="lazy" className={className} />;
+};
+
 interface HomeSectionCardProps {
   section: StandardSection;
   /** 0-based position in the rendered list — controls which side the image appears */
@@ -72,10 +106,9 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
         </div>
         <div className={isReversed ? 'md:order-1' : 'md:order-2'}>
           {section.image_url && (
-            <img
-              src={section.image_url}
+            <MediaSlot
+              url={section.image_url}
               alt={section.title}
-              loading="lazy"
               className="rounded-lg shadow-xl w-full h-auto aspect-video object-cover"
             />
           )}
@@ -99,11 +132,10 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
             style={{ width: 'clamp(110px, 38%, 210px)' }}
           >
             {extras.map((url, i) => (
-              <img
+              <MediaSlot
                 key={i}
-                src={url}
+                url={url}
                 alt={`${section.title} – billede ${i + 2}`}
-                loading="lazy"
                 className="rounded-lg shadow-md object-cover w-full aspect-[4/3]"
               />
             ))}
@@ -120,11 +152,10 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
             style={{ maxWidth: extras.length === 1 ? '256px' : '100%' }}
           >
             {extras.map((url, i) => (
-              <img
+              <MediaSlot
                 key={i}
-                src={url}
+                url={url}
                 alt={`${section.title} – billede ${i + 2}`}
-                loading="lazy"
                 className="rounded-lg shadow-md object-cover w-full aspect-[4/3]"
               />
             ))}
@@ -133,10 +164,9 @@ const HomeSectionCardInner: React.FC<{ section: StandardSection; index: number }
       </div>
       <div className={isReversed ? 'md:order-1' : 'md:order-2'}>
         {section.image_url && (
-          <img
-            src={section.image_url}
+          <MediaSlot
+            url={section.image_url}
             alt={section.title}
-            loading="lazy"
             className="rounded-lg shadow-xl w-full h-auto aspect-video object-cover"
           />
         )}
