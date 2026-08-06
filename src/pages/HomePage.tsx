@@ -928,8 +928,8 @@ export const DEPLOYED_HOME_SECTIONS = [
   {
     "id": "8bdc2c06-1889-4176-99cc-73a4d626f545",
     "title": "Mød Felix",
-    "description": "Jeg hedder Felix, jeg er 13 år gammel, og ejeren af Flai og virksomhedens dronepilot. Selvom jeg er ung, tager jeg mine kunder seriøst, og jeg går til hver opgave med faglighed og engagement. Uanset om opgaven er en mindre optagelse eller en større produktion, er mit mål at give kunden en god oplevelse fra første kontakt til afleveret opgave.",
-    "image_url": "https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/home-sections/1776146104509-08e9fa71.webp",
+    "description": "<p class=\"font-claude-response-body break-words whitespace-normal\" dir=\"ltr\" style=\"caret-color: rgb(255, 255, 255); color: rgb(255, 255, 255);\">Jeg hedder Felix, jeg er 13 år gammel, og ejeren af Flai og virksomhedens dronepilot.</p><p class=\"font-claude-response-body break-words whitespace-normal\" dir=\"ltr\" style=\"caret-color: rgb(255, 255, 255); color: rgb(255, 255, 255);\">Selvom jeg er ung, tager jeg mine kunder seriøst, og jeg går til hver opgave med faglighed og engagement. Uanset om opgaven er en mindre optagelse eller en større produktion, er mit mål at give kunden en god oplevelse fra første kontakt til afleveret opgave.</p>",
+    "image_url": "https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/home-sections/Felix.webp",
     "order_index": 2,
     "is_active": true,
     "created_at": null,
@@ -941,7 +941,7 @@ export const DEPLOYED_HOME_SECTIONS = [
     "image_url_2": null,
     "image_url_3": null,
     "used_images": [
-      "https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/home-sections/1776146104509-08e9fa71.webp"
+      "https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/home-sections/Felix.webp"
     ],
     "visual_editor_images": null
   },
@@ -949,8 +949,8 @@ export const DEPLOYED_HOME_SECTIONS = [
     "id": "7ea821e3-ea0d-496d-baa4-9e0e8b69ebb9",
     "title": "Efterbehandling",
     "description": "<p class=\"font-claude-response-body break-words whitespace-normal\" dir=\"ltr\" style=\"caret-color: rgb(255, 255, 255); color: rgb(255, 255, 255);\"></p><p class=\"font-claude-response-body break-words whitespace-normal\" dir=\"ltr\" style=\"caret-color: rgb(255, 255, 255); color: rgb(255, 255, 255);\">Jeg lægger en ekstra indsats i hvert projekt – både under optagelserne, og bagefter, når materialet skal klippes sammen. Jeg går grundigt igennem alt optaget materiale og vælger de bedste klip ud. Farverne bliver tilpasset, så de fremstår naturlige.</p><p class=\"font-claude-response-body break-words whitespace-normal\" dir=\"ltr\" style=\"caret-color: rgb(255, 255, 255); color: rgb(255, 255, 255);\">Det er denne del af arbejdet, der gør forskellen på et almindeligt resultat og et gennemarbejdet produkt. Jeg tager mig den tid, der skal til, for at sikre, at det færdige resultat lever op til kundens forventninger.</p>",
-    "image_url": "youtube:kWcCYy_jOaE",
-    "order_index": 5,
+    "image_url": "youtube:ZtzQqmCoUDU",
+    "order_index": 3,
     "is_active": true,
     "created_at": null,
     "updated_at": null,
