@@ -48,8 +48,13 @@ const CANVAS_WIDTH = 160 // wide enough to sample small regions accurately, chea
 const ANALYSIS_INTERVAL_MS = 90 // ~11 samples/sec; see rationale above
 const SMOOTHING = 0.35 // exponential smoothing factor applied per analysis tick
 const MIN_DELTA_TO_UPDATE = 0.008 // ignore imperceptible intensity changes (skip a React re-render)
-const LUM_LOW = 0.32 // background luminance at/below this → intensity 0 (shadow already unnecessary)
+const LUM_LOW = 0.32 // background luminance at/below this → intensity floors at MIN_VISIBLE_INTENSITY
 const LUM_HIGH = 0.72 // background luminance at/above this → intensity 1 (max shadow)
+// Never let the shadow disappear entirely, even over already-dark footage —
+// a *little* separation is always present (this is what Red Bull's own
+// treatment does too: the shadow is always there, just much stronger over
+// bright shots). Also acts as a safety floor: see safeIntensity() below.
+const MIN_VISIBLE_INTENSITY = 0.22
 // Safe default used before any real sample exists (first paint, poster still showing,
 // or if canvas sampling is unavailable/blocked) — errs toward the stronger shadow.
 export const FALLBACK_INTENSITY = 0.8
@@ -57,9 +62,20 @@ export const FALLBACK_INTENSITY = 0.8
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
+// Guards against ever emitting an invalid CSS value (NaN/undefined slipping
+// through from a bad import or an unexpected sampling edge case). An
+// invalid value in a shorthand like `filter`/`text-shadow` makes the browser
+// silently drop the ENTIRE property — no console error, the shadow just
+// doesn't render. Every intensity value is funnelled through this before
+// it reaches a style builder.
+function safeIntensity(t: number): number {
+  if (typeof t !== 'number' || Number.isNaN(t)) return FALLBACK_INTENSITY
+  return Math.max(MIN_VISIBLE_INTENSITY, clamp(t, 0, 1))
+}
+
 // ── Style builders ──────────────────────────────────────────────────────────
 export function textShadowForIntensity(t: number): CSSProperties {
-  t = clamp(t, 0, 1)
+  t = safeIntensity(t)
   const a1 = lerp(0.35, 0.92, t)
   const a2 = lerp(0.18, 0.65, t)
   const a3 = lerp(0.08, 0.42, t)
@@ -80,7 +96,7 @@ export function textShadowForIntensity(t: number): CSSProperties {
 }
 
 export function logoShadowForIntensity(t: number): CSSProperties {
-  t = clamp(t, 0, 1)
+  t = safeIntensity(t)
   const blur = lerp(4, 11, t)
   const alpha = lerp(0.45, 0.85, t)
   const offsetY = lerp(2, 4, t)
@@ -91,7 +107,8 @@ export function logoShadowForIntensity(t: number): CSSProperties {
 }
 
 function luminanceToIntensity(lum: number): number {
-  return clamp((lum - LUM_LOW) / (LUM_HIGH - LUM_LOW), 0, 1)
+  const raw = clamp((lum - LUM_LOW) / (LUM_HIGH - LUM_LOW), 0, 1)
+  return MIN_VISIBLE_INTENSITY + (1 - MIN_VISIBLE_INTENSITY) * raw
 }
 
 // ── Registration bookkeeping ────────────────────────────────────────────────
@@ -227,7 +244,7 @@ function analyzeAndApply(engine: Engine, video: HTMLVideoElement, section: HTMLE
       engine.tainted = true
       return
     }
-    if (lum == null) continue
+    if (lum == null || Number.isNaN(lum)) continue
 
     const target = luminanceToIntensity(lum)
     const smoothed = reg.lastIntensity + (target - reg.lastIntensity) * SMOOTHING
