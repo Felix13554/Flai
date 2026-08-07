@@ -1,3 +1,4 @@
+
 import EditableContent from './EditableContent';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -62,7 +63,11 @@ const NavBar: React.FC = () => {
     };
   }, []);
 
-  const navbarClasses = `fixed top-0 left-0 right-0 z-50 transition-colors duration-300 py-3 bg-neutral-900 shadow-lg`;
+  const navbarClasses = `fixed top-0 left-0 right-0 z-50 transition-colors duration-300 py-3 ${
+    isScrolled || location.pathname !== '/' 
+      ? 'bg-neutral-900 shadow-lg' 
+      : 'bg-transparent'
+  }`;
 
   const linkClasses = `font-medium transition-colors duration-300 text-white hover:text-neutral-300`;
   
