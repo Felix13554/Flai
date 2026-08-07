@@ -80,7 +80,7 @@ const Footer: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           <div>
             <Link to="/" className="inline-block mb-4">
-              <img src={getContent('site-logo', "/Logo.webp")} alt="Flai.dk" width="120" height="40" className="h-10 w-auto" />
+              <img src={getContent('site-logo', "/Logo.webp", 'image')} alt="Flai.dk" width="120" height="40" className="h-10 w-auto" />
             </Link>
             <EditableContent
               contentKey="footer-description"
