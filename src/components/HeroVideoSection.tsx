@@ -45,6 +45,7 @@ import {
   cloudinaryMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
+import { HeroFrameContext, type HeroFrameContextValue } from '../contexts/HeroFrameContext'
 
 export interface HeroVideoSectionProps {
   className?: string
@@ -227,8 +228,19 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const frozenHeight = useFrozenViewportHeight(isMobile)
 
   const videoRef    = useRef<HTMLVideoElement>(null)
+  const sectionRef  = useRef<HTMLElement>(null)
   // Stable ref for current video src — avoids re-running setVideoRef on every render
   const videoSrcRef = useRef<string>('')
+
+  // Stable identity for the lifetime of this HeroVideoSection instance —
+  // used as the WeakMap key for the adaptive-contrast-shadow engine, and
+  // handed to descendants (logo, subtitle, client logos) via context so
+  // they can register themselves for brightness sampling without any of
+  // this component's internals leaking out.
+  const heroFrameContext = useMemo<HeroFrameContextValue>(
+    () => ({ videoRef, sectionRef }),
+    []
+  )
 
   const [videoReady,     setVideoReady]     = useState(false)
   const [publicId,       setPublicId]       = useState(() => getHeroVideo().public_id)
@@ -256,6 +268,13 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     el.setAttribute('playsinline',        '')
     el.setAttribute('webkit-playsinline', '')
     el.setAttribute('x-webkit-airplay',   'deny')
+    // Required BEFORE `src` is assigned so the video is fetched in CORS
+    // mode — without this, drawing frames to the adaptive-shadow engine's
+    // canvas throws a SecurityError ("tainted canvas") and getImageData
+    // becomes unusable. Cloudinary's delivery CDN sends
+    // Access-Control-Allow-Origin: * on these URLs, so this is a no-op for
+    // playback itself and only unlocks canvas readback.
+    el.crossOrigin = 'anonymous'
     el.muted  = true
     el.volume = 0
     el.src    = videoSrcRef.current
@@ -506,6 +525,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   return (
     <section
+      ref={sectionRef as React.RefObject<HTMLElement>}
       className={`relative w-full overflow-hidden flex flex-col ${!isMobile ? 'h-screen' : ''} ${className}`}
       style={{
         backgroundColor: '#111',
@@ -606,7 +626,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
       {/* z=3 — content */}
       <div className="relative w-full h-full" style={{ zIndex: 3 }}>
-        {children}
+        <HeroFrameContext.Provider value={heroFrameContext}>
+          {children}
+        </HeroFrameContext.Provider>
       </div>
     </section>
   )
