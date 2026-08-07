@@ -115,7 +115,14 @@ function luminanceToIntensity(lum: number): number {
 interface Registration {
   el: HTMLElement
   kind: ShadowKind
-  lastIntensity: number
+  // null until the first real canvas sample comes in. Distinguishing "no
+  // real sample yet" from "a real sample of exactly FALLBACK_INTENSITY"
+  // matters: the very first sample should SNAP to its target rather than
+  // being smoothed in from the synthetic fallback (see analyzeAndApply) —
+  // otherwise every newly-registered element (a client logo mounting, the
+  // hero logo on load, …) visibly eases down/up from the strong fallback
+  // shadow over the first several ticks, which reads as a brief "flash".
+  lastIntensity: number | null
   onUpdate: (style: CSSProperties) => void
 }
 
@@ -247,8 +254,14 @@ function analyzeAndApply(engine: Engine, video: HTMLVideoElement, section: HTMLE
     if (lum == null || Number.isNaN(lum)) continue
 
     const target = luminanceToIntensity(lum)
-    const smoothed = reg.lastIntensity + (target - reg.lastIntensity) * SMOOTHING
-    if (Math.abs(smoothed - reg.lastIntensity) > MIN_DELTA_TO_UPDATE) {
+    // First real sample for this element: snap straight to it. Smoothing
+    // from FALLBACK_INTENSITY (a synthetic "before we know anything" value,
+    // not a real reading) rather than from a genuine previous sample would
+    // just replay the fallback→real gap as a fake transition every time an
+    // element mounts.
+    const smoothed =
+      reg.lastIntensity == null ? target : reg.lastIntensity + (target - reg.lastIntensity) * SMOOTHING
+    if (reg.lastIntensity == null || Math.abs(smoothed - reg.lastIntensity) > MIN_DELTA_TO_UPDATE) {
       reg.lastIntensity = smoothed
       reg.onUpdate(reg.kind === 'text' ? textShadowForIntensity(smoothed) : logoShadowForIntensity(smoothed))
     }
@@ -269,7 +282,12 @@ function scheduleTick(
     if (!document.hidden && !engine.tainted) {
       const video = videoRef.current
       const section = sectionRef.current
-      if (video && section && !video.paused && video.readyState >= 2) {
+      // Skip the tick while the video is mid-seek. The <video> loops, and
+      // the seek back to time 0 on each loop briefly hands back stale/
+      // transitional frame data — sampling that as if it were a genuine
+      // frame is what produces the "one frame very dark, then corrects"
+      // clip: the engine reacts to a frame that was never really shown.
+      if (video && section && !video.paused && !video.seeking && video.readyState >= 2) {
         if (now - engine.lastAnalysisTime >= ANALYSIS_INTERVAL_MS) {
           engine.lastAnalysisTime = now
           analyzeAndApply(engine, video, section)
@@ -324,7 +342,7 @@ export function registerShadowTarget(
   onUpdate: (style: CSSProperties) => void
 ): () => void {
   const engine = getOrCreateEngine(context)
-  const reg: Registration = { el, kind, lastIntensity: FALLBACK_INTENSITY, onUpdate }
+  const reg: Registration = { el, kind, lastIntensity: null, onUpdate }
   engine.registrations.add(reg)
   ensureLoop(engine, context.videoRef, context.sectionRef)
 
