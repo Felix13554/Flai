@@ -113,16 +113,23 @@ const FILL_STYLE: React.CSSProperties = {
 // than what's actually visible once the browser chrome is showing, so the
 // bottom of the video + the client logos bar end up hidden behind it.
 //
-// `100dvh` (dynamic viewport height) tracks the REAL visible viewport and
-// shrinks/grows live as the browser shows/hides its UI — which is exactly
-// what we want, and it does so per-browser automatically (Safari's dynamic
-// toolbar, Chrome's collapsing address bar, etc. all report their own
-// current value). We only want this behaviour on mobile: on desktop there's
-// no collapsing browser chrome, and 100vh is the correct, stable choice.
+// We originally used `100dvh` (dynamic viewport height) to fix this, but
+// `dvh` is *live* — it recalculates continuously as the browser shows/hides
+// its UI, which in several mobile browsers happens WHILE SCROLLING (the
+// address bar collapses as you scroll down the page). That made the hero
+// section visibly grow/shrink mid-scroll, which is worse than the original
+// bug.
 //
-// dvh has been supported in all major mobile browsers since ~2023 (iOS
-// Safari 15.4+, Chrome Android 108+), so no additional fallback/JS
-// measurement is needed.
+// Fix: measure the viewport height ONCE on mount (and only re-measure on a
+// genuine viewport-size change, like a rotation — never in response to
+// scroll) and freeze the crop to that pixel value via inline style. This
+// gives us the "size correctly for whichever browser chrome is present"
+// behaviour without any live recalculation once the page has settled.
+//
+// `window.innerHeight` at mount time reflects whatever browser-chrome state
+// is showing at that moment (typically chrome visible, since the page just
+// loaded) — i.e. the SMALLEST/most conservative height, so nothing ever
+// ends up hidden behind the address bar/bottom nav, on any mobile browser.
 const MOBILE_BREAKPOINT_PX = 768 // matches Tailwind's `md` breakpoint
 
 function useIsMobileViewport() {
@@ -143,10 +150,81 @@ function useIsMobileViewport() {
   return isMobile
 }
 
+// Measures viewport height ONCE (on mount) and freezes it permanently for
+// that page load — it is never recalculated in response to `resize`, since
+// on mobile browsers `resize` fires both for genuine viewport changes AND
+// for the address-bar/bottom-nav collapsing while scrolling, and there is
+// no fully reliable way to tell those apart across all browsers. Listening
+// to `resize` at all (even with heuristics) was what caused the crop to
+// still visibly change while scrolling.
+//
+// The only case we deliberately re-measure for is an actual device
+// rotation, detected via the `screen.orientation` API (falls back to the
+// `orientationchange` event where that API isn't available) — a genuine
+// portrait↔landscape change, which is unambiguous and unrelated to scroll.
+function useFrozenViewportHeight(active: boolean) {
+  const [height, setHeight] = useState<number | null>(() => {
+    if (typeof window === 'undefined' || !active) return null
+    return window.innerHeight
+  })
+
+  useEffect(() => {
+    if (!active || typeof window === 'undefined') return
+
+    // Lock in the height for this mount. A short delay lets the browser
+    // settle its chrome to a stable state right after navigation/load
+    // before we take the permanent measurement.
+    const initialTimer = window.setTimeout(() => {
+      setHeight(window.innerHeight)
+    }, 50)
+
+    let lastOrientation =
+      typeof screen !== 'undefined' && screen.orientation
+        ? screen.orientation.type
+        : null
+
+    const remeasureAfterRotation = () => {
+      // Give the browser a moment to finish laying out the rotated page
+      // before reading the new height.
+      window.setTimeout(() => setHeight(window.innerHeight), 200)
+    }
+
+    const handleOrientationApi = () => {
+      const current = screen.orientation?.type ?? null
+      if (current !== lastOrientation) {
+        lastOrientation = current
+        remeasureAfterRotation()
+      }
+    }
+
+    // Prefer the unambiguous Screen Orientation API; fall back to the
+    // legacy event only where that API isn't supported. Never listen to
+    // plain `resize` — that's the event that fires during address-bar
+    // collapse/expand while scrolling.
+    if (typeof screen !== 'undefined' && screen.orientation) {
+      screen.orientation.addEventListener('change', handleOrientationApi)
+    } else {
+      window.addEventListener('orientationchange', remeasureAfterRotation)
+    }
+
+    return () => {
+      window.clearTimeout(initialTimer)
+      if (typeof screen !== 'undefined' && screen.orientation) {
+        screen.orientation.removeEventListener('change', handleOrientationApi)
+      } else {
+        window.removeEventListener('orientationchange', remeasureAfterRotation)
+      }
+    }
+  }, [active])
+
+  return height
+}
+
 const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children }) => {
   useEffect(() => { injectControlHideStyle() }, [])
 
   const isMobile = useIsMobileViewport()
+  const frozenHeight = useFrozenViewportHeight(isMobile)
 
   const videoRef    = useRef<HTMLVideoElement>(null)
   // Stable ref for current video src — avoids re-running setVideoRef on every render
@@ -431,12 +509,17 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       className={`relative w-full overflow-hidden flex flex-col ${!isMobile ? 'h-screen' : ''} ${className}`}
       style={{
         backgroundColor: '#111',
-        // Mobile: use the dynamic viewport height so the section always
-        // matches what's actually visible above the browser's address bar /
-        // bottom nav, on any mobile browser. Desktop keeps `h-screen` (100vh)
-        // via the class above, since there's no collapsing chrome to worry
-        // about there.
-        ...(isMobile ? { height: '100dvh' } : {}),
+        // Mobile: use a height measured ONCE on mount and frozen forever
+        // after, so the crop never changes again — not on scroll, not on
+        // address-bar collapse/expand, nothing. Before that JS measurement
+        // resolves (effectively instant, since it reads window.innerHeight
+        // synchronously in useState's initializer) this falls back to the
+        // static `100vh` — deliberately NOT `100dvh`, since dvh is itself
+        // the live-recalculating unit we're avoiding. Desktop keeps
+        // `h-screen` (100vh) via the class above.
+        ...(isMobile
+          ? { height: frozenHeight != null ? `${frozenHeight}px` : '100vh' }
+          : {}),
       }}
     >
       {/* z=0 — video layer */}
