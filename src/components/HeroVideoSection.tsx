@@ -106,8 +106,47 @@ const FILL_STYLE: React.CSSProperties = {
   userSelect:     'none',
 }
 
+// Mobile viewport-height fix
+// ─────────────────────────────────────────────────────────────────────────
+// On mobile browsers, `100vh` is the LARGEST possible viewport (as if the
+// address bar / bottom nav were hidden). That makes the hero section taller
+// than what's actually visible once the browser chrome is showing, so the
+// bottom of the video + the client logos bar end up hidden behind it.
+//
+// `100dvh` (dynamic viewport height) tracks the REAL visible viewport and
+// shrinks/grows live as the browser shows/hides its UI — which is exactly
+// what we want, and it does so per-browser automatically (Safari's dynamic
+// toolbar, Chrome's collapsing address bar, etc. all report their own
+// current value). We only want this behaviour on mobile: on desktop there's
+// no collapsing browser chrome, and 100vh is the correct, stable choice.
+//
+// dvh has been supported in all major mobile browsers since ~2023 (iOS
+// Safari 15.4+, Chrome Android 108+), so no additional fallback/JS
+// measurement is needed.
+const MOBILE_BREAKPOINT_PX = 768 // matches Tailwind's `md` breakpoint
+
+function useIsMobileViewport() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth < MOBILE_BREAKPOINT_PX
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`)
+    const handler = () => setIsMobile(mq.matches)
+    handler()
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  return isMobile
+}
+
 const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children }) => {
   useEffect(() => { injectControlHideStyle() }, [])
+
+  const isMobile = useIsMobileViewport()
 
   const videoRef    = useRef<HTMLVideoElement>(null)
   // Stable ref for current video src — avoids re-running setVideoRef on every render
@@ -389,8 +428,16 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   return (
     <section
-      className={`relative h-screen w-full overflow-hidden flex flex-col ${className}`}
-      style={{ backgroundColor: '#111' }}
+      className={`relative w-full overflow-hidden flex flex-col ${!isMobile ? 'h-screen' : ''} ${className}`}
+      style={{
+        backgroundColor: '#111',
+        // Mobile: use the dynamic viewport height so the section always
+        // matches what's actually visible above the browser's address bar /
+        // bottom nav, on any mobile browser. Desktop keeps `h-screen` (100vh)
+        // via the class above, since there's no collapsing chrome to worry
+        // about there.
+        ...(isMobile ? { height: '100dvh' } : {}),
+      }}
     >
       {/* z=0 — video layer */}
       {!skipVideo && (
