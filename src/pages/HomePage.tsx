@@ -1008,7 +1008,7 @@ const HomePage: React.FC = () => {
       <HeroVideoSection videoUrl={heroVideoUrl}>
         <div className="flex flex-col h-full w-full">
           <div className="flex-1" />
-          <div className="flex flex-col items-center pb-10 sm:pb-14">
+          <div className="flex flex-col items-center pb-6">
             <div className="mb-6 text-white drop-shadow-2xl">
               <div className="flex flex-col items-center">
                 <img
@@ -1020,7 +1020,7 @@ const HomePage: React.FC = () => {
                 />
               </div>
             </div>
-            <div className="text-xl mb-5 sm:mb-8 text-neutral-100 drop-shadow-lg text-center">
+            <div className="text-xl mb-6 text-neutral-100 drop-shadow-lg text-center">
               <EditableContent
                 contentKey="hero-subtitle"
                 fallback="Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti."
