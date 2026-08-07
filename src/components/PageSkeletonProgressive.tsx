@@ -51,7 +51,18 @@ const PageSkeleton = () => {
   const _posterBase    = `https://res.cloudinary.com/dq6jxbyrg/video/upload/c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/herovideo.jpg`
   const POSTER_URL     = _skeletonStamp !== '0' ? `${_posterBase}?v=${_skeletonStamp}` : _posterBase
   const HomeHeroSkeleton = () => (
-    <div className="relative h-screen w-full overflow-hidden flex flex-col" style={{ backgroundColor: '#111' }}>
+    <div
+      className="home-hero-skeleton relative w-full overflow-hidden flex flex-col"
+      style={{ backgroundColor: '#111' }}
+    >
+      {/* Height: 100vh (same static value HeroVideoSection uses for its own
+          first paint, before its JS measurement lands and freezes the
+          mobile crop). Since this skeleton is shown before any of that JS
+          has run, there is nothing yet to lock to — so it intentionally
+          matches HeroVideoSection's un-measured fallback rather than trying
+          to predict the frozen value. The two are visually identical at
+          first paint, so the Suspense swap doesn't jump. */}
+      <style>{`.home-hero-skeleton { height: 100vh; }`}</style>
       {/* Same poster as HeroVideoSection — seamless handoff on Suspense swap */}
       <img
         src={POSTER_URL}
@@ -83,18 +94,14 @@ const PageSkeleton = () => {
       {/* Spacer pushes content to bottom — mirrors flex-1 in HomePage */}
       <div className="flex-1" />
 
-      {/* Hero content placeholders — matches HomePage's pb-10 sm:pb-14 + items-center */}
-      <div className="relative z-10 flex flex-col items-center pb-10 sm:pb-14">
+      {/* Hero content placeholders — matches HomePage's pb-6 + items-center.
+          No button placeholders here: the hero buttons were removed and
+          moved down into the bottom CTA section (see CTASkeleton). */}
+      <div className="relative z-10 flex flex-col items-center pb-6">
         <div className="flex justify-center mb-6">
           <div className="h-16 w-48 rounded animate-pulse-slow" style={{ background: 'rgba(255,255,255,0.15)' }} />
         </div>
-        <div className="h-6 w-96 max-w-full mx-auto rounded animate-pulse-slow mb-5 sm:mb-8" style={{ background: 'rgba(255,255,255,0.2)' }} />
-        <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full px-6 sm:px-0 sm:w-auto">
-          {/* Matches btn-primary text-lg px-8 py-4 — ~56px tall */}
-          <div className="h-14 w-full sm:w-52 rounded-lg animate-pulse-slow" style={{ background: '#0F52BA' }} />
-          {/* Matches btn-secondary text-lg px-8 py-4 */}
-          <div className="h-14 w-full sm:w-52 rounded-lg animate-pulse-slow" style={{ background: '#262626', border: '1px solid #404040' }} />
-        </div>
+        <div className="h-6 w-96 max-w-full mx-auto rounded animate-pulse-slow mb-6" style={{ background: 'rgba(255,255,255,0.2)' }} />
       </div>
 
       {/* Reserved client-logos-bar slot — matches ClientLogosBar's overlay
