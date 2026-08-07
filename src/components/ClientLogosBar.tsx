@@ -158,6 +158,12 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
         .client-logos-bar .clb-viewport {
           overflow-x: ${shouldScrollFallback ? 'auto' : 'hidden'};
           scrollbar-width: none;
+          /* Room for the overlay logos' drop-shadow (max blur 11px + offsetY
+             4px, see logoShadowForIntensity) to fall off naturally instead
+             of being hard-cropped at the clipping edge. Padding lives
+             *inside* the overflow box, so it doesn't get clipped away —
+             only content that reaches past the padding does. */
+          padding-inline: ${isOverlay ? '20px' : '0'};
         }
         .client-logos-bar .clb-viewport::-webkit-scrollbar { display: none; }
         .client-logos-bar .clb-track {
@@ -209,6 +215,7 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
           .client-logos-bar .clb-logo-link { height: 44px; }
           .client-logos-bar .clb-group { gap: 36px; padding-inline-end: ${shouldAnimate ? '36px' : '0'}; }
           .client-logos-bar.clb-overlay .clb-slot { min-height: ${confirmedEmpty ? '0px' : '44px'}; }
+          .client-logos-bar .clb-viewport { padding-inline: ${isOverlay ? '14px' : '0'}; }
         }
       `}</style>
       <div className={isOverlay ? `w-full max-w-screen-xl mx-auto px-6 transition-[padding] duration-300 ${confirmedEmpty ? 'pb-0' : 'pb-6 sm:pb-8'}` : 'w-full max-w-screen-xl mx-auto px-6 py-5 md:py-6'}>
