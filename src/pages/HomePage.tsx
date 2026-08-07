@@ -12,6 +12,7 @@ import EditableContent from '../components/EditableContent';
 import HomeSectionCard from '../components/HomeSectionCard';
 import { useData } from '../contexts/DataContext';
 import { useIpCoverage } from '../hooks/useIpCoverage';
+import AdaptiveShadowBox from '../components/AdaptiveShadowBox';
 
 // Initialise the Supabase Realtime subscription that pushes hero-video
 // cache-bust events to ALL connected browsers/tabs whenever a new video is
@@ -1010,23 +1011,21 @@ const HomePage: React.FC = () => {
         <div className="flex flex-col h-full w-full">
           <div className="flex-1" />
           <div className="flex flex-col items-center pb-6">
-            <div className="mb-6 text-white drop-shadow-2xl">
-              <div className="flex flex-col items-center">
-                <img
-                  src={heroLogo}
-                  alt="Flai.dk"
-                  width="160"
-                  height="64"
-                  className="h-16 md:h-16 w-auto transition-all duration-500"
-                />
-              </div>
-            </div>
-            <div className="text-xl mb-6 text-neutral-100 drop-shadow-lg text-center">
+            <AdaptiveShadowBox kind="logo" className="mb-6 flex flex-col items-center text-white">
+              <img
+                src={heroLogo}
+                alt="Flai.dk"
+                width="160"
+                height="64"
+                className="h-16 md:h-16 w-auto transition-all duration-500"
+              />
+            </AdaptiveShadowBox>
+            <AdaptiveShadowBox kind="text" className="text-xl mb-6 text-neutral-100 text-center">
               <EditableContent
                 contentKey="hero-subtitle"
                 fallback="Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti."
               />
-            </div>
+            </AdaptiveShadowBox>
           </div>
           {/* Client logos docked to the bottom of the hero video, so they're
               visible above the fold alongside the buttons/logo/subtitle. */}
