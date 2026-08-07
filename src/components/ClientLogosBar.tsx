@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useData } from '../contexts/DataContext';
+import { useAdaptiveShadow } from '../hooks/useAdaptiveShadow';
 
 export interface ClientLogosBarProps {
   /**
@@ -19,6 +20,29 @@ export interface ClientLogosBarProps {
 // speed and the actual measured content width, so it stays constant per-logo
 // however many logos there are (adding logos doesn't speed the loop up).
 const MARQUEE_SPEED_PX_PER_SEC = 50;
+
+// Separate component (not a helper function) so each logo gets its own
+// useAdaptiveShadow hook instance — calling that hook a variable number of
+// times inside a .map() within ClientLogosBar itself would violate the
+// rules of hooks (hook count must stay constant across a given component
+// instance's renders, and logos.length can change).
+const OverlayLogo: React.FC<{ logo: { id: string; website_url: string; logo_url: string; name: string } }> = ({
+  logo,
+}) => {
+  const [ref, shadowStyle] = useAdaptiveShadow<HTMLImageElement>('logo');
+  return (
+    <a href={logo.website_url} target="_blank" rel="noopener noreferrer" className="clb-logo-link" title={logo.name}>
+      <img
+        ref={ref}
+        src={logo.logo_url}
+        alt={logo.name}
+        className="clb-logo-img"
+        loading="lazy"
+        style={shadowStyle}
+      />
+    </a>
+  );
+};
 
 // ─── ClientLogosBar ────────────────────────────────────────────────────────
 // Stripe-style row of customer logos. All logos are scaled to the same
@@ -107,18 +131,23 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
   // static row instead of an auto-scrolling one.
   const shouldScrollFallback = isOverflowing && reducedMotion;
 
-  const renderLogo = (logo: (typeof logos)[number], keySuffix: string) => (
-    <a
-      key={`${logo.id}${keySuffix}`}
-      href={logo.website_url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="clb-logo-link"
-      title={logo.name}
-    >
-      <img src={logo.logo_url} alt={logo.name} className="clb-logo-img" loading="lazy" />
-    </a>
-  );
+  const renderLogo = (logo: (typeof logos)[number], keySuffix: string) =>
+    isOverlay ? (
+      // Overlay variant sits directly on the video, so its logos need the
+      // same adaptive drop-shadow treatment as the FLAI logo/subtitle.
+      <OverlayLogo key={`${logo.id}${keySuffix}`} logo={logo} />
+    ) : (
+      <a
+        key={`${logo.id}${keySuffix}`}
+        href={logo.website_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="clb-logo-link"
+        title={logo.name}
+      >
+        <img src={logo.logo_url} alt={logo.name} className="clb-logo-img" loading="lazy" />
+      </a>
+    );
 
   return (
     <section
