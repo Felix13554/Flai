@@ -1026,14 +1026,6 @@ const HomePage: React.FC = () => {
                 fallback="Dronevideo og foto i Trekantsområdet. 100% tilfredshedsgaranti."
               />
             </div>
-            <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full px-6 sm:px-0 sm:w-auto">
-              <button onClick={() => navigate('/products')} className="btn-primary text-lg px-8 py-4">
-                <EditableContent contentKey="hero-button-primary" fallback="Se Vores Tjenester" />
-              </button>
-              <button onClick={() => navigate('/portfolio')} className="btn-secondary text-lg px-8 py-4 flex items-center justify-center">
-                <EditableContent contentKey="hero-button-secondary" fallback="Se Vores Arbejde" />
-              </button>
-            </div>
           </div>
           {/* Client logos docked to the bottom of the hero video, so they're
               visible above the fold alongside the buttons/logo/subtitle. */}
@@ -1088,7 +1080,10 @@ const HomePage: React.FC = () => {
           </div>
           <div className="flex flex-col sm:flex-row justify-center gap-4 mt-2">
             <button onClick={() => navigate('/products')} className="btn-primary text-lg px-8 py-4">
-              <EditableContent contentKey="cta-button-primary" fallback="Se Priser og Book" />
+              <EditableContent contentKey="hero-button-primary" fallback="Se Vores Tjenester" />
+            </button>
+            <button onClick={() => navigate('/portfolio')} className="btn-secondary text-lg px-8 py-4 flex items-center justify-center">
+              <EditableContent contentKey="hero-button-secondary" fallback="Se Vores Arbejde" />
             </button>
           </div>
         </div>
