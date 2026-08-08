@@ -48,7 +48,10 @@ const PageSkeleton = () => {
   // Read the stamp from localStorage (written by bustHeroCache after each upload)
   // so this skeleton never shows a stale poster on return visits.
   const _skeletonStamp = (() => { try { return localStorage.getItem('hero_poster_v') ?? '0' } catch { return '0' } })()
-  const _posterBase    = `https://res.cloudinary.com/dq6jxbyrg/video/upload/c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/herovideo.jpg`
+  // Must stay in sync with cloudinaryPosterUrl() in utils/heroPreload.ts —
+  // derived from the same vc_h264-first pipeline the video uses, so the
+  // skeleton's poster matches HeroVideoSection's poster exactly.
+  const _posterBase    = `https://res.cloudinary.com/dq6jxbyrg/video/upload/vc_h264/so_0/f_jpg/q_auto:good,w_1920/herovideo.jpg`
   const POSTER_URL     = _skeletonStamp !== '0' ? `${_posterBase}?v=${_skeletonStamp}` : _posterBase
   const HomeHeroSkeleton = () => (
     <div
