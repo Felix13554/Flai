@@ -212,9 +212,9 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
           transition: opacity 0.3s ease, min-height 0.3s ease;
         }
         @media (max-width: 640px) {
-          .client-logos-bar .clb-logo-link { height: 44px; }
+          .client-logos-bar .clb-logo-link { height: 56px; }
           .client-logos-bar .clb-group { gap: 36px; padding-inline-end: ${shouldAnimate ? '36px' : '0'}; }
-          .client-logos-bar.clb-overlay .clb-slot { min-height: ${confirmedEmpty ? '0px' : '44px'}; }
+          .client-logos-bar.clb-overlay .clb-slot { min-height: ${confirmedEmpty ? '0px' : '56px'}; }
           .client-logos-bar .clb-viewport { padding-inline: ${isOverlay ? '14px' : '0'}; }
         }
       `}</style>
