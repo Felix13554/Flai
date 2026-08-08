@@ -139,9 +139,26 @@ export function cloudinaryPosterUrl(
   quality  = 'good',
   stamp    = 0,
 ): string {
+  // Root cause of the poster/video crop mismatch: this used to extract the
+  // still directly from the RAW source (`c_fill,g_auto,w_${width},so_0`),
+  // a completely separate transformation pipeline from the one the <video>
+  // element actually plays (`vc_h264/f_mp4/...` in cloudinaryMp4Url). Two
+  // independent pipelines can apply the source's rotation/orientation
+  // metadata differently, so the still and the video ended up with
+  // different effective aspect ratios — which then get object-fit:cover'd
+  // differently, producing a visible jump when the video takes over.
+  //
+  // Also, `c_fill,g_auto` was a no-op the whole time: Cloudinary's `fill`
+  // crop mode only actually crops when BOTH width and height are given —
+  // with only a width it silently falls back to a plain aspect-preserving
+  // resize, so no gravity-based cropping was ever happening.
+  //
+  // Fix: derive the still from the SAME processed asset the video plays
+  // (`vc_h264` first), so orientation/aspect ratio are guaranteed to match
+  // pixel-for-pixel, then extract the frame and resize by width only.
   const base =
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `c_fill,g_auto,w_${width},so_0/f_jpg/q_auto:${quality}/${publicId}.jpg`
+    `vc_h264/so_0/f_jpg/q_auto:${quality},w_${width}/${publicId}.jpg`
   return stamp > 0 ? `${base}?v=${stamp}` : base
 }
 
