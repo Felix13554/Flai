@@ -17,7 +17,7 @@
  *         Eager: sp_hd/f_m3u8         ← HLS (pre-generation for repeat visitors)
  *         Eager: f_mp4,q_auto:good,vc_h264
  *         Eager: f_webm,q_auto:good,vc_vp9
- *         Eager: f_jpg,q_auto:good,so_0,w_1280
+ *         Eager: vc_h264/so_0/f_jpg,q_auto:good,w_1280
  *         eager_async: true   ← prevents timeouts on large videos
  *         overwrite:   true   ← required for the replace flow
  *
@@ -76,7 +76,7 @@ const EAGER_ALL = [
   'sp_hd/f_m3u8',
   'f_mp4,q_auto:good,vc_h264',
   'f_webm,q_auto:good,vc_vp9',
-  'f_jpg,q_auto:good,so_0,w_1280',
+  'vc_h264/so_0/f_jpg,q_auto:good,w_1280',
 ].join('|');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
