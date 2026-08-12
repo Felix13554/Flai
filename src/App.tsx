@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
@@ -6,6 +6,7 @@ import { LoadingProvider } from './contexts/LoadingContext';
 import { DataProvider } from './contexts/DataContext';
 import ColorSystemProvider from './components/ColorSystemProvider';
 import NavBar from './components/NavBar';
+import { HeroFrameContext, type HeroFrameContextValue } from './contexts/HeroFrameContext';
 import { useAppInitialization } from './hooks/useAppInitialization';
 import ProtectedRoute from './components/ProtectedRoute';
 import ScrollToTop from './components/ScrollToTop';
@@ -92,8 +93,23 @@ function AppContent() {
 }
 
 function SiteShell() {
+  // Owns the videoRef/sectionRef pair the adaptive-contrast-shadow engine
+  // keys off of. Provided once here — above both NavBar and the routed
+  // pages — so the NavBar (a sibling of <HomePage>, not a descendant of its
+  // <HeroVideoSection>) can register for the same brightness sampling as
+  // the hero's own logo/subtitle instead of being cut off from it by
+  // React's one-way context flow. HeroVideoSection writes the real DOM
+  // refs into this object when it mounts; on any other route the refs just
+  // stay null and NavBar's registration is a no-op.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const heroFrameContext = useMemo<HeroFrameContextValue>(
+    () => ({ videoRef, sectionRef }),
+    []
+  );
+
   return (
-    <>
+    <HeroFrameContext.Provider value={heroFrameContext}>
       {/* Default SEO: resets title/meta on every navigation for pages that
           don't render their own <SEO /> component. Individual page <SEO />
           components always run after this one and override as needed. */}
@@ -167,7 +183,7 @@ function SiteShell() {
       <Suspense fallback={null}>
         <GoogleOneTapPrompt />
       </Suspense>
-    </>
+    </HeroFrameContext.Provider>
   );
 }
 
