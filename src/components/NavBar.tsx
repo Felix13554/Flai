@@ -19,12 +19,13 @@ const NavBar: React.FC = () => {
   // Readability shadow — same adaptive-contrast engine the hero logo/subtitle
   // use, sampling the hero video's brightness right behind these elements.
   // Only meaningful while the hero video is actually showing through the
-  // transparent navbar (see `atHero` below) — the avatar/account dropdown is
-  // deliberately excluded (it never overlaps the video: it's only reachable
-  // once logged in, and its own dropdown panel has a solid background).
+  // transparent navbar (see `atHero` below). The account dropdown PANEL is
+  // excluded (it has its own solid background once open) — the profile icon
+  // that triggers it is not.
   const [navGroupShadowRef, navGroupShadowStyle] = useAdaptiveShadow<HTMLDivElement>('text');
   const [loginShadowRef, loginShadowStyle] = useAdaptiveShadow<HTMLAnchorElement>('text');
   const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
+  const [profileShadowRef, profileShadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -134,12 +135,16 @@ const NavBar: React.FC = () => {
 
           {/* Search Button */}
           <Suspense fallback={<div className="w-8 h-5" />}>
-            <SearchButton />
+            <SearchButton atHero={atHero} />
           </Suspense>
           
           {user ? (
             <div className="relative group">
-              <button className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+              <button
+                ref={profileShadowRef}
+                style={atHero ? profileShadowStyle : undefined}
+                className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+              >
                 {user.user_metadata?.avatar_url ? (
                   <img 
                     src={user.user_metadata.avatar_url} 
@@ -237,7 +242,7 @@ const NavBar: React.FC = () => {
         
         <div className="md:hidden flex items-center space-x-4">
           <Suspense fallback={<div className="w-6 h-6" />}>
-            <SearchButton isMobile />
+            <SearchButton isMobile atHero={atHero} />
           </Suspense>
           <button
             ref={mobileMenuShadowRef}
