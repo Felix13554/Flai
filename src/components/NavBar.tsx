@@ -1,10 +1,10 @@
-
 import EditableContent from './EditableContent';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, LogOut, Coins, ArrowDown, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import { useAdaptiveShadow } from '../hooks/useAdaptiveShadow';
 
 // SearchButton has its own search logic — lazy load to remove from initial parse
 const SearchButton = lazy(() => import('./SearchButton'));
@@ -15,6 +15,16 @@ const NavBar: React.FC = () => {
   const { user, signOut, isAdmin, credits } = useAuth();
   const { getContent } = useData();
   const location = useLocation();
+
+  // Readability shadow — same adaptive-contrast engine the hero logo/subtitle
+  // use, sampling the hero video's brightness right behind these elements.
+  // Only meaningful while the hero video is actually showing through the
+  // transparent navbar (see `atHero` below) — the avatar/account dropdown is
+  // deliberately excluded (it never overlaps the video: it's only reachable
+  // once logged in, and its own dropdown panel has a solid background).
+  const [navGroupShadowRef, navGroupShadowStyle] = useAdaptiveShadow<HTMLDivElement>('text');
+  const [loginShadowRef, loginShadowStyle] = useAdaptiveShadow<HTMLAnchorElement>('text');
+  const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -72,6 +82,10 @@ const NavBar: React.FC = () => {
   const linkClasses = `font-medium transition-colors duration-300 text-white hover:text-neutral-300`;
   
   const showLogoInNav = isScrolled || location.pathname !== '/';
+  // True only while the transparent navbar sits over the hero video (top of
+  // the homepage, not yet scrolled). The shadow disables itself past that
+  // point — the solid navbar background handles readability from there.
+  const atHero = !showLogoInNav;
   const navLinksClasses = `hidden md:flex items-center transition-all duration-500 ${
     showLogoInNav ? 'space-x-8' : 'space-x-8 md:ml-auto'
   }`;
@@ -105,12 +119,19 @@ const NavBar: React.FC = () => {
         </Link>
         
         <div className={navLinksClasses}>
-          <Link to="/" className={linkClasses}><EditableContent contentKey="nav-bar-hjem-2" fallback="Hjem" /></Link>
-          <Link to="/products" className={linkClasses}><EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Vores tjenester" /></Link>
-          <Link to="/portfolio" className={linkClasses}><EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Vores arbejde" /></Link>
-          <Link to="/coverage" className={linkClasses}><EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Vi dækker" /></Link>
-          <button onClick={scrollToFooter} className={linkClasses}><EditableContent contentKey="nav-bar-kontakt-2" fallback="Kontakt" /></button>
-          
+          {/* Readability shadow group — nav links + Kontakt only. */}
+          <div
+            ref={navGroupShadowRef}
+            style={atHero ? navGroupShadowStyle : undefined}
+            className="flex items-center space-x-8"
+          >
+            <Link to="/" className={linkClasses}><EditableContent contentKey="nav-bar-hjem-2" fallback="Hjem" /></Link>
+            <Link to="/products" className={linkClasses}><EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Vores tjenester" /></Link>
+            <Link to="/portfolio" className={linkClasses}><EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Vores arbejde" /></Link>
+            <Link to="/coverage" className={linkClasses}><EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Vi dækker" /></Link>
+            <button onClick={scrollToFooter} className={linkClasses}><EditableContent contentKey="nav-bar-kontakt-2" fallback="Kontakt" /></button>
+          </div>
+
           {/* Search Button */}
           <Suspense fallback={<div className="w-8 h-5" />}>
             <SearchButton />
@@ -203,6 +224,8 @@ const NavBar: React.FC = () => {
             </div>
           ) : (
             <Link 
+              ref={loginShadowRef}
+              style={atHero ? loginShadowStyle : undefined}
               to={authLink}
               rel="nofollow"
               className="px-4 py-2 rounded-lg border border-white text-white hover:bg-white hover:text-neutral-900 transition-colors duration-300"
@@ -217,6 +240,8 @@ const NavBar: React.FC = () => {
             <SearchButton isMobile />
           </Suspense>
           <button
+            ref={mobileMenuShadowRef}
+            style={atHero ? mobileMenuShadowStyle : undefined}
             className="text-white"
             onClick={toggleMenu}
             aria-expanded={isMenuOpen}
