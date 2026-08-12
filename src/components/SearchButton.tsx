@@ -4,8 +4,13 @@ import { Search, X, ArrowRight, Package, FileText, Calendar } from 'lucide-react
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { getSearchTerms, termMatches, scoreProduct } from '../utils/searchSynonyms';
+import { useAdaptiveShadow } from '../hooks/useAdaptiveShadow';
 
-interface SearchButtonProps { isMobile?: boolean; }
+interface SearchButtonProps {
+  isMobile?: boolean;
+  /** Apply the hero readability shadow to the closed search icon/label. */
+  atHero?: boolean;
+}
 
 const QUICK_PAGES = [
   { id: 'products',  title: 'Vores Tjenester', url: '/products'  },
@@ -16,7 +21,11 @@ const QUICK_PAGES = [
 ];
 
 
-const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false }) => {
+const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = false }) => {
+  // Icon-only shadow — same engine as the rest of the navbar. Only applied to
+  // the closed trigger button; once open, the dropdown/search box has its own
+  // solid background so no shadow is needed there.
+  const [shadowRef, shadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
   const [isOpen, setIsOpen]       = useState(false);
   const [query, setQuery]         = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -116,7 +125,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false }) => {
   if (isMobile) {
     return (
       <>
-        <button onClick={() => setIsOpen(true)} className="text-white hover:text-neutral-300 transition-colors">
+        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined} className="text-white hover:text-neutral-300 transition-colors">
           <Search size={24} />
         </button>
 
@@ -181,7 +190,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false }) => {
   return (
     <div className="relative">
       {!isOpen ? (
-        <button onClick={() => setIsOpen(true)}
+        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined}
           className="flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors">
           <Search size={20} />
           <span className="hidden lg:inline"><EditableContent contentKey="search-button-soeg" fallback="Søg" /></span>
