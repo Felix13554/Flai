@@ -39,13 +39,14 @@ import React, {
   useState,
   useMemo,
   useCallback,
+  useContext,
 } from 'react'
 import {
   getHeroVideo,
   cloudinaryMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
-import { HeroFrameContext, type HeroFrameContextValue } from '../contexts/HeroFrameContext'
+import { HeroFrameContext } from '../contexts/HeroFrameContext'
 
 export interface HeroVideoSectionProps {
   className?: string
@@ -227,20 +228,22 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const isMobile = useIsMobileViewport()
   const frozenHeight = useFrozenViewportHeight(isMobile)
 
-  const videoRef    = useRef<HTMLVideoElement>(null)
-  const sectionRef  = useRef<HTMLElement>(null)
+  // The engine's WeakMap key is the {videoRef, sectionRef} object itself, so
+  // for the NavBar (which lives outside this component, as a sibling above
+  // the routed page) to share the same engine/registrations as the hero's
+  // own logo/subtitle, everyone needs the *same* context object. That
+  // ambient object is now provided once, above the NavBar, in App.tsx's
+  // SiteShell — we consume it here and write our real video/section DOM
+  // refs into it, rather than creating (and re-providing) a fresh one
+  // scoped to just this subtree. Falls back to a locally-created value if
+  // this component is ever rendered without that ancestor provider.
+  const ambientHeroFrameContext = useContext(HeroFrameContext)
+  const ownVideoRef   = useRef<HTMLVideoElement>(null)
+  const ownSectionRef = useRef<HTMLElement>(null)
+  const videoRef   = ambientHeroFrameContext?.videoRef ?? ownVideoRef
+  const sectionRef = ambientHeroFrameContext?.sectionRef ?? ownSectionRef
   // Stable ref for current video src — avoids re-running setVideoRef on every render
   const videoSrcRef = useRef<string>('')
-
-  // Stable identity for the lifetime of this HeroVideoSection instance —
-  // used as the WeakMap key for the adaptive-contrast-shadow engine, and
-  // handed to descendants (logo, subtitle, client logos) via context so
-  // they can register themselves for brightness sampling without any of
-  // this component's internals leaking out.
-  const heroFrameContext = useMemo<HeroFrameContextValue>(
-    () => ({ videoRef, sectionRef }),
-    []
-  )
 
   const [videoReady,     setVideoReady]     = useState(false)
   const [publicId,       setPublicId]       = useState(() => getHeroVideo().public_id)
@@ -625,10 +628,13 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       </div>
 
       {/* z=3 — content */}
+      {/* No local HeroFrameContext.Provider here: the ambient one from
+          SiteShell (App.tsx) already covers this subtree, and reusing it
+          (rather than shadowing it with a new provider/value) is what lets
+          the NavBar share the same adaptive-shadow engine — see the
+          videoRef/sectionRef comment above. */}
       <div className="relative w-full h-full" style={{ zIndex: 3 }}>
-        <HeroFrameContext.Provider value={heroFrameContext}>
-          {children}
-        </HeroFrameContext.Provider>
+        {children}
       </div>
     </section>
   )
