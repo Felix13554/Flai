@@ -32,9 +32,6 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   // giving it a proper text-shadow.
   const [iconShadowRef, iconShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
   const [textShadowRef, textShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('text');
-  // Both shadows disable together while the button/label is hovered, and
-  // re-enable the moment the pointer leaves.
-  const [isHovered, setIsHovered] = useState(false);
   const [isOpen, setIsOpen]       = useState(false);
   const [query, setQuery]         = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -136,11 +133,9 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
       <>
         <button
           onClick={() => setIsOpen(true)}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
           className={`appearance-none text-white transition-colors ${atHero ? '' : 'hover:text-neutral-300'}`}
         >
-          <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
+          <span ref={iconShadowRef} style={atHero ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={24} />
           </span>
         </button>
@@ -208,16 +203,14 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
           className={`appearance-none flex items-center space-x-2 text-white transition-colors ${
             atHero ? '' : 'hover:text-neutral-300'
           }`}
         >
-          <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
+          <span ref={iconShadowRef} style={atHero ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={20} />
           </span>
-          <span ref={textShadowRef} style={atHero && !isHovered ? textShadowStyle : undefined} className="hidden lg:inline">
+          <span ref={textShadowRef} style={atHero ? textShadowStyle : undefined} className="hidden lg:inline">
             <EditableContent contentKey="search-button-soeg" fallback="Søg" />
           </span>
         </button>
