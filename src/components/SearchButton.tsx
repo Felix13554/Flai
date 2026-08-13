@@ -22,10 +22,19 @@ const QUICK_PAGES = [
 
 
 const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = false }) => {
-  // Icon-only shadow — same engine as the rest of the navbar. Only applied to
-  // the closed trigger button; once open, the dropdown/search box has its own
-  // solid background so no shadow is needed there.
-  const [shadowRef, shadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
+  // Two independent shadows — same engine as the rest of the navbar. Only
+  // applied to the closed trigger button; once open, the dropdown/search box
+  // has its own solid background so no shadow is needed there.
+  // The icon gets its own filter drop-shadow ('logo' kind) and the "Søg"
+  // label gets its own crisp text-shadow ('text' kind) rather than sharing
+  // one group filter — a filter drop-shadow applied across icon+text as a
+  // single unit blurs the text as part of the icon's silhouette instead of
+  // giving it a proper text-shadow.
+  const [iconShadowRef, iconShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
+  const [textShadowRef, textShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('text');
+  // Both shadows disable together while the button/label is hovered, and
+  // re-enable the moment the pointer leaves.
+  const [isHovered, setIsHovered] = useState(false);
   const [isOpen, setIsOpen]       = useState(false);
   const [query, setQuery]         = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -125,8 +134,13 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   if (isMobile) {
     return (
       <>
-        <button onClick={() => setIsOpen(true)} className="appearance-none text-white hover:text-neutral-300 transition-colors">
-          <span ref={shadowRef} style={atHero ? shadowStyle : undefined} className="inline-flex">
+        <button
+          onClick={() => setIsOpen(true)}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className="appearance-none text-white hover:text-neutral-300 transition-colors"
+        >
+          <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={24} />
           </span>
         </button>
@@ -192,11 +206,17 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   return (
     <div className="relative">
       {!isOpen ? (
-        <button onClick={() => setIsOpen(true)}
-          className="appearance-none flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors">
-          <span ref={shadowRef} style={atHero ? shadowStyle : undefined} className="inline-flex items-center space-x-2">
+        <button
+          onClick={() => setIsOpen(true)}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className="appearance-none flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors"
+        >
+          <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={20} />
-            <span className="hidden lg:inline"><EditableContent contentKey="search-button-soeg" fallback="Søg" /></span>
+          </span>
+          <span ref={textShadowRef} style={atHero && !isHovered ? textShadowStyle : undefined} className="hidden lg:inline">
+            <EditableContent contentKey="search-button-soeg" fallback="Søg" />
           </span>
         </button>
       ) : (
