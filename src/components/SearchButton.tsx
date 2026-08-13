@@ -138,7 +138,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
           onClick={() => setIsOpen(true)}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="appearance-none text-white hover:text-neutral-300 transition-colors"
+          className={`appearance-none text-white transition-colors ${atHero ? '' : 'hover:text-neutral-300'}`}
         >
           <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={24} />
@@ -210,7 +210,9 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
           onClick={() => setIsOpen(true)}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="appearance-none flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors"
+          className={`appearance-none flex items-center space-x-2 text-white transition-colors ${
+            atHero ? '' : 'hover:text-neutral-300'
+          }`}
         >
           <span ref={iconShadowRef} style={atHero && !isHovered ? iconShadowStyle : undefined} className="inline-flex">
             <Search size={20} />
