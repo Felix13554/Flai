@@ -160,11 +160,7 @@ const NavBar: React.FC = () => {
           
           {user ? (
             <div className="relative group">
-              <button
-                className={`appearance-none flex items-center space-x-2 transition-opacity ${
-                  atHero ? '' : 'hover:opacity-80'
-                }`}
-              >
+              <button className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity">
                 <span ref={profileShadowRef} style={atHero ? profileShadowStyle : undefined} className="inline-flex">
                 {user.user_metadata?.avatar_url ? (
                   <img 
