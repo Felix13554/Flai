@@ -20,12 +20,12 @@ const NavBar: React.FC = () => {
   // use, sampling the hero video's brightness right behind these elements.
   // Only meaningful while the hero video is actually showing through the
   // transparent navbar (see `atHero` below). The account dropdown PANEL is
-  // excluded (it has its own solid background once open) — the profile icon
-  // that triggers it is not.
+  // excluded (it has its own solid background once open) — and, per request,
+  // so is the profile icon itself: no adaptive shadow on it at all, just its
+  // normal hover:opacity-80.
   const [navGroupShadowRef, navGroupShadowStyle] = useAdaptiveShadow<HTMLDivElement>('text');
   const [loginShadowRef, loginShadowStyle] = useAdaptiveShadow<HTMLAnchorElement>('text');
   const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
-  const [profileShadowRef, profileShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -161,7 +161,7 @@ const NavBar: React.FC = () => {
           {user ? (
             <div className="relative group">
               <button className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity">
-                <span ref={profileShadowRef} style={atHero ? profileShadowStyle : undefined} className="inline-flex">
+                <span className="inline-flex">
                 {user.user_metadata?.avatar_url ? (
                   <img 
                     src={user.user_metadata.avatar_url} 
