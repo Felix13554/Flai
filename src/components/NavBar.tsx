@@ -27,6 +27,18 @@ const NavBar: React.FC = () => {
   const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
   const [profileShadowRef, profileShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
 
+  // Hover-disable for the readability shadows above: whichever nav item the
+  // pointer is over drops its shadow immediately, and it comes back the
+  // moment the pointer leaves. `hoveredNavKey` covers the individual links
+  // inside the shared nav-group (their shadow is inherited from that group's
+  // div, so we only need to punch a `text-shadow: none` hole on the one
+  // being hovered); the rest each get their own boolean since their shadow
+  // is applied directly to them rather than inherited.
+  const [hoveredNavKey, setHoveredNavKey] = useState<string | null>(null);
+  const [isLoginHovered, setIsLoginHovered] = useState(false);
+  const [isMobileMenuHovered, setIsMobileMenuHovered] = useState(false);
+  const [isProfileHovered, setIsProfileHovered] = useState(false);
+
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
@@ -131,15 +143,58 @@ const NavBar: React.FC = () => {
             style={atHero ? navGroupShadowStyle : undefined}
             className="flex items-center space-x-8"
           >
-            <Link to="/" className={linkClasses}><EditableContent contentKey="nav-bar-hjem-2" fallback="Hjem" /></Link>
-            <Link to="/products" className={linkClasses}><EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Vores tjenester" /></Link>
-            <Link to="/portfolio" className={linkClasses}><EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Vores arbejde" /></Link>
-            <Link to="/coverage" className={linkClasses}><EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Vi dækker" /></Link>
-            <button onClick={scrollToFooter} className={linkClasses}>
+            <Link
+              to="/"
+              className={linkClasses}
+              onMouseEnter={() => setHoveredNavKey('hjem')}
+              onMouseLeave={() => setHoveredNavKey(null)}
+              style={hoveredNavKey === 'hjem' ? { textShadow: 'none' } : undefined}
+            >
+              <EditableContent contentKey="nav-bar-hjem-2" fallback="Hjem" />
+            </Link>
+            <Link
+              to="/products"
+              className={linkClasses}
+              onMouseEnter={() => setHoveredNavKey('tjenester')}
+              onMouseLeave={() => setHoveredNavKey(null)}
+              style={hoveredNavKey === 'tjenester' ? { textShadow: 'none' } : undefined}
+            >
+              <EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Vores tjenester" />
+            </Link>
+            <Link
+              to="/portfolio"
+              className={linkClasses}
+              onMouseEnter={() => setHoveredNavKey('arbejde')}
+              onMouseLeave={() => setHoveredNavKey(null)}
+              style={hoveredNavKey === 'arbejde' ? { textShadow: 'none' } : undefined}
+            >
+              <EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Vores arbejde" />
+            </Link>
+            <Link
+              to="/coverage"
+              className={linkClasses}
+              onMouseEnter={() => setHoveredNavKey('daekker')}
+              onMouseLeave={() => setHoveredNavKey(null)}
+              style={hoveredNavKey === 'daekker' ? { textShadow: 'none' } : undefined}
+            >
+              <EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Vi dækker" />
+            </Link>
+            <button
+              onClick={scrollToFooter}
+              className={linkClasses}
+              onMouseEnter={() => setHoveredNavKey('kontakt')}
+              onMouseLeave={() => setHoveredNavKey(null)}
+            >
               <EditableContent
                 contentKey="nav-bar-kontakt-2"
                 fallback="Kontakt"
-                style={atHero ? navGroupShadowStyle : undefined}
+                style={
+                  hoveredNavKey === 'kontakt'
+                    ? { textShadow: 'none' }
+                    : atHero
+                    ? navGroupShadowStyle
+                    : undefined
+                }
               />
             </button>
           </div>
@@ -151,8 +206,12 @@ const NavBar: React.FC = () => {
           
           {user ? (
             <div className="relative group">
-              <button className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity">
-                <span ref={profileShadowRef} style={atHero ? profileShadowStyle : undefined} className="inline-flex">
+              <button
+                className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity"
+                onMouseEnter={() => setIsProfileHovered(true)}
+                onMouseLeave={() => setIsProfileHovered(false)}
+              >
+                <span ref={profileShadowRef} style={atHero && !isProfileHovered ? profileShadowStyle : undefined} className="inline-flex">
                 {user.user_metadata?.avatar_url ? (
                   <img 
                     src={user.user_metadata.avatar_url} 
@@ -239,7 +298,9 @@ const NavBar: React.FC = () => {
           ) : (
             <Link 
               ref={loginShadowRef}
-              style={atHero ? loginShadowStyle : undefined}
+              style={atHero && !isLoginHovered ? loginShadowStyle : undefined}
+              onMouseEnter={() => setIsLoginHovered(true)}
+              onMouseLeave={() => setIsLoginHovered(false)}
               to={authLink}
               rel="nofollow"
               className="px-4 py-2 rounded-lg border border-white text-white hover:bg-white hover:text-neutral-900 transition-colors duration-300"
@@ -256,11 +317,13 @@ const NavBar: React.FC = () => {
           <button
             className="appearance-none text-white"
             onClick={toggleMenu}
+            onMouseEnter={() => setIsMobileMenuHovered(true)}
+            onMouseLeave={() => setIsMobileMenuHovered(false)}
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
             aria-label="Åbn menu"
           >
-            <span ref={mobileMenuShadowRef} style={atHero ? mobileMenuShadowStyle : undefined} className="inline-flex">
+            <span ref={mobileMenuShadowRef} style={atHero && !isMobileMenuHovered ? mobileMenuShadowStyle : undefined} className="inline-flex">
               <Menu size={24} />
             </span>
           </button>
