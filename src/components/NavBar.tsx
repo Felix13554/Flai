@@ -92,18 +92,27 @@ const NavBar: React.FC = () => {
       : 'bg-transparent'
   }`;
 
-  // `appearance-none` matters here: Safari renders <button> with native OS
-  // widget chrome by default, which silently drops text-shadow/filter (both
-  // inherited and directly-applied) unless the button opts out of that
-  // native rendering. <Link>/<a> elements don't have this problem — only
-  // the plain <button> nav items (Kontakt) need it.
-  const linkClasses = `appearance-none font-medium transition-colors duration-300 text-white hover:text-neutral-300`;
-  
   const showLogoInNav = isScrolled || location.pathname !== '/';
   // True only while the transparent navbar sits over the hero video (top of
   // the homepage, not yet scrolled). The shadow disables itself past that
   // point — the solid navbar background handles readability from there.
   const atHero = !showLogoInNav;
+
+  // `appearance-none` matters here: Safari renders <button> with native OS
+  // widget chrome by default, which silently drops text-shadow/filter (both
+  // inherited and directly-applied) unless the button opts out of that
+  // native rendering. <Link>/<a> elements don't have this problem — only
+  // the plain <button> nav items (Kontakt) need it.
+  // Hover color transitions are only enabled once we're past the hero (solid
+  // navbar background, shadow system off). While atHero, the shadow is the
+  // only readability mechanism, and it already has its own hover-disable
+  // behavior — layering a hover color change on top of that would fight it,
+  // so hover animations stay off entirely until the shadow system hands off
+  // to the solid background.
+  const linkClasses = `appearance-none font-medium transition-colors duration-300 text-white ${
+    atHero ? '' : 'hover:text-neutral-300'
+  }`;
+
   const navLinksClasses = `hidden md:flex items-center transition-all duration-500 ${
     showLogoInNav ? 'space-x-8' : 'space-x-8 md:ml-auto'
   }`;
@@ -207,7 +216,9 @@ const NavBar: React.FC = () => {
           {user ? (
             <div className="relative group">
               <button
-                className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity"
+                className={`appearance-none flex items-center space-x-2 transition-opacity ${
+                  atHero ? '' : 'hover:opacity-80'
+                }`}
                 onMouseEnter={() => setIsProfileHovered(true)}
                 onMouseLeave={() => setIsProfileHovered(false)}
               >
@@ -303,7 +314,9 @@ const NavBar: React.FC = () => {
               onMouseLeave={() => setIsLoginHovered(false)}
               to={authLink}
               rel="nofollow"
-              className="px-4 py-2 rounded-lg border border-white text-white hover:bg-white hover:text-neutral-900 transition-colors duration-300"
+              className={`px-4 py-2 rounded-lg border border-white text-white transition-colors duration-300 ${
+                atHero ? '' : 'hover:bg-white hover:text-neutral-900'
+              }`}
             >
               <EditableContent contentKey="nav-bar-log-ind-2" fallback="Log ind" />
             </Link>
