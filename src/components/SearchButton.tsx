@@ -125,7 +125,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   if (isMobile) {
     return (
       <>
-        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined} className="text-white hover:text-neutral-300 transition-colors">
+        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined} className="appearance-none text-white hover:text-neutral-300 transition-colors">
           <Search size={24} />
         </button>
 
@@ -191,7 +191,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
     <div className="relative">
       {!isOpen ? (
         <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined}
-          className="flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors">
+          className="appearance-none flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors">
           <Search size={20} />
           <span className="hidden lg:inline"><EditableContent contentKey="search-button-soeg" fallback="Søg" /></span>
         </button>
