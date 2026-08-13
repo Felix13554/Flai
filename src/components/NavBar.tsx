@@ -24,8 +24,8 @@ const NavBar: React.FC = () => {
   // that triggers it is not.
   const [navGroupShadowRef, navGroupShadowStyle] = useAdaptiveShadow<HTMLDivElement>('text');
   const [loginShadowRef, loginShadowStyle] = useAdaptiveShadow<HTMLAnchorElement>('text');
-  const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
-  const [profileShadowRef, profileShadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
+  const [mobileMenuShadowRef, mobileMenuShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
+  const [profileShadowRef, profileShadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -135,7 +135,13 @@ const NavBar: React.FC = () => {
             <Link to="/products" className={linkClasses}><EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Vores tjenester" /></Link>
             <Link to="/portfolio" className={linkClasses}><EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Vores arbejde" /></Link>
             <Link to="/coverage" className={linkClasses}><EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Vi dækker" /></Link>
-            <button onClick={scrollToFooter} className={linkClasses}><EditableContent contentKey="nav-bar-kontakt-2" fallback="Kontakt" /></button>
+            <button onClick={scrollToFooter} className={linkClasses}>
+              <EditableContent
+                contentKey="nav-bar-kontakt-2"
+                fallback="Kontakt"
+                style={atHero ? navGroupShadowStyle : undefined}
+              />
+            </button>
           </div>
 
           {/* Search Button */}
@@ -145,11 +151,8 @@ const NavBar: React.FC = () => {
           
           {user ? (
             <div className="relative group">
-              <button
-                ref={profileShadowRef}
-                style={atHero ? profileShadowStyle : undefined}
-                className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity"
-              >
+              <button className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity">
+                <span ref={profileShadowRef} style={atHero ? profileShadowStyle : undefined} className="inline-flex">
                 {user.user_metadata?.avatar_url ? (
                   <img 
                     src={user.user_metadata.avatar_url} 
@@ -161,6 +164,7 @@ const NavBar: React.FC = () => {
                     <User size={20} />
                   </div>
                 )}
+                </span>
               </button>
               <div className="absolute right-0 mt-3 w-64 bg-neutral-800 rounded-lg shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 border border-neutral-700">
                 {/* User Info Section */}
@@ -250,15 +254,15 @@ const NavBar: React.FC = () => {
             <SearchButton isMobile atHero={atHero} />
           </Suspense>
           <button
-            ref={mobileMenuShadowRef}
-            style={atHero ? mobileMenuShadowStyle : undefined}
             className="appearance-none text-white"
             onClick={toggleMenu}
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
             aria-label="Åbn menu"
           >
-            <Menu size={24} />
+            <span ref={mobileMenuShadowRef} style={atHero ? mobileMenuShadowStyle : undefined} className="inline-flex">
+              <Menu size={24} />
+            </span>
           </button>
         </div>
       </div>
