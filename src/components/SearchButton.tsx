@@ -25,7 +25,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   // Icon-only shadow — same engine as the rest of the navbar. Only applied to
   // the closed trigger button; once open, the dropdown/search box has its own
   // solid background so no shadow is needed there.
-  const [shadowRef, shadowStyle] = useAdaptiveShadow<HTMLButtonElement>('logo');
+  const [shadowRef, shadowStyle] = useAdaptiveShadow<HTMLSpanElement>('logo');
   const [isOpen, setIsOpen]       = useState(false);
   const [query, setQuery]         = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -125,8 +125,10 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   if (isMobile) {
     return (
       <>
-        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined} className="appearance-none text-white hover:text-neutral-300 transition-colors">
-          <Search size={24} />
+        <button onClick={() => setIsOpen(true)} className="appearance-none text-white hover:text-neutral-300 transition-colors">
+          <span ref={shadowRef} style={atHero ? shadowStyle : undefined} className="inline-flex">
+            <Search size={24} />
+          </span>
         </button>
 
         {isOpen && (
@@ -190,10 +192,12 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
   return (
     <div className="relative">
       {!isOpen ? (
-        <button onClick={() => setIsOpen(true)} ref={shadowRef} style={atHero ? shadowStyle : undefined}
+        <button onClick={() => setIsOpen(true)}
           className="appearance-none flex items-center space-x-2 text-white hover:text-neutral-300 transition-colors">
-          <Search size={20} />
-          <span className="hidden lg:inline"><EditableContent contentKey="search-button-soeg" fallback="Søg" /></span>
+          <span ref={shadowRef} style={atHero ? shadowStyle : undefined} className="inline-flex items-center space-x-2">
+            <Search size={20} />
+            <span className="hidden lg:inline"><EditableContent contentKey="search-button-soeg" fallback="Søg" /></span>
+          </span>
         </button>
       ) : (
         <div className="relative">
