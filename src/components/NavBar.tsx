@@ -80,7 +80,12 @@ const NavBar: React.FC = () => {
       : 'bg-transparent'
   }`;
 
-  const linkClasses = `font-medium transition-colors duration-300 text-white hover:text-neutral-300`;
+  // `appearance-none` matters here: Safari renders <button> with native OS
+  // widget chrome by default, which silently drops text-shadow/filter (both
+  // inherited and directly-applied) unless the button opts out of that
+  // native rendering. <Link>/<a> elements don't have this problem — only
+  // the plain <button> nav items (Kontakt) need it.
+  const linkClasses = `appearance-none font-medium transition-colors duration-300 text-white hover:text-neutral-300`;
   
   const showLogoInNav = isScrolled || location.pathname !== '/';
   // True only while the transparent navbar sits over the hero video (top of
@@ -143,7 +148,7 @@ const NavBar: React.FC = () => {
               <button
                 ref={profileShadowRef}
                 style={atHero ? profileShadowStyle : undefined}
-                className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+                className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity"
               >
                 {user.user_metadata?.avatar_url ? (
                   <img 
@@ -247,7 +252,7 @@ const NavBar: React.FC = () => {
           <button
             ref={mobileMenuShadowRef}
             style={atHero ? mobileMenuShadowStyle : undefined}
-            className="text-white"
+            className="appearance-none text-white"
             onClick={toggleMenu}
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
