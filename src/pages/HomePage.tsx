@@ -311,10 +311,17 @@ const Section_9009b281 = ((
   // that, since it's a plain scroll container.
   //
   // ─── Initial scroll position ──────────────────────────────────────────────────
-  // On mount, each row centers the middle review of its own array in the
-  // viewport (e.g. with 4 reviews, review 2 of 4 lands centered — the same
-  // "floor((n-1)/2)" index a human would call the middle card). This happens
-  // one frame after layout so card widths are already final.
+  // Each row centers itself based on how many cards currently fit in the
+  // viewport at once:
+  //   - odd count fitting (1, 3, 5…)  -> a single card sits dead-center
+  //   - even count fitting (2, 4, 6…) -> the gap between two cards sits
+  //     dead-center, so cards sit symmetrically in pairs either side of center
+  // This is recomputed on every resize (so rotating a phone or resizing a
+  // window keeps it balanced) until the person scrolls the row themselves,
+  // at which point a manual swipe settles onto the nearest valid position
+  // instead of snapping back to the middle. Positioning only ever touches the
+  // row's own scrollLeft — never the page's scroll — and arrow clicks move
+  // exactly one card at a time.
 
   interface ReviewUser {
     name: string;
@@ -418,10 +425,50 @@ const Section_9009b281 = ((
     return !!url && url.toLowerCase().includes('square');
   }
 
-  /** The "middle" review index for a given count — with 4 reviews this is
-   * index 1 (review 2 of 4); with 5 reviews it's index 2 (the true center). */
-  function middleIndex(count: number): number {
-    return Math.floor((count - 1) / 2);
+  type CenterMode = 'card' | 'gap';
+
+  /** How many cards fit in the viewport at once decides whether the centered
+   * position should land on a card (odd count) or the gap between two cards
+   * (even count) — the same balance a physical carousel keeps as it resizes. */
+  function modeForVisibleCount(count: number): CenterMode {
+    return count % 2 === 0 ? 'gap' : 'card';
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function computeVisibleCount(cardWidth: number, viewportWidth: number, total: number): number {
+    const raw = Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX));
+    return clamp(raw, 1, total);
+  }
+
+  /** The "natural" middle anchor for the full list in the given mode — an
+   * integer card index for 'card' mode, or index+0.5 (the gap right after
+   * that card) for 'gap' mode. */
+  function naturalAnchor(total: number, mode: CenterMode): number {
+    const center = (total - 1) / 2;
+    if (mode === 'card') {
+      return clamp(Math.round(center), 0, total - 1);
+    }
+    const maxHalf = Math.max(0.5, total - 1.5);
+    const half = Number.isInteger(center) ? center + 0.5 : center;
+    return clamp(half, 0.5, maxHalf);
+  }
+
+  /** Converts a previous anchor to a new mode when the visible-count parity
+   * changes (e.g. resizing across a breakpoint), staying near the same spot
+   * instead of jumping back to the array's natural center every time. */
+  function adjustAnchorForMode(prevAnchor: number | undefined, mode: CenterMode, total: number): number {
+    if (prevAnchor === undefined) return naturalAnchor(total, mode);
+    if (mode === 'card') {
+      return clamp(Math.round(prevAnchor), 0, total - 1);
+    }
+    const maxHalf = Math.max(0.5, total - 1.5);
+    if (!Number.isInteger(prevAnchor)) return clamp(prevAnchor, 0.5, maxHalf);
+    let candidate = prevAnchor + 0.5;
+    if (candidate > maxHalf) candidate = prevAnchor - 0.5;
+    return clamp(candidate, 0.5, maxHalf);
   }
 
   // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -516,87 +563,158 @@ const Section_9009b281 = ((
     const trackRef = useRef<HTMLDivElement>(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
-    // Distinguishes our own programmatic centering from a real user scroll,
-    // so auto-centering can keep correcting itself on layout changes without
-    // ever fighting a swipe/arrow move the person actually made.
-    const isAutoScrolling = useRef(false);
-    const hasUserScrolledRef = useRef(false);
 
-    const updateSidePadding = () => {
+    // Logical position: an integer card index in 'card' mode, or index+0.5
+    // (the gap right after that card) in 'gap' mode. Kept in a ref since it
+    // drives imperative scrolling rather than a re-render.
+    const anchorRef = useRef<number | undefined>(undefined);
+    const modeRef = useRef<CenterMode>('card');
+    const isAutoScrollingRef = useRef(false);
+    const hasUserScrolledRef = useRef(false);
+    const autoScrollTimeoutRef = useRef<number | undefined>(undefined);
+    const scrollEndTimeoutRef = useRef<number | undefined>(undefined);
+
+    const getMetrics = () => {
       const viewport = viewportRef.current;
       const track = trackRef.current;
-      if (!viewport || !track) return;
+      if (!viewport || !track) return null;
       const firstCard = track.firstElementChild as HTMLElement | null;
-      if (!firstCard) return;
-
-      const cardWidth = firstCard.getBoundingClientRect().width;
-      const viewportWidth = viewport.clientWidth;
-      const visibleCount = Math.max(
-        1,
-        Math.min(
-          reviews.length,
-          Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX))
-        )
-      );
-
-      // Center the block of currently-visible cards as a group. If that count
-      // is odd, the middle card lands exactly at screen center; if even, the
-      // gap between the two middle cards lands at screen center — both are
-      // just the natural result of centering the N-card block itself.
-      const blockWidth = visibleCount * cardWidth + (visibleCount - 1) * CARD_GAP_PX;
-      const sidePad = Math.max(0, (viewportWidth - blockWidth) / 2);
-      track.style.setProperty('--testi-side-pad', `${sidePad}px`);
+      if (!firstCard) return null;
+      return {
+        viewport,
+        track,
+        cards: Array.from(track.children) as HTMLElement[],
+        cardWidth: firstCard.getBoundingClientRect().width,
+        viewportWidth: viewport.clientWidth,
+      };
     };
 
-    const updateArrowState = () => {
-      const viewport = viewportRef.current;
-      const track = trackRef.current;
-      if (!viewport || !track) return;
+    const updateSidePadding = (visibleCount: number) => {
+      const m = getMetrics();
+      if (!m) return;
+      const blockWidth = visibleCount * m.cardWidth + (visibleCount - 1) * CARD_GAP_PX;
+      const sidePad = Math.max(0, (m.viewportWidth - blockWidth) / 2);
+      m.track.style.setProperty('--testi-side-pad', `${sidePad}px`);
+    };
 
-      const firstCard = track.firstElementChild as HTMLElement | null;
-      if (!firstCard) return;
+    /** Scrolls — this row's own scrollLeft only, never the page — so the
+     * given anchor (a card, or the gap between two cards) sits centered in
+     * the viewport. Measures live layout each call rather than relying on a
+     * separately-tracked assumption, so it can't drift out of sync. */
+    const scrollToAnchor = (anchor: number, mode: CenterMode, animate: boolean) => {
+      const m = getMetrics();
+      if (!m) return;
+      const { viewport, track, cards } = m;
+      const trackRect = track.getBoundingClientRect();
 
-      const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;
-      const visibleCount = Math.floor(viewport.clientWidth / cardWidth);
+      let centerFromTrackLeft: number | null = null;
+      if (mode === 'card') {
+        const card = cards[Math.round(anchor)];
+        if (!card) return;
+        const r = card.getBoundingClientRect();
+        centerFromTrackLeft = (r.left - trackRect.left) + r.width / 2;
+      } else {
+        const idx = Math.floor(anchor);
+        const cardA = cards[idx];
+        const cardB = cards[idx + 1];
+        if (!cardA || !cardB) return;
+        const ra = cardA.getBoundingClientRect();
+        const rb = cardB.getBoundingClientRect();
+        const rightOfA = (ra.left - trackRect.left) + ra.width;
+        const leftOfB = rb.left - trackRect.left;
+        centerFromTrackLeft = (rightOfA + leftOfB) / 2;
+      }
+      if (centerFromTrackLeft === null) return;
 
-      // If every review already fits on screen at once, there's nothing to
-      // reveal by clicking an arrow — disable both regardless of scroll pos.
-      if (reviews.length <= visibleCount) {
+      const targetLeft = viewport.scrollLeft + centerFromTrackLeft - viewport.clientWidth / 2;
+      const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const clamped = clamp(targetLeft, 0, maxScroll);
+
+      isAutoScrollingRef.current = true;
+      window.clearTimeout(autoScrollTimeoutRef.current);
+      if (animate) {
+        animateScrollTo(viewport, clamped);
+        autoScrollTimeoutRef.current = window.setTimeout(() => {
+          isAutoScrollingRef.current = false;
+        }, SCROLL_ANIMATION_MS + 50);
+      } else {
+        viewport.scrollLeft = clamped;
+        requestAnimationFrame(() => {
+          isAutoScrollingRef.current = false;
+        });
+      }
+    };
+
+    const updateArrowAvailability = (visibleCount: number, total: number, mode: CenterMode) => {
+      if (visibleCount >= total) {
         setCanScrollLeft(false);
         setCanScrollRight(false);
         return;
       }
-
-      setCanScrollLeft(viewport.scrollLeft > 4);
-      setCanScrollRight(viewport.scrollLeft < viewport.scrollWidth - viewport.clientWidth - 4);
+      const anchor = anchorRef.current ?? naturalAnchor(total, mode);
+      if (mode === 'card') {
+        setCanScrollLeft(anchor > 0);
+        setCanScrollRight(anchor < total - 1);
+      } else {
+        const maxHalf = Math.max(0.5, total - 1.5);
+        setCanScrollLeft(anchor > 0.5);
+        setCanScrollRight(anchor < maxHalf);
+      }
     };
 
-    /** Scrolls (no animation — used for auto-centering, not user-triggered
-     * moves) so the card at `index` sits centered in the viewport. Uses the
-     * browser's native scrollIntoView instead of manually computing a
-     * scrollLeft: manual math has to exactly replicate whatever the browser
-     * did with the side-padding/box model, and any mismatch (or the browser's
-     * own scroll-anchoring kicking in when that padding shifts) tends to drag
-     * the position toward one edge — showing the LAST card as centered
-     * instead of the middle one, especially with few cards where the
-     * scrollable range is tiny. scrollIntoView re-derives the correct
-     * position from the live layout every time it's called instead. */
-    const centerCardAtIndex = (index: number) => {
-      const track = trackRef.current;
-      if (!track) return;
-      const card = track.children[index] as HTMLElement | undefined;
-      if (!card) return;
+    /** Finds whichever card (or gap between two cards) currently sits
+     * closest to the viewport's center — used to softly settle the row after
+     * a manual swipe. There's no native CSS scroll-snap here on purpose: it
+     * was fighting the arrow-click animation and occasionally made a click
+     * jump two cards instead of one, so alignment is handled in JS instead. */
+    const nearestAnchor = (mode: CenterMode): number => {
+      const m = getMetrics();
+      if (!m) return anchorRef.current ?? 0;
+      const { viewport, cards } = m;
+      const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
 
-      isAutoScrolling.current = true;
-      card.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
-      requestAnimationFrame(() => {
-        isAutoScrolling.current = false;
-      });
+      if (mode === 'card') {
+        let best = 0;
+        let bestDist = Infinity;
+        cards.forEach((card, i) => {
+          const r = card.getBoundingClientRect();
+          const dist = Math.abs((r.left + r.width / 2) - viewportCenter);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+          }
+        });
+        return best;
+      }
+
+      let best = 0.5;
+      let bestDist = Infinity;
+      for (let i = 0; i < cards.length - 1; i++) {
+        const ra = cards[i].getBoundingClientRect();
+        const rb = cards[i + 1].getBoundingClientRect();
+        const gapCenter = (ra.right + rb.left) / 2;
+        const dist = Math.abs(gapCenter - viewportCenter);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i + 0.5;
+        }
+      }
+      return best;
     };
 
     const handleScroll = () => {
-      updateArrowState();
-      if (!isAutoScrolling.current) hasUserScrolledRef.current = true;
+      if (isAutoScrollingRef.current) return;
+      hasUserScrolledRef.current = true;
+      window.clearTimeout(scrollEndTimeoutRef.current);
+      scrollEndTimeoutRef.current = window.setTimeout(() => {
+        const mode = modeRef.current;
+        const total = reviews.length;
+        const nearest = nearestAnchor(mode);
+        anchorRef.current = nearest;
+        scrollToAnchor(nearest, mode, true);
+        const m = getMetrics();
+        if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);
+      }, 120);
     };
 
     useEffect(() => {
@@ -604,41 +722,65 @@ const Section_9009b281 = ((
       if (!viewport) return;
 
       hasUserScrolledRef.current = false;
-      const centerIndex = middleIndex(reviews.length);
+      anchorRef.current = undefined;
+      const total = reviews.length;
 
       // Re-settle (side padding + centering + arrow state) on every layout
       // change, including the guaranteed initial call ResizeObserver fires
-      // right after observe(). A single early measurement isn't enough: for
-      // small/odd counts (e.g. 3 reviews) the scrollable range is tiny, so a
-      // later layout nudge (fonts/images finishing, a scrollbar appearing)
-      // could shift the side padding just enough to push the already-centered
-      // card all the way to the end — showing the LAST review as current
-      // instead of the middle one. Re-running on every resize keeps it
-      // correct, and it stops the moment the person scrolls the row themselves.
+      // right after observe(). Determines from how many cards currently fit
+      // whether a card or a gap should be centered, and keeps that balanced
+      // as the screen resizes — until the person scrolls the row themselves.
       const settle = () => {
-        updateSidePadding();
+        const m = getMetrics();
+        if (!m) return;
+        const visibleCount = computeVisibleCount(m.cardWidth, m.viewportWidth, total);
+        const mode = modeForVisibleCount(visibleCount);
+
+        updateSidePadding(visibleCount);
+
         if (!hasUserScrolledRef.current) {
-          centerCardAtIndex(centerIndex);
+          if (modeRef.current !== mode || anchorRef.current === undefined) {
+            anchorRef.current = adjustAnchorForMode(anchorRef.current, mode, total);
+          }
+          modeRef.current = mode;
+          scrollToAnchor(anchorRef.current, mode, false);
+        } else {
+          modeRef.current = mode;
         }
-        updateArrowState();
+
+        updateArrowAvailability(visibleCount, total, mode);
       };
 
       const resizeObserver = new ResizeObserver(settle);
       resizeObserver.observe(viewport);
-      return () => resizeObserver.disconnect();
+      return () => {
+        resizeObserver.disconnect();
+        window.clearTimeout(autoScrollTimeoutRef.current);
+        window.clearTimeout(scrollEndTimeoutRef.current);
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reviews]);
 
     const scrollByOneCard = (dir: 'left' | 'right') => {
+      const total = reviews.length;
+      const mode = modeRef.current;
+      const current = anchorRef.current ?? naturalAnchor(total, mode);
+      const delta = dir === 'left' ? -1 : 1;
+
+      let next = current + delta;
+      if (mode === 'card') {
+        next = clamp(next, 0, total - 1);
+      } else {
+        const maxHalf = Math.max(0.5, total - 1.5);
+        next = clamp(next, 0.5, maxHalf);
+      }
+
       hasUserScrolledRef.current = true;
-      const viewport = viewportRef.current;
-      const track = trackRef.current;
-      if (!viewport || !track) return;
-      const firstCard = track.firstElementChild as HTMLElement | null;
-      if (!firstCard) return;
-      const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;
-      const targetLeft = viewport.scrollLeft + (dir === 'left' ? -cardWidth : cardWidth);
-      animateScrollTo(viewport, targetLeft);
+      anchorRef.current = next;
+      scrollToAnchor(next, mode, true);
+
+      const m = getMetrics();
+      if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);
     };
 
     return (
@@ -752,7 +894,6 @@ const Section_9009b281 = ((
             overflow-y: hidden;
             -webkit-overflow-scrolling: touch;
             scroll-behavior: auto;
-            scroll-snap-type: x mandatory;
             scrollbar-width: none;
             overflow-anchor: none;
             flex: 1;
@@ -805,8 +946,6 @@ const Section_9009b281 = ((
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
-            scroll-snap-align: center;
-            scroll-snap-stop: always;
           }
           .big-quote {
             font-size: 3.5rem;
@@ -985,7 +1124,7 @@ export const DEPLOYED_HOME_SECTIONS = [
     "code_language": null,
     "code_files": [
       {
-        "content": "import React, { useEffect, useRef, useState } from 'react';\nimport { useData } from '../contexts/DataContext';\n\n// ─── Types ────────────────────────────────────────────────────────────────────\n//\n// ONE content key holds every review as a JSON ARRAY. Items mirror the shape\n// coming from cached_reviews.reviews_data so you can copy-paste straight from\n// the Supabase table without reformatting.\n//\n// Required fields per item:  user.name, rating, snippet\n// Optional fields per item:  user.thumbnail, link, business\n//\n// Content key:\n//   testimonials-review-2   -> array of ALL reviews (top of array = shown first)\n//\n// Example value:\n// [\n//   {\n//     \"user\": { \"name\": \"Mette Christensen\", \"thumbnail\": \"https://lh3.googleusercontent.com/a/...\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Fantastisk service! Felix leverede utrolig flotte dronefotos.\",\n//     \"link\": \"https://maps.google.com/?cid=...\",\n//     \"business\": \"Christensen Ejendomme A/S\"\n//   },\n//   {\n//     \"user\": { \"name\": \"Jonas Berg\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Hurtig, professionel og super kvalitet.\"\n//   }\n// ]\n//\n// \"business\" is the only field that does NOT exist in cached_reviews — add it manually if wanted.\n// \"link\" maps to reviews_data[n].link in the cached_reviews table.\n// If \"business\" is omitted the label shows \"Verificeret Google-anmeldelse\".\n// If \"business\" is set it shows the business name only (replacing the default label).\n//\n// If a thumbnail URL contains the word \"square\" anywhere in it, the avatar is\n// rendered as a rounded square instead of being cropped into a circle.\n//\n// Content key for the header rating badge:\n//   testimonials-google-rating\n//\n// Example:\n// { \"rating\": 4.9, \"reviewCount\": 127, \"link\": \"https://search.google.com/local/writereview?placeid=...\" }\n//\n// If this key is left empty, the badge falls back to the average rating and count\n// of every configured review.\n//\n// ─── Layout rules ────────────────────────────────────────────────────────────\n// Desktop (>768px):\n//   - 8 or fewer reviews  -> single row, all reviews\n//   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2\n// Mobile (<=768px):\n//   - 6 or fewer reviews  -> single row, all reviews\n//   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)\n//\n// Each row is a horizontally scrollable strip. Left/right arrow buttons advance\n// the row by exactly one card per click, clamped at both ends (no wraparound).\n// On touch devices the row can also be swiped natively — no extra JS needed for\n// that, since it's a plain scroll container.\n//\n// ─── Initial scroll position ──────────────────────────────────────────────────\n// On mount, each row centers the middle review of its own array in the\n// viewport (e.g. with 4 reviews, review 2 of 4 lands centered — the same\n// \"floor((n-1)/2)\" index a human would call the middle card). This happens\n// one frame after layout so card widths are already final.\n\ninterface ReviewUser {\n  name: string;\n  thumbnail?: string;\n}\n\ninterface ReviewData {\n  user: ReviewUser;\n  rating: number;\n  snippet: string;\n  link?: string;\n  /** Not in cached_reviews — add manually when editing the content key */\n  business?: string;\n}\n\ninterface GoogleRatingData {\n  rating: number;\n  reviewCount: number;\n  link?: string;\n}\n\nconst REVIEWS_KEY = 'testimonials-review-2';\nconst RATING_KEY = 'testimonials-google-rating';\nconst DEFAULT_GOOGLE_LINK =\n  'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';\n\nconst CARD_GAP_PX = 24;\nconst SCROLL_ANIMATION_MS = 380;\n\n/** Smoothly animates scrollLeft with a fixed easing curve, so arrow clicks\n * and swipe-driven snap settle with the same feel instead of each browser's\n * own (differing) default for \"smooth\" scroll vs. touch snap-back. */\nfunction animateScrollTo(el: HTMLElement, targetLeft: number, duration = SCROLL_ANIMATION_MS) {\n  const startLeft = el.scrollLeft;\n  const distance = targetLeft - startLeft;\n  if (Math.abs(distance) < 1) return;\n\n  const startTime = performance.now();\n  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);\n\n  const step = (now: number) => {\n    const elapsed = now - startTime;\n    const progress = Math.min(elapsed / duration, 1);\n    el.scrollLeft = startLeft + distance * easeOutCubic(progress);\n    if (progress < 1) requestAnimationFrame(step);\n  };\n  requestAnimationFrame(step);\n}\n\n// ─── Helpers ─────────────────────────────────────────────────────────────────\n\nfunction isValidReview(item: unknown): item is ReviewData {\n  const r = item as ReviewData;\n  return !!r?.user?.name && !!r?.snippet;\n}\n\n/** Parses the content key holding a JSON array of review objects. */\nfunction parseReviewArray(raw: string): ReviewData[] {\n  if (!raw.trim()) return [];\n  try {\n    const parsed = JSON.parse(raw);\n    if (!Array.isArray(parsed)) return [];\n    return parsed.filter(isValidReview);\n  } catch {\n    return [];\n  }\n}\n\nfunction parseRating(raw: string): GoogleRatingData | null {\n  if (!raw.trim()) return null;\n  try {\n    const parsed = JSON.parse(raw) as GoogleRatingData;\n    if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;\n    return parsed;\n  } catch {\n    return null;\n  }\n}\n\nfunction fallbackRating(reviews: ReviewData[]): GoogleRatingData {\n  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;\n  return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };\n}\n\nfunction getInitials(name: string): string {\n  return name\n    .split(' ')\n    .map((n) => n[0])\n    .slice(0, 2)\n    .join('')\n    .toUpperCase();\n}\n\nfunction nameToHue(name: string): number {\n  return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;\n}\n\n/** Thumbnails whose URL contains \"square\" should be shown uncropped\n * (rounded square) instead of being forced into a circle. */\nfunction isSquareThumbnail(url?: string): boolean {\n  return !!url && url.toLowerCase().includes('square');\n}\n\n/** The \"middle\" review index for a given count — with 4 reviews this is\n * index 1 (review 2 of 4); with 5 reviews it's index 2 (the true center). */\nfunction middleIndex(count: number): number {\n  return Math.floor((count - 1) / 2);\n}\n\n// ─── Sub-components ───────────────────────────────────────────────────────────\n\nfunction GoogleG({ size = 14 }: { size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill=\"none\">\n      <path d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\" fill=\"#4285F4\" />\n      <path d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\" fill=\"#34A853\" />\n      <path d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\" fill=\"#FBBC05\" />\n      <path d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\" fill=\"#EA4335\" />\n    </svg>\n  );\n}\n\nfunction StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill={filled ? '#FBBF24' : '#404040'} stroke=\"none\">\n      <path d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\" />\n    </svg>\n  );\n}\n\nfunction ReviewCard({ review }: { review: ReviewData }) {\n  const hue = nameToHue(review.user.name);\n  // Business name fully replaces the default label when present.\n  const metaLabel = review.business || 'Verificeret Google-anmeldelse';\n  const googleLink = review.link || DEFAULT_GOOGLE_LINK;\n  const isSquare = isSquareThumbnail(review.user.thumbnail);\n\n  return (\n    <div className=\"testi-review-card\">\n      <span className=\"big-quote\" aria-hidden=\"true\">&ldquo;</span>\n      <p className=\"testi-quote-text\">{review.snippet}</p>\n      <div className=\"testi-author-row\">\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"author-link\"\n          title=\"Se anmeldelse på Google\"\n        >\n          {review.user.thumbnail ? (\n            <img\n              src={review.user.thumbnail}\n              alt={review.user.name}\n              className={`author-avatar${isSquare ? ' author-avatar-square' : ''}`}\n              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}\n            />\n          ) : (\n            <div\n              className=\"author-avatar-fallback\"\n              style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}\n            >\n              {getInitials(review.user.name)}\n            </div>\n          )}\n          <div className=\"author-info\">\n            <div className=\"testi-stars\">\n              {[1, 2, 3, 4, 5].map((i) => (\n                <StarIcon key={i} filled={i <= Math.round(review.rating)} />\n              ))}\n            </div>\n            <p className=\"author-name\">{review.user.name}</p>\n            <p className=\"author-meta\">{metaLabel}</p>\n          </div>\n        </a>\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"google-badge\"\n          title=\"Se anmeldelse på Google\"\n        >\n          <GoogleG size={40} />\n        </a>\n      </div>\n    </div>\n  );\n}\n\nfunction ChevronIcon({ direction }: { direction: 'left' | 'right' }) {\n  return (\n    <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2.5\" strokeLinecap=\"round\" strokeLinejoin=\"round\">\n      {direction === 'left' ? <path d=\"M15 18l-6-6 6-6\" /> : <path d=\"M9 18l6-6-6-6\" />}\n    </svg>\n  );\n}\n\nfunction TestimonialRow({ reviews }: { reviews: ReviewData[] }) {\n  const viewportRef = useRef<HTMLDivElement>(null);\n  const trackRef = useRef<HTMLDivElement>(null);\n  const [canScrollLeft, setCanScrollLeft] = useState(false);\n  const [canScrollRight, setCanScrollRight] = useState(false);\n  // Distinguishes our own programmatic centering from a real user scroll,\n  // so auto-centering can keep correcting itself on layout changes without\n  // ever fighting a swipe/arrow move the person actually made.\n  const isAutoScrolling = useRef(false);\n  const hasUserScrolledRef = useRef(false);\n\n  const updateSidePadding = () => {\n    const viewport = viewportRef.current;\n    const track = trackRef.current;\n    if (!viewport || !track) return;\n    const firstCard = track.firstElementChild as HTMLElement | null;\n    if (!firstCard) return;\n\n    const cardWidth = firstCard.getBoundingClientRect().width;\n    const viewportWidth = viewport.clientWidth;\n    const visibleCount = Math.max(\n      1,\n      Math.min(\n        reviews.length,\n        Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX))\n      )\n    );\n\n    // Center the block of currently-visible cards as a group. If that count\n    // is odd, the middle card lands exactly at screen center; if even, the\n    // gap between the two middle cards lands at screen center — both are\n    // just the natural result of centering the N-card block itself.\n    const blockWidth = visibleCount * cardWidth + (visibleCount - 1) * CARD_GAP_PX;\n    const sidePad = Math.max(0, (viewportWidth - blockWidth) / 2);\n    track.style.setProperty('--testi-side-pad', `${sidePad}px`);\n  };\n\n  const updateArrowState = () => {\n    const viewport = viewportRef.current;\n    const track = trackRef.current;\n    if (!viewport || !track) return;\n\n    const firstCard = track.firstElementChild as HTMLElement | null;\n    if (!firstCard) return;\n\n    const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;\n    const visibleCount = Math.floor(viewport.clientWidth / cardWidth);\n\n    // If every review already fits on screen at once, there's nothing to\n    // reveal by clicking an arrow — disable both regardless of scroll pos.\n    if (reviews.length <= visibleCount) {\n      setCanScrollLeft(false);\n      setCanScrollRight(false);\n      return;\n    }\n\n    setCanScrollLeft(viewport.scrollLeft > 4);\n    setCanScrollRight(viewport.scrollLeft < viewport.scrollWidth - viewport.clientWidth - 4);\n  };\n\n  /** Scrolls (no animation — used for auto-centering, not user-triggered\n   * moves) so the card at `index` sits centered in the viewport. Uses the\n   * browser's native scrollIntoView instead of manually computing a\n   * scrollLeft: manual math has to exactly replicate whatever the browser\n   * did with the side-padding/box model, and any mismatch (or the browser's\n   * own scroll-anchoring kicking in when that padding shifts) tends to drag\n   * the position toward one edge — showing the LAST card as centered\n   * instead of the middle one, especially with few cards where the\n   * scrollable range is tiny. scrollIntoView re-derives the correct\n   * position from the live layout every time it's called instead. */\n  const centerCardAtIndex = (index: number) => {\n    const track = trackRef.current;\n    if (!track) return;\n    const card = track.children[index] as HTMLElement | undefined;\n    if (!card) return;\n\n    isAutoScrolling.current = true;\n    card.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });\n    requestAnimationFrame(() => {\n      isAutoScrolling.current = false;\n    });\n  };\n\n  const handleScroll = () => {\n    updateArrowState();\n    if (!isAutoScrolling.current) hasUserScrolledRef.current = true;\n  };\n\n  useEffect(() => {\n    const viewport = viewportRef.current;\n    if (!viewport) return;\n\n    hasUserScrolledRef.current = false;\n    const centerIndex = middleIndex(reviews.length);\n\n    // Re-settle (side padding + centering + arrow state) on every layout\n    // change, including the guaranteed initial call ResizeObserver fires\n    // right after observe(). A single early measurement isn't enough: for\n    // small/odd counts (e.g. 3 reviews) the scrollable range is tiny, so a\n    // later layout nudge (fonts/images finishing, a scrollbar appearing)\n    // could shift the side padding just enough to push the already-centered\n    // card all the way to the end — showing the LAST review as current\n    // instead of the middle one. Re-running on every resize keeps it\n    // correct, and it stops the moment the person scrolls the row themselves.\n    const settle = () => {\n      updateSidePadding();\n      if (!hasUserScrolledRef.current) {\n        centerCardAtIndex(centerIndex);\n      }\n      updateArrowState();\n    };\n\n    const resizeObserver = new ResizeObserver(settle);\n    resizeObserver.observe(viewport);\n    return () => resizeObserver.disconnect();\n    // eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [reviews]);\n\n  const scrollByOneCard = (dir: 'left' | 'right') => {\n    hasUserScrolledRef.current = true;\n    const viewport = viewportRef.current;\n    const track = trackRef.current;\n    if (!viewport || !track) return;\n    const firstCard = track.firstElementChild as HTMLElement | null;\n    if (!firstCard) return;\n    const cardWidth = firstCard.getBoundingClientRect().width + CARD_GAP_PX;\n    const targetLeft = viewport.scrollLeft + (dir === 'left' ? -cardWidth : cardWidth);\n    animateScrollTo(viewport, targetLeft);\n  };\n\n  return (\n    <div className=\"testi-row-wrap\">\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-left\"\n        onClick={() => scrollByOneCard('left')}\n        disabled={!canScrollLeft}\n        aria-label=\"Se forrige anmeldelse\"\n      >\n        <ChevronIcon direction=\"left\" />\n      </button>\n\n      <div className=\"testi-row-viewport\" ref={viewportRef} onScroll={handleScroll}>\n        <div ref={trackRef} className=\"testi-row-track\">\n          {reviews.map((review, i) => (\n            <ReviewCard key={`${review.user.name}-${i}`} review={review} />\n          ))}\n        </div>\n      </div>\n\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-right\"\n        onClick={() => scrollByOneCard('right')}\n        disabled={!canScrollRight}\n        aria-label=\"Se næste anmeldelse\"\n      >\n        <ChevronIcon direction=\"right\" />\n      </button>\n    </div>\n  );\n}\n\n// ─── Main component ───────────────────────────────────────────────────────────\n\nconst Testimonials: React.FC = () => {\n  const { getContent } = useData();\n\n  const allReviews = parseReviewArray(getContent(REVIEWS_KEY, ''));\n  const total = allReviews.length;\n\n  // No reviews configured at all — render nothing.\n  if (total === 0) return null;\n\n  const ratingData = parseRating(getContent(RATING_KEY, '')) ?? fallbackRating(allReviews);\n\n  return (\n    <section className=\"py-20\">\n      <style>{`\n        .testi-header {\n          display: flex;\n          flex-direction: column;\n          align-items: center;\n          text-align: center;\n          gap: 20px;\n          margin-bottom: 48px;\n          padding: 0 24px;\n        }\n        .testi-rating-badge {\n          display: inline-flex;\n          align-items: center;\n          gap: 8px;\n          background: #1a1a1a;\n          border: 1px solid #2a2a2a;\n          border-radius: 999px;\n          padding: 8px 18px;\n          text-decoration: none;\n          color: #f0f0f0;\n          font-family: 'Inter', sans-serif;\n          font-size: 0.85rem;\n          font-weight: 600;\n        }\n        .testi-rating-badge .testi-badge-stars {\n          display: flex;\n          gap: 1px;\n        }\n        .testi-header h2 {\n          font-family: 'Inter', sans-serif;\n          font-size: clamp(1.75rem, 3.5vw, 2.75rem);\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0;\n          max-width: 700px;\n          line-height: 1.2;\n        }\n        .testi-rows {\n          display: flex;\n          flex-direction: column;\n          gap: 24px;\n        }\n        .testi-row-wrap {\n          display: grid;\n          grid-template-columns: auto 1fr auto;\n          grid-template-areas: \"left viewport right\";\n          align-items: center;\n          gap: 12px;\n        }\n        .testi-row-viewport {\n          grid-area: viewport;\n        }\n        .testi-arrow-left {\n          grid-area: left;\n        }\n        .testi-arrow-right {\n          grid-area: right;\n        }\n        .testi-row-viewport {\n          overflow-x: auto;\n          overflow-y: hidden;\n          -webkit-overflow-scrolling: touch;\n          scroll-behavior: auto;\n          scroll-snap-type: x mandatory;\n          scrollbar-width: none;\n          overflow-anchor: none;\n          flex: 1;\n          min-width: 0;\n          -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n          mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n        }\n        .testi-row-viewport::-webkit-scrollbar {\n          display: none;\n        }\n        .testi-row-track {\n          display: flex;\n          gap: 24px;\n          width: max-content;\n          min-width: 100%;\n          justify-content: center;\n          padding: 0 var(--testi-side-pad, 24px);\n        }\n        .testi-arrow {\n          flex-shrink: 0;\n          width: 52px;\n          height: 52px;\n          border-radius: 50%;\n          border: 1px solid #2f2f2f;\n          background: #1a1a1a;\n          color: #ffffff;\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          cursor: pointer;\n          transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;\n        }\n        .testi-arrow:hover:not(:disabled) {\n          background: #262626;\n          border-color: #454545;\n        }\n        .testi-arrow:active:not(:disabled) {\n          transform: scale(0.94);\n        }\n        .testi-arrow:disabled {\n          opacity: 0.25;\n          cursor: default;\n        }\n        .testi-review-card {\n          background: #141414;\n          border: 1px solid #262626;\n          border-radius: 20px;\n          padding: 32px;\n          width: 380px;\n          flex-shrink: 0;\n          display: flex;\n          flex-direction: column;\n          scroll-snap-align: center;\n          scroll-snap-stop: always;\n        }\n        .big-quote {\n          font-size: 3.5rem;\n          line-height: 0.7;\n          color: #3B82F6;\n          font-family: Georgia, serif;\n          font-weight: 700;\n          user-select: none;\n          display: block;\n          margin-bottom: 8px;\n        }\n        .testi-quote-text {\n          font-family: 'Inter', sans-serif;\n          font-size: 1.05rem;\n          font-weight: 400;\n          color: #f0f0f0;\n          line-height: 1.6;\n          letter-spacing: -0.01em;\n          margin: 0;\n          flex: 1;\n        }\n        .testi-author-row {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          margin-top: 20px;\n          padding-top: 16px;\n          border-top: 1px solid #262626;\n        }\n        .author-avatar {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          object-fit: cover;\n          flex-shrink: 0;\n        }\n        .author-avatar-square {\n          border-radius: 0;\n        }\n        .author-avatar-fallback {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          display: flex; align-items: center; justify-content: center;\n          font-size: 1.05rem; font-weight: 700; color: white;\n          flex-shrink: 0;\n        }\n        .author-link {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          flex: 1;\n          min-width: 0;\n          text-decoration: none;\n        }\n        .author-info { flex: 1; min-width: 0; }\n        .author-name {\n          font-size: 0.88rem;\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0 0 2px 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .author-meta {\n          font-size: 0.72rem;\n          color: #A3A3A3;\n          margin: 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .google-badge {\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          text-decoration: none;\n          background: transparent;\n          border: none;\n          padding: 0;\n          flex-shrink: 0;\n        }\n        .testi-stars {\n          display: flex;\n          gap: 2px;\n          margin-bottom: 6px;\n        }\n        @media (max-width: 768px) {\n          .testi-review-card { width: 300px; padding: 24px; }\n          .big-quote { font-size: 2.75rem; }\n          .testi-quote-text { font-size: 0.95rem; }\n          .testi-row-wrap {\n            grid-template-columns: 1fr 1fr;\n            grid-template-areas:\n              \"viewport viewport\"\n              \"left right\";\n            row-gap: 16px;\n          }\n          .testi-arrow-left { justify-self: end; }\n          .testi-arrow-right { justify-self: start; }\n          .testi-row-viewport {\n            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);\n            mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);\n          }\n        }\n      `}</style>\n\n      <div className=\"testi-header\">\n        <a\n          href={ratingData.link || DEFAULT_GOOGLE_LINK}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"testi-rating-badge\"\n        >\n          <span className=\"testi-badge-stars\">\n            {[1, 2, 3, 4, 5].map((i) => (\n              <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />\n            ))}\n          </span>\n          Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google\n        </a>\n        <h2>Andre glade kunder</h2>\n      </div>\n\n      <div className=\"testi-rows\">\n        <TestimonialRow reviews={allReviews} />\n      </div>\n    </section>\n  );\n};\n\nexport default Testimonials;",
+        "content": "import React, { useEffect, useRef, useState } from 'react';\nimport { useData } from '../contexts/DataContext';\n\n// ─── Types ────────────────────────────────────────────────────────────────────\n//\n// ONE content key holds every review as a JSON ARRAY. Items mirror the shape\n// coming from cached_reviews.reviews_data so you can copy-paste straight from\n// the Supabase table without reformatting.\n//\n// Required fields per item:  user.name, rating, snippet\n// Optional fields per item:  user.thumbnail, link, business\n//\n// Content key:\n//   testimonials-review-2   -> array of ALL reviews (top of array = shown first)\n//\n// Example value:\n// [\n//   {\n//     \"user\": { \"name\": \"Mette Christensen\", \"thumbnail\": \"https://lh3.googleusercontent.com/a/...\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Fantastisk service! Felix leverede utrolig flotte dronefotos.\",\n//     \"link\": \"https://maps.google.com/?cid=...\",\n//     \"business\": \"Christensen Ejendomme A/S\"\n//   },\n//   {\n//     \"user\": { \"name\": \"Jonas Berg\" },\n//     \"rating\": 5,\n//     \"snippet\": \"Hurtig, professionel og super kvalitet.\"\n//   }\n// ]\n//\n// \"business\" is the only field that does NOT exist in cached_reviews — add it manually if wanted.\n// \"link\" maps to reviews_data[n].link in the cached_reviews table.\n// If \"business\" is omitted the label shows \"Verificeret Google-anmeldelse\".\n// If \"business\" is set it shows the business name only (replacing the default label).\n//\n// If a thumbnail URL contains the word \"square\" anywhere in it, the avatar is\n// rendered as a rounded square instead of being cropped into a circle.\n//\n// Content key for the header rating badge:\n//   testimonials-google-rating\n//\n// Example:\n// { \"rating\": 4.9, \"reviewCount\": 127, \"link\": \"https://search.google.com/local/writereview?placeid=...\" }\n//\n// If this key is left empty, the badge falls back to the average rating and count\n// of every configured review.\n//\n// ─── Layout rules ────────────────────────────────────────────────────────────\n// Desktop (>768px):\n//   - 8 or fewer reviews  -> single row, all reviews\n//   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2\n// Mobile (<=768px):\n//   - 6 or fewer reviews  -> single row, all reviews\n//   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)\n//\n// Each row is a horizontally scrollable strip. Left/right arrow buttons advance\n// the row by exactly one card per click, clamped at both ends (no wraparound).\n// On touch devices the row can also be swiped natively — no extra JS needed for\n// that, since it's a plain scroll container.\n//\n// ─── Initial scroll position ──────────────────────────────────────────────────\n// Each row centers itself based on how many cards currently fit in the\n// viewport at once:\n//   - odd count fitting (1, 3, 5…)  -> a single card sits dead-center\n//   - even count fitting (2, 4, 6…) -> the gap between two cards sits\n//     dead-center, so cards sit symmetrically in pairs either side of center\n// This is recomputed on every resize (so rotating a phone or resizing a\n// window keeps it balanced) until the person scrolls the row themselves,\n// at which point a manual swipe settles onto the nearest valid position\n// instead of snapping back to the middle. Positioning only ever touches the\n// row's own scrollLeft — never the page's scroll — and arrow clicks move\n// exactly one card at a time.\n\ninterface ReviewUser {\n  name: string;\n  thumbnail?: string;\n}\n\ninterface ReviewData {\n  user: ReviewUser;\n  rating: number;\n  snippet: string;\n  link?: string;\n  /** Not in cached_reviews — add manually when editing the content key */\n  business?: string;\n}\n\ninterface GoogleRatingData {\n  rating: number;\n  reviewCount: number;\n  link?: string;\n}\n\nconst REVIEWS_KEY = 'testimonials-review-2';\nconst RATING_KEY = 'testimonials-google-rating';\nconst DEFAULT_GOOGLE_LINK =\n  'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';\n\nconst CARD_GAP_PX = 24;\nconst SCROLL_ANIMATION_MS = 380;\n\n/** Smoothly animates scrollLeft with a fixed easing curve, so arrow clicks\n * and swipe-driven snap settle with the same feel instead of each browser's\n * own (differing) default for \"smooth\" scroll vs. touch snap-back. */\nfunction animateScrollTo(el: HTMLElement, targetLeft: number, duration = SCROLL_ANIMATION_MS) {\n  const startLeft = el.scrollLeft;\n  const distance = targetLeft - startLeft;\n  if (Math.abs(distance) < 1) return;\n\n  const startTime = performance.now();\n  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);\n\n  const step = (now: number) => {\n    const elapsed = now - startTime;\n    const progress = Math.min(elapsed / duration, 1);\n    el.scrollLeft = startLeft + distance * easeOutCubic(progress);\n    if (progress < 1) requestAnimationFrame(step);\n  };\n  requestAnimationFrame(step);\n}\n\n// ─── Helpers ─────────────────────────────────────────────────────────────────\n\nfunction isValidReview(item: unknown): item is ReviewData {\n  const r = item as ReviewData;\n  return !!r?.user?.name && !!r?.snippet;\n}\n\n/** Parses the content key holding a JSON array of review objects. */\nfunction parseReviewArray(raw: string): ReviewData[] {\n  if (!raw.trim()) return [];\n  try {\n    const parsed = JSON.parse(raw);\n    if (!Array.isArray(parsed)) return [];\n    return parsed.filter(isValidReview);\n  } catch {\n    return [];\n  }\n}\n\nfunction parseRating(raw: string): GoogleRatingData | null {\n  if (!raw.trim()) return null;\n  try {\n    const parsed = JSON.parse(raw) as GoogleRatingData;\n    if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;\n    return parsed;\n  } catch {\n    return null;\n  }\n}\n\nfunction fallbackRating(reviews: ReviewData[]): GoogleRatingData {\n  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;\n  return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };\n}\n\nfunction getInitials(name: string): string {\n  return name\n    .split(' ')\n    .map((n) => n[0])\n    .slice(0, 2)\n    .join('')\n    .toUpperCase();\n}\n\nfunction nameToHue(name: string): number {\n  return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;\n}\n\n/** Thumbnails whose URL contains \"square\" should be shown uncropped\n * (rounded square) instead of being forced into a circle. */\nfunction isSquareThumbnail(url?: string): boolean {\n  return !!url && url.toLowerCase().includes('square');\n}\n\ntype CenterMode = 'card' | 'gap';\n\n/** How many cards fit in the viewport at once decides whether the centered\n * position should land on a card (odd count) or the gap between two cards\n * (even count) — the same balance a physical carousel keeps as it resizes. */\nfunction modeForVisibleCount(count: number): CenterMode {\n  return count % 2 === 0 ? 'gap' : 'card';\n}\n\nfunction clamp(value: number, min: number, max: number): number {\n  return Math.min(max, Math.max(min, value));\n}\n\nfunction computeVisibleCount(cardWidth: number, viewportWidth: number, total: number): number {\n  const raw = Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX));\n  return clamp(raw, 1, total);\n}\n\n/** The \"natural\" middle anchor for the full list in the given mode — an\n * integer card index for 'card' mode, or index+0.5 (the gap right after\n * that card) for 'gap' mode. */\nfunction naturalAnchor(total: number, mode: CenterMode): number {\n  const center = (total - 1) / 2;\n  if (mode === 'card') {\n    return clamp(Math.round(center), 0, total - 1);\n  }\n  const maxHalf = Math.max(0.5, total - 1.5);\n  const half = Number.isInteger(center) ? center + 0.5 : center;\n  return clamp(half, 0.5, maxHalf);\n}\n\n/** Converts a previous anchor to a new mode when the visible-count parity\n * changes (e.g. resizing across a breakpoint), staying near the same spot\n * instead of jumping back to the array's natural center every time. */\nfunction adjustAnchorForMode(prevAnchor: number | undefined, mode: CenterMode, total: number): number {\n  if (prevAnchor === undefined) return naturalAnchor(total, mode);\n  if (mode === 'card') {\n    return clamp(Math.round(prevAnchor), 0, total - 1);\n  }\n  const maxHalf = Math.max(0.5, total - 1.5);\n  if (!Number.isInteger(prevAnchor)) return clamp(prevAnchor, 0.5, maxHalf);\n  let candidate = prevAnchor + 0.5;\n  if (candidate > maxHalf) candidate = prevAnchor - 0.5;\n  return clamp(candidate, 0.5, maxHalf);\n}\n\n// ─── Sub-components ───────────────────────────────────────────────────────────\n\nfunction GoogleG({ size = 14 }: { size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill=\"none\">\n      <path d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\" fill=\"#4285F4\" />\n      <path d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\" fill=\"#34A853\" />\n      <path d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\" fill=\"#FBBC05\" />\n      <path d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\" fill=\"#EA4335\" />\n    </svg>\n  );\n}\n\nfunction StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {\n  return (\n    <svg width={size} height={size} viewBox=\"0 0 24 24\" fill={filled ? '#FBBF24' : '#404040'} stroke=\"none\">\n      <path d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\" />\n    </svg>\n  );\n}\n\nfunction ReviewCard({ review }: { review: ReviewData }) {\n  const hue = nameToHue(review.user.name);\n  // Business name fully replaces the default label when present.\n  const metaLabel = review.business || 'Verificeret Google-anmeldelse';\n  const googleLink = review.link || DEFAULT_GOOGLE_LINK;\n  const isSquare = isSquareThumbnail(review.user.thumbnail);\n\n  return (\n    <div className=\"testi-review-card\">\n      <span className=\"big-quote\" aria-hidden=\"true\">&ldquo;</span>\n      <p className=\"testi-quote-text\">{review.snippet}</p>\n      <div className=\"testi-author-row\">\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"author-link\"\n          title=\"Se anmeldelse på Google\"\n        >\n          {review.user.thumbnail ? (\n            <img\n              src={review.user.thumbnail}\n              alt={review.user.name}\n              className={`author-avatar${isSquare ? ' author-avatar-square' : ''}`}\n              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}\n            />\n          ) : (\n            <div\n              className=\"author-avatar-fallback\"\n              style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}\n            >\n              {getInitials(review.user.name)}\n            </div>\n          )}\n          <div className=\"author-info\">\n            <div className=\"testi-stars\">\n              {[1, 2, 3, 4, 5].map((i) => (\n                <StarIcon key={i} filled={i <= Math.round(review.rating)} />\n              ))}\n            </div>\n            <p className=\"author-name\">{review.user.name}</p>\n            <p className=\"author-meta\">{metaLabel}</p>\n          </div>\n        </a>\n        <a\n          href={googleLink}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"google-badge\"\n          title=\"Se anmeldelse på Google\"\n        >\n          <GoogleG size={40} />\n        </a>\n      </div>\n    </div>\n  );\n}\n\nfunction ChevronIcon({ direction }: { direction: 'left' | 'right' }) {\n  return (\n    <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2.5\" strokeLinecap=\"round\" strokeLinejoin=\"round\">\n      {direction === 'left' ? <path d=\"M15 18l-6-6 6-6\" /> : <path d=\"M9 18l6-6-6-6\" />}\n    </svg>\n  );\n}\n\nfunction TestimonialRow({ reviews }: { reviews: ReviewData[] }) {\n  const viewportRef = useRef<HTMLDivElement>(null);\n  const trackRef = useRef<HTMLDivElement>(null);\n  const [canScrollLeft, setCanScrollLeft] = useState(false);\n  const [canScrollRight, setCanScrollRight] = useState(false);\n\n  // Logical position: an integer card index in 'card' mode, or index+0.5\n  // (the gap right after that card) in 'gap' mode. Kept in a ref since it\n  // drives imperative scrolling rather than a re-render.\n  const anchorRef = useRef<number | undefined>(undefined);\n  const modeRef = useRef<CenterMode>('card');\n  const isAutoScrollingRef = useRef(false);\n  const hasUserScrolledRef = useRef(false);\n  const autoScrollTimeoutRef = useRef<number | undefined>(undefined);\n  const scrollEndTimeoutRef = useRef<number | undefined>(undefined);\n\n  const getMetrics = () => {\n    const viewport = viewportRef.current;\n    const track = trackRef.current;\n    if (!viewport || !track) return null;\n    const firstCard = track.firstElementChild as HTMLElement | null;\n    if (!firstCard) return null;\n    return {\n      viewport,\n      track,\n      cards: Array.from(track.children) as HTMLElement[],\n      cardWidth: firstCard.getBoundingClientRect().width,\n      viewportWidth: viewport.clientWidth,\n    };\n  };\n\n  const updateSidePadding = (visibleCount: number) => {\n    const m = getMetrics();\n    if (!m) return;\n    const blockWidth = visibleCount * m.cardWidth + (visibleCount - 1) * CARD_GAP_PX;\n    const sidePad = Math.max(0, (m.viewportWidth - blockWidth) / 2);\n    m.track.style.setProperty('--testi-side-pad', `${sidePad}px`);\n  };\n\n  /** Scrolls — this row's own scrollLeft only, never the page — so the\n   * given anchor (a card, or the gap between two cards) sits centered in\n   * the viewport. Measures live layout each call rather than relying on a\n   * separately-tracked assumption, so it can't drift out of sync. */\n  const scrollToAnchor = (anchor: number, mode: CenterMode, animate: boolean) => {\n    const m = getMetrics();\n    if (!m) return;\n    const { viewport, track, cards } = m;\n    const trackRect = track.getBoundingClientRect();\n\n    let centerFromTrackLeft: number | null = null;\n    if (mode === 'card') {\n      const card = cards[Math.round(anchor)];\n      if (!card) return;\n      const r = card.getBoundingClientRect();\n      centerFromTrackLeft = (r.left - trackRect.left) + r.width / 2;\n    } else {\n      const idx = Math.floor(anchor);\n      const cardA = cards[idx];\n      const cardB = cards[idx + 1];\n      if (!cardA || !cardB) return;\n      const ra = cardA.getBoundingClientRect();\n      const rb = cardB.getBoundingClientRect();\n      const rightOfA = (ra.left - trackRect.left) + ra.width;\n      const leftOfB = rb.left - trackRect.left;\n      centerFromTrackLeft = (rightOfA + leftOfB) / 2;\n    }\n    if (centerFromTrackLeft === null) return;\n\n    const targetLeft = viewport.scrollLeft + centerFromTrackLeft - viewport.clientWidth / 2;\n    const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);\n    const clamped = clamp(targetLeft, 0, maxScroll);\n\n    isAutoScrollingRef.current = true;\n    window.clearTimeout(autoScrollTimeoutRef.current);\n    if (animate) {\n      animateScrollTo(viewport, clamped);\n      autoScrollTimeoutRef.current = window.setTimeout(() => {\n        isAutoScrollingRef.current = false;\n      }, SCROLL_ANIMATION_MS + 50);\n    } else {\n      viewport.scrollLeft = clamped;\n      requestAnimationFrame(() => {\n        isAutoScrollingRef.current = false;\n      });\n    }\n  };\n\n  const updateArrowAvailability = (visibleCount: number, total: number, mode: CenterMode) => {\n    if (visibleCount >= total) {\n      setCanScrollLeft(false);\n      setCanScrollRight(false);\n      return;\n    }\n    const anchor = anchorRef.current ?? naturalAnchor(total, mode);\n    if (mode === 'card') {\n      setCanScrollLeft(anchor > 0);\n      setCanScrollRight(anchor < total - 1);\n    } else {\n      const maxHalf = Math.max(0.5, total - 1.5);\n      setCanScrollLeft(anchor > 0.5);\n      setCanScrollRight(anchor < maxHalf);\n    }\n  };\n\n  /** Finds whichever card (or gap between two cards) currently sits\n   * closest to the viewport's center — used to softly settle the row after\n   * a manual swipe. There's no native CSS scroll-snap here on purpose: it\n   * was fighting the arrow-click animation and occasionally made a click\n   * jump two cards instead of one, so alignment is handled in JS instead. */\n  const nearestAnchor = (mode: CenterMode): number => {\n    const m = getMetrics();\n    if (!m) return anchorRef.current ?? 0;\n    const { viewport, cards } = m;\n    const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;\n\n    if (mode === 'card') {\n      let best = 0;\n      let bestDist = Infinity;\n      cards.forEach((card, i) => {\n        const r = card.getBoundingClientRect();\n        const dist = Math.abs((r.left + r.width / 2) - viewportCenter);\n        if (dist < bestDist) {\n          bestDist = dist;\n          best = i;\n        }\n      });\n      return best;\n    }\n\n    let best = 0.5;\n    let bestDist = Infinity;\n    for (let i = 0; i < cards.length - 1; i++) {\n      const ra = cards[i].getBoundingClientRect();\n      const rb = cards[i + 1].getBoundingClientRect();\n      const gapCenter = (ra.right + rb.left) / 2;\n      const dist = Math.abs(gapCenter - viewportCenter);\n      if (dist < bestDist) {\n        bestDist = dist;\n        best = i + 0.5;\n      }\n    }\n    return best;\n  };\n\n  const handleScroll = () => {\n    if (isAutoScrollingRef.current) return;\n    hasUserScrolledRef.current = true;\n    window.clearTimeout(scrollEndTimeoutRef.current);\n    scrollEndTimeoutRef.current = window.setTimeout(() => {\n      const mode = modeRef.current;\n      const total = reviews.length;\n      const nearest = nearestAnchor(mode);\n      anchorRef.current = nearest;\n      scrollToAnchor(nearest, mode, true);\n      const m = getMetrics();\n      if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);\n    }, 120);\n  };\n\n  useEffect(() => {\n    const viewport = viewportRef.current;\n    if (!viewport) return;\n\n    hasUserScrolledRef.current = false;\n    anchorRef.current = undefined;\n    const total = reviews.length;\n\n    // Re-settle (side padding + centering + arrow state) on every layout\n    // change, including the guaranteed initial call ResizeObserver fires\n    // right after observe(). Determines from how many cards currently fit\n    // whether a card or a gap should be centered, and keeps that balanced\n    // as the screen resizes — until the person scrolls the row themselves.\n    const settle = () => {\n      const m = getMetrics();\n      if (!m) return;\n      const visibleCount = computeVisibleCount(m.cardWidth, m.viewportWidth, total);\n      const mode = modeForVisibleCount(visibleCount);\n\n      updateSidePadding(visibleCount);\n\n      if (!hasUserScrolledRef.current) {\n        if (modeRef.current !== mode || anchorRef.current === undefined) {\n          anchorRef.current = adjustAnchorForMode(anchorRef.current, mode, total);\n        }\n        modeRef.current = mode;\n        scrollToAnchor(anchorRef.current, mode, false);\n      } else {\n        modeRef.current = mode;\n      }\n\n      updateArrowAvailability(visibleCount, total, mode);\n    };\n\n    const resizeObserver = new ResizeObserver(settle);\n    resizeObserver.observe(viewport);\n    return () => {\n      resizeObserver.disconnect();\n      window.clearTimeout(autoScrollTimeoutRef.current);\n      window.clearTimeout(scrollEndTimeoutRef.current);\n    };\n    // eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [reviews]);\n\n  const scrollByOneCard = (dir: 'left' | 'right') => {\n    const total = reviews.length;\n    const mode = modeRef.current;\n    const current = anchorRef.current ?? naturalAnchor(total, mode);\n    const delta = dir === 'left' ? -1 : 1;\n\n    let next = current + delta;\n    if (mode === 'card') {\n      next = clamp(next, 0, total - 1);\n    } else {\n      const maxHalf = Math.max(0.5, total - 1.5);\n      next = clamp(next, 0.5, maxHalf);\n    }\n\n    hasUserScrolledRef.current = true;\n    anchorRef.current = next;\n    scrollToAnchor(next, mode, true);\n\n    const m = getMetrics();\n    if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);\n  };\n\n  return (\n    <div className=\"testi-row-wrap\">\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-left\"\n        onClick={() => scrollByOneCard('left')}\n        disabled={!canScrollLeft}\n        aria-label=\"Se forrige anmeldelse\"\n      >\n        <ChevronIcon direction=\"left\" />\n      </button>\n\n      <div className=\"testi-row-viewport\" ref={viewportRef} onScroll={handleScroll}>\n        <div ref={trackRef} className=\"testi-row-track\">\n          {reviews.map((review, i) => (\n            <ReviewCard key={`${review.user.name}-${i}`} review={review} />\n          ))}\n        </div>\n      </div>\n\n      <button\n        type=\"button\"\n        className=\"testi-arrow testi-arrow-right\"\n        onClick={() => scrollByOneCard('right')}\n        disabled={!canScrollRight}\n        aria-label=\"Se næste anmeldelse\"\n      >\n        <ChevronIcon direction=\"right\" />\n      </button>\n    </div>\n  );\n}\n\n// ─── Main component ───────────────────────────────────────────────────────────\n\nconst Testimonials: React.FC = () => {\n  const { getContent } = useData();\n\n  const allReviews = parseReviewArray(getContent(REVIEWS_KEY, ''));\n  const total = allReviews.length;\n\n  // No reviews configured at all — render nothing.\n  if (total === 0) return null;\n\n  const ratingData = parseRating(getContent(RATING_KEY, '')) ?? fallbackRating(allReviews);\n\n  return (\n    <section className=\"py-20\">\n      <style>{`\n        .testi-header {\n          display: flex;\n          flex-direction: column;\n          align-items: center;\n          text-align: center;\n          gap: 20px;\n          margin-bottom: 48px;\n          padding: 0 24px;\n        }\n        .testi-rating-badge {\n          display: inline-flex;\n          align-items: center;\n          gap: 8px;\n          background: #1a1a1a;\n          border: 1px solid #2a2a2a;\n          border-radius: 999px;\n          padding: 8px 18px;\n          text-decoration: none;\n          color: #f0f0f0;\n          font-family: 'Inter', sans-serif;\n          font-size: 0.85rem;\n          font-weight: 600;\n        }\n        .testi-rating-badge .testi-badge-stars {\n          display: flex;\n          gap: 1px;\n        }\n        .testi-header h2 {\n          font-family: 'Inter', sans-serif;\n          font-size: clamp(1.75rem, 3.5vw, 2.75rem);\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0;\n          max-width: 700px;\n          line-height: 1.2;\n        }\n        .testi-rows {\n          display: flex;\n          flex-direction: column;\n          gap: 24px;\n        }\n        .testi-row-wrap {\n          display: grid;\n          grid-template-columns: auto 1fr auto;\n          grid-template-areas: \"left viewport right\";\n          align-items: center;\n          gap: 12px;\n        }\n        .testi-row-viewport {\n          grid-area: viewport;\n        }\n        .testi-arrow-left {\n          grid-area: left;\n        }\n        .testi-arrow-right {\n          grid-area: right;\n        }\n        .testi-row-viewport {\n          overflow-x: auto;\n          overflow-y: hidden;\n          -webkit-overflow-scrolling: touch;\n          scroll-behavior: auto;\n          scrollbar-width: none;\n          overflow-anchor: none;\n          flex: 1;\n          min-width: 0;\n          -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n          mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);\n        }\n        .testi-row-viewport::-webkit-scrollbar {\n          display: none;\n        }\n        .testi-row-track {\n          display: flex;\n          gap: 24px;\n          width: max-content;\n          min-width: 100%;\n          justify-content: center;\n          padding: 0 var(--testi-side-pad, 24px);\n        }\n        .testi-arrow {\n          flex-shrink: 0;\n          width: 52px;\n          height: 52px;\n          border-radius: 50%;\n          border: 1px solid #2f2f2f;\n          background: #1a1a1a;\n          color: #ffffff;\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          cursor: pointer;\n          transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;\n        }\n        .testi-arrow:hover:not(:disabled) {\n          background: #262626;\n          border-color: #454545;\n        }\n        .testi-arrow:active:not(:disabled) {\n          transform: scale(0.94);\n        }\n        .testi-arrow:disabled {\n          opacity: 0.25;\n          cursor: default;\n        }\n        .testi-review-card {\n          background: #141414;\n          border: 1px solid #262626;\n          border-radius: 20px;\n          padding: 32px;\n          width: 380px;\n          flex-shrink: 0;\n          display: flex;\n          flex-direction: column;\n        }\n        .big-quote {\n          font-size: 3.5rem;\n          line-height: 0.7;\n          color: #3B82F6;\n          font-family: Georgia, serif;\n          font-weight: 700;\n          user-select: none;\n          display: block;\n          margin-bottom: 8px;\n        }\n        .testi-quote-text {\n          font-family: 'Inter', sans-serif;\n          font-size: 1.05rem;\n          font-weight: 400;\n          color: #f0f0f0;\n          line-height: 1.6;\n          letter-spacing: -0.01em;\n          margin: 0;\n          flex: 1;\n        }\n        .testi-author-row {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          margin-top: 20px;\n          padding-top: 16px;\n          border-top: 1px solid #262626;\n        }\n        .author-avatar {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          object-fit: cover;\n          flex-shrink: 0;\n        }\n        .author-avatar-square {\n          border-radius: 0;\n        }\n        .author-avatar-fallback {\n          width: 48px; height: 48px;\n          border-radius: 50%;\n          display: flex; align-items: center; justify-content: center;\n          font-size: 1.05rem; font-weight: 700; color: white;\n          flex-shrink: 0;\n        }\n        .author-link {\n          display: flex;\n          align-items: center;\n          gap: 12px;\n          flex: 1;\n          min-width: 0;\n          text-decoration: none;\n        }\n        .author-info { flex: 1; min-width: 0; }\n        .author-name {\n          font-size: 0.88rem;\n          font-weight: 700;\n          color: #ffffff;\n          margin: 0 0 2px 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .author-meta {\n          font-size: 0.72rem;\n          color: #A3A3A3;\n          margin: 0;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n        }\n        .google-badge {\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          text-decoration: none;\n          background: transparent;\n          border: none;\n          padding: 0;\n          flex-shrink: 0;\n        }\n        .testi-stars {\n          display: flex;\n          gap: 2px;\n          margin-bottom: 6px;\n        }\n        @media (max-width: 768px) {\n          .testi-review-card { width: 300px; padding: 24px; }\n          .big-quote { font-size: 2.75rem; }\n          .testi-quote-text { font-size: 0.95rem; }\n          .testi-row-wrap {\n            grid-template-columns: 1fr 1fr;\n            grid-template-areas:\n              \"viewport viewport\"\n              \"left right\";\n            row-gap: 16px;\n          }\n          .testi-arrow-left { justify-self: end; }\n          .testi-arrow-right { justify-self: start; }\n          .testi-row-viewport {\n            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);\n            mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);\n          }\n        }\n      `}</style>\n\n      <div className=\"testi-header\">\n        <a\n          href={ratingData.link || DEFAULT_GOOGLE_LINK}\n          target=\"_blank\"\n          rel=\"noopener noreferrer\"\n          className=\"testi-rating-badge\"\n        >\n          <span className=\"testi-badge-stars\">\n            {[1, 2, 3, 4, 5].map((i) => (\n              <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />\n            ))}\n          </span>\n          Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google\n        </a>\n        <h2>Andre glade kunder</h2>\n      </div>\n\n      <div className=\"testi-rows\">\n        <TestimonialRow reviews={allReviews} />\n      </div>\n    </section>\n  );\n};\n\nexport default Testimonials;",
         "filename": "component.tsx",
         "language": "tsx"
       }
