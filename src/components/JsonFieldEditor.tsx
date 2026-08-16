@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronUp, Code, LayoutGrid, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Code, LayoutGrid, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────
 // JsonFieldEditor
@@ -71,6 +71,43 @@ function buildTemplateObject(obj: JsonObject): JsonObject {
     Object.entries(obj).map(([k, v]) => [k, buildTemplateValue(v)])
   );
 }
+
+/** Returns a new array with the item at `from` moved to `to`. No-op if `to` is out of range. */
+function moveArrayItem<T>(arr: T[], from: number, to: number): T[] {
+  if (to < 0 || to >= arr.length) return arr;
+  const next = [...arr];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+// ─── Small reusable move-up/move-down control ──────────────────────────
+const ReorderButtons: React.FC<{
+  index: number;
+  count: number;
+  onMove: (from: number, to: number) => void;
+}> = ({ index, count, onMove }) => (
+  <div className="flex items-center">
+    <button
+      type="button"
+      onClick={() => onMove(index, index - 1)}
+      disabled={index === 0}
+      title="Flyt op"
+      className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-25 disabled:hover:text-neutral-500 disabled:cursor-not-allowed"
+    >
+      <ArrowUp size={13} />
+    </button>
+    <button
+      type="button"
+      onClick={() => onMove(index, index + 1)}
+      disabled={index === count - 1}
+      title="Flyt ned"
+      className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-25 disabled:hover:text-neutral-500 disabled:cursor-not-allowed"
+    >
+      <ArrowDown size={13} />
+    </button>
+  </div>
+);
 
 function humanizeLabel(key: string): string {
   return key
@@ -291,13 +328,20 @@ const ObjectCard: React.FC<{
                 <div className="space-y-2">
                   {(value as JsonObject[]).map((item, i) => (
                     <div key={i} className="bg-neutral-900/60 rounded-lg p-3 relative">
-                      <button
-                        type="button"
-                        onClick={() => setField(key, (value as JsonObject[]).filter((_, idx) => idx !== i))}
-                        className="absolute top-2 right-2 p-1 text-neutral-500 hover:text-red-400"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
+                        <ReorderButtons
+                          index={i}
+                          count={(value as JsonObject[]).length}
+                          onMove={(from, to) => setField(key, moveArrayItem(value as JsonObject[], from, to))}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setField(key, (value as JsonObject[]).filter((_, idx) => idx !== i))}
+                          className="p-1 text-neutral-500 hover:text-red-400"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                       <ObjectCard
                         obj={item}
                         depth={depth + 1}
@@ -436,17 +480,24 @@ const JsonFieldEditor: React.FC<JsonFieldEditorProps> = ({ value, onChange }) =>
               {parsed.isArray && (
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-semibold text-neutral-400">#{i + 1}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = parsed.items.filter((_, idx) => idx !== i);
-                      emit(next, parsed.isArray);
-                    }}
-                    className="p-1 text-neutral-500 hover:text-red-400"
-                    title="Slet dette element"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  <div className="flex items-center gap-0.5">
+                    <ReorderButtons
+                      index={i}
+                      count={parsed.items.length}
+                      onMove={(from, to) => emit(moveArrayItem(parsed.items, from, to), parsed.isArray)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = parsed.items.filter((_, idx) => idx !== i);
+                        emit(next, parsed.isArray);
+                      }}
+                      className="p-1 text-neutral-500 hover:text-red-400"
+                      title="Slet dette element"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               )}
               <ObjectCard
