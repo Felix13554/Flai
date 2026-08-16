@@ -46,6 +46,32 @@ function isPlainObject(v: unknown): v is JsonObject {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
+// Recursively builds a "blank" copy of a value, preserving the full shape
+// (all nested object keys and array-of-object item keys) instead of
+// collapsing nested objects/arrays down to {} / '' / []. This is what
+// powers "add new item" buttons so a field like `user: { name, email }`
+// still has its `name`/`email` sub-fields on the newly created item.
+function buildTemplateValue(v: JsonValue): JsonValue {
+  if (typeof v === 'number') return 0;
+  if (typeof v === 'boolean') return false;
+  if (v === null) return null;
+  if (Array.isArray(v)) {
+    // Nested arrays start empty either way (their own "add" button already
+    // templates from a sibling item), so no need to fabricate contents here.
+    return [];
+  }
+  if (isPlainObject(v)) {
+    return buildTemplateObject(v);
+  }
+  return '';
+}
+
+function buildTemplateObject(obj: JsonObject): JsonObject {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, buildTemplateValue(v)])
+  );
+}
+
 function humanizeLabel(key: string): string {
   return key
     .replace(/[_-]+/g, ' ')
@@ -287,7 +313,7 @@ const ObjectCard: React.FC<{
                     type="button"
                     onClick={() => {
                       const template = (value as JsonObject[])[0]
-                        ? Object.fromEntries(Object.keys((value as JsonObject[])[0]).map(k => [k, '']))
+                        ? buildTemplateObject((value as JsonObject[])[0])
                         : {};
                       setField(key, [...(value as JsonObject[]), template]);
                     }}
@@ -439,14 +465,7 @@ const JsonFieldEditor: React.FC<JsonFieldEditorProps> = ({ value, onChange }) =>
               type="button"
               onClick={() => {
                 const template = parsed.items[0]
-                  ? Object.fromEntries(Object.keys(parsed.items[0]).map(k => {
-                      const v = parsed.items[0][k];
-                      if (typeof v === 'number') return [k, 0];
-                      if (typeof v === 'boolean') return [k, false];
-                      if (Array.isArray(v)) return [k, []];
-                      if (isPlainObject(v)) return [k, {}];
-                      return [k, ''];
-                    }))
+                  ? buildTemplateObject(parsed.items[0])
                   : {};
                 emit([...parsed.items, template], true);
               }}
