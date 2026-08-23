@@ -37,7 +37,7 @@ const Footer: React.FC = () => {
       setTimeout(() => setIsSuccess(false), 5000);
     } catch (err) {
       console.error('Contact form error:', err);
-      setError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senere.');
+      setError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senere.');
     } finally {
       setIsSubmitting(false);
     }
@@ -63,7 +63,7 @@ const Footer: React.FC = () => {
       setTimeout(() => setIsNewsletterSuccess(false), 5000);
     } catch (err) {
       console.error('Newsletter subscription error:', err);
-      setNewsletterError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senare.');
+      setNewsletterError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senare.');
     } finally {
       setIsNewsletterSubmitting(false);
     }
@@ -91,7 +91,8 @@ const Footer: React.FC = () => {
             <div className="flex space-x-4">
 
               <a href="https://www.facebook.com/profile.php?id=61584155103217" target="_blank" rel="noopener noreferrer" className="text-white/80 hover:text-white transition-colors"><Facebook size={20} /></a>
-            
+
+              <a href="https://www.linkedin.com/in/felix-berg-922ab9398/" target="_blank" rel="noopener noreferrer" className="text-white/80 hover:text-white transition-colors"><Linkedin size={20} /></a>
               <a href="https://www.youtube.com/@flai-i3j" target="_blank" rel="noopener noreferrer" className="text-white/80 hover:text-white transition-colors"><Youtube size={20} /></a>
               <a href="https://x.com/fb_flai" target="_blank" rel="noopener noreferrer" className="text-white/80 hover:text-white transition-colors"><X size={20} /></a>
             </div>
