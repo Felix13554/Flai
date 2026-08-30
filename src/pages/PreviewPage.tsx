@@ -201,8 +201,12 @@ const PreviewPage: React.FC = () => {
   // ── Rotate-to-fullscreen (mobile only) ──────────────────────────────
   // Flipping a phone to landscape reads as "I want to watch this" — so
   // send the iframe straight into YouTube's own fullscreen player instead
-  // of leaving the user to tap the expand button themselves. Flipping back
-  // to portrait exits fullscreen again the same way.
+  // of leaving the user to tap the expand button themselves. Flipping
+  // back to portrait exits fullscreen again the same way — but ONLY if
+  // WE were the ones who auto-entered it via rotation. If the user
+  // manually tapped YouTube's own fullscreen button themselves, rotating
+  // back to portrait leaves it alone; that was their choice, not ours to
+  // undo. autoEnteredFullscreenRef tracks which case we're in.
   //
   // Caveat: browsers only grant Fullscreen API requests off a direct user
   // gesture (tap/click) — a rotation isn't one. Chrome on Android is
@@ -221,6 +225,7 @@ const PreviewPage: React.FC = () => {
 
     const landscapeQuery = window.matchMedia('(orientation: landscape)');
     let wasLandscape = landscapeQuery.matches;
+    let autoEnteredFullscreen = false;
 
     const enterFullscreen = () => {
       const iframe = videoIframeRef.current;
@@ -230,8 +235,16 @@ const PreviewPage: React.FC = () => {
         (iframe as unknown as { webkitRequestFullscreen?: () => Promise<void> | void }).webkitRequestFullscreen?.bind(iframe);
       try {
         const result = request?.();
-        if (result && typeof (result as Promise<void>).catch === 'function') {
-          (result as Promise<void>).catch(() => {});
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          (result as Promise<void>).then(
+            () => { autoEnteredFullscreen = true; },
+            () => { autoEnteredFullscreen = false; }, // request refused — nothing to do
+          );
+        } else {
+          // Prefixed webkit call has no promise to confirm with — assume
+          // it worked; the fullscreenchange listener below corrects this
+          // if it actually didn't.
+          autoEnteredFullscreen = true;
         }
       } catch {
         // Fullscreen request refused (no recent gesture, unsupported on
@@ -241,11 +254,16 @@ const PreviewPage: React.FC = () => {
 
     const exitFullscreen = () => {
       if (document.fullscreenElement !== videoIframeRef.current) return;
+      // Only auto-exit fullscreen we auto-entered. The user tapping
+      // YouTube's own fullscreen button themselves — in either
+      // orientation — is left exactly as they set it.
+      if (!autoEnteredFullscreen) return;
       try {
         const result = document.exitFullscreen?.();
         if (result && typeof result.catch === 'function') result.catch(() => {});
       } catch {
-        // Already left fullscreen some other way — nothing to do.
+        // Browser refused/already left fullscreen some other way —
+        // nothing to do, fail silently.
       }
     };
 
@@ -263,12 +281,23 @@ const PreviewPage: React.FC = () => {
       }
     };
 
+    // Tracks fullscreen exits from ANY cause (our auto-exit above, the
+    // user tapping YouTube's exit control, pressing Esc/back) so a later
+    // manual re-entry by the user is never mistaken for one of ours.
+    const handleFullscreenChange = () => {
+      if (document.fullscreenElement !== videoIframeRef.current) {
+        autoEnteredFullscreen = false;
+      }
+    };
+
     landscapeQuery.addEventListener?.('change', handleFlip);
     window.addEventListener('orientationchange', handleFlip);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
       landscapeQuery.removeEventListener?.('change', handleFlip);
       window.removeEventListener('orientationchange', handleFlip);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [link?.type, link?.youtube_id]);
 
