@@ -81,7 +81,6 @@ const PreviewPage: React.FC = () => {
   // to the available height instead. Recomputed on every window resize so
   // dragging the browser window bigger/smaller keeps it perfectly fitted.
   const videoWrapRef = useRef<HTMLDivElement>(null);
-  const videoIframeRef = useRef<HTMLIFrameElement>(null);
   const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 0, height: 0 };
     const availableWidth = window.innerWidth;
@@ -195,109 +194,6 @@ const PreviewPage: React.FC = () => {
       window.removeEventListener('orientationchange', handleOrientation);
       orientationMedia?.removeEventListener?.('change', handleOrientation);
       resizeObserver?.disconnect();
-    };
-  }, [link?.type, link?.youtube_id]);
-
-  // ── Rotate-to-fullscreen (mobile only) ──────────────────────────────
-  // Flipping a phone to landscape reads as "I want to watch this" — so
-  // send the iframe straight into YouTube's own fullscreen player instead
-  // of leaving the user to tap the expand button themselves. Flipping
-  // back to portrait exits fullscreen again the same way — but ONLY if
-  // WE were the ones who auto-entered it via rotation. If the user
-  // manually tapped YouTube's own fullscreen button themselves, rotating
-  // back to portrait leaves it alone; that was their choice, not ours to
-  // undo. autoEnteredFullscreenRef tracks which case we're in.
-  //
-  // Caveat: browsers only grant Fullscreen API requests off a direct user
-  // gesture (tap/click) — a rotation isn't one. Chrome on Android is
-  // lenient enough that this reliably works within its "sticky
-  // activation" window after any recent tap; iOS Safari is stricter about
-  // iframe fullscreen and will often refuse it outright. Either way the
-  // request fails silently rather than erroring, and the user can always
-  // fall back to YouTube's own fullscreen button in the player.
-  useEffect(() => {
-    if (link?.type !== 'video' || !link.youtube_id) return;
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    // Gate to touch devices — desktops/laptops don't rotate, and a mouse
-    // user resizing their window into a wide shape shouldn't be yanked
-    // into fullscreen.
-    if (!window.matchMedia('(pointer: coarse)').matches) return;
-
-    const landscapeQuery = window.matchMedia('(orientation: landscape)');
-    let wasLandscape = landscapeQuery.matches;
-    let autoEnteredFullscreen = false;
-
-    const enterFullscreen = () => {
-      const iframe = videoIframeRef.current;
-      if (!iframe || document.fullscreenElement) return;
-      const request =
-        iframe.requestFullscreen?.bind(iframe) ??
-        (iframe as unknown as { webkitRequestFullscreen?: () => Promise<void> | void }).webkitRequestFullscreen?.bind(iframe);
-      try {
-        const result = request?.();
-        if (result && typeof (result as Promise<void>).then === 'function') {
-          (result as Promise<void>).then(
-            () => { autoEnteredFullscreen = true; },
-            () => { autoEnteredFullscreen = false; }, // request refused — nothing to do
-          );
-        } else {
-          // Prefixed webkit call has no promise to confirm with — assume
-          // it worked; the fullscreenchange listener below corrects this
-          // if it actually didn't.
-          autoEnteredFullscreen = true;
-        }
-      } catch {
-        // Fullscreen request refused (no recent gesture, unsupported on
-        // this browser, etc.) — nothing to do, fail silently.
-      }
-    };
-
-    const exitFullscreen = () => {
-      if (document.fullscreenElement !== videoIframeRef.current) return;
-      // Only auto-exit fullscreen we auto-entered. The user tapping
-      // YouTube's own fullscreen button themselves — in either
-      // orientation — is left exactly as they set it.
-      if (!autoEnteredFullscreen) return;
-      try {
-        const result = document.exitFullscreen?.();
-        if (result && typeof result.catch === 'function') result.catch(() => {});
-      } catch {
-        // Browser refused/already left fullscreen some other way —
-        // nothing to do, fail silently.
-      }
-    };
-
-    const handleFlip = () => {
-      const nowLandscape = landscapeQuery.matches;
-      if (nowLandscape === wasLandscape) return;
-      wasLandscape = nowLandscape;
-      if (nowLandscape) {
-        // Let the rotation's layout/reflow settle before requesting
-        // fullscreen — matches the delayed re-measures in the sizing
-        // effect above, for the same reason.
-        setTimeout(enterFullscreen, 250);
-      } else {
-        exitFullscreen();
-      }
-    };
-
-    // Tracks fullscreen exits from ANY cause (our auto-exit above, the
-    // user tapping YouTube's exit control, pressing Esc/back) so a later
-    // manual re-entry by the user is never mistaken for one of ours.
-    const handleFullscreenChange = () => {
-      if (document.fullscreenElement !== videoIframeRef.current) {
-        autoEnteredFullscreen = false;
-      }
-    };
-
-    landscapeQuery.addEventListener?.('change', handleFlip);
-    window.addEventListener('orientationchange', handleFlip);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-
-    return () => {
-      landscapeQuery.removeEventListener?.('change', handleFlip);
-      window.removeEventListener('orientationchange', handleFlip);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [link?.type, link?.youtube_id]);
 
@@ -439,7 +335,6 @@ const PreviewPage: React.FC = () => {
             }}
           >
             <iframe
-              ref={videoIframeRef}
               src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
