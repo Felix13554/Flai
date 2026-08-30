@@ -100,6 +100,9 @@ const Footer: React.FC = () => {
           <div>
             <EditableContent contentKey="footer-contact-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Kontakt os" />
             <ul className="space-y-3 text-white/90">
+              <li>
+                <EditableContent contentKey="footer-legal-name" as="span" className="text-white/60 text-sm block mb-1" fallback="Flai PMV" />
+              </li>
               <li className="flex items-center group">
                 <Mail size={18} className="mr-2 flex-shrink-0" />
                 <a href={`mailto:${getContent('contact-email', "fb@flai.dk")}`} className="hover:text-white transition-colors break-all">
