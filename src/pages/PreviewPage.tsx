@@ -81,6 +81,7 @@ const PreviewPage: React.FC = () => {
   // to the available height instead. Recomputed on every window resize so
   // dragging the browser window bigger/smaller keeps it perfectly fitted.
   const videoWrapRef = useRef<HTMLDivElement>(null);
+  const videoIframeRef = useRef<HTMLIFrameElement>(null);
   const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 0, height: 0 };
     const availableWidth = window.innerWidth;
@@ -194,6 +195,80 @@ const PreviewPage: React.FC = () => {
       window.removeEventListener('orientationchange', handleOrientation);
       orientationMedia?.removeEventListener?.('change', handleOrientation);
       resizeObserver?.disconnect();
+    };
+  }, [link?.type, link?.youtube_id]);
+
+  // ── Rotate-to-fullscreen (mobile only) ──────────────────────────────
+  // Flipping a phone to landscape reads as "I want to watch this" — so
+  // send the iframe straight into YouTube's own fullscreen player instead
+  // of leaving the user to tap the expand button themselves. Flipping back
+  // to portrait exits fullscreen again the same way.
+  //
+  // Caveat: browsers only grant Fullscreen API requests off a direct user
+  // gesture (tap/click) — a rotation isn't one. Chrome on Android is
+  // lenient enough that this reliably works within its "sticky
+  // activation" window after any recent tap; iOS Safari is stricter about
+  // iframe fullscreen and will often refuse it outright. Either way the
+  // request fails silently rather than erroring, and the user can always
+  // fall back to YouTube's own fullscreen button in the player.
+  useEffect(() => {
+    if (link?.type !== 'video' || !link.youtube_id) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    // Gate to touch devices — desktops/laptops don't rotate, and a mouse
+    // user resizing their window into a wide shape shouldn't be yanked
+    // into fullscreen.
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+
+    const landscapeQuery = window.matchMedia('(orientation: landscape)');
+    let wasLandscape = landscapeQuery.matches;
+
+    const enterFullscreen = () => {
+      const iframe = videoIframeRef.current;
+      if (!iframe || document.fullscreenElement) return;
+      const request =
+        iframe.requestFullscreen?.bind(iframe) ??
+        (iframe as unknown as { webkitRequestFullscreen?: () => Promise<void> | void }).webkitRequestFullscreen?.bind(iframe);
+      try {
+        const result = request?.();
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch {
+        // Fullscreen request refused (no recent gesture, unsupported on
+        // this browser, etc.) — nothing to do, fail silently.
+      }
+    };
+
+    const exitFullscreen = () => {
+      if (document.fullscreenElement !== videoIframeRef.current) return;
+      try {
+        const result = document.exitFullscreen?.();
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      } catch {
+        // Already left fullscreen some other way — nothing to do.
+      }
+    };
+
+    const handleFlip = () => {
+      const nowLandscape = landscapeQuery.matches;
+      if (nowLandscape === wasLandscape) return;
+      wasLandscape = nowLandscape;
+      if (nowLandscape) {
+        // Let the rotation's layout/reflow settle before requesting
+        // fullscreen — matches the delayed re-measures in the sizing
+        // effect above, for the same reason.
+        setTimeout(enterFullscreen, 250);
+      } else {
+        exitFullscreen();
+      }
+    };
+
+    landscapeQuery.addEventListener?.('change', handleFlip);
+    window.addEventListener('orientationchange', handleFlip);
+
+    return () => {
+      landscapeQuery.removeEventListener?.('change', handleFlip);
+      window.removeEventListener('orientationchange', handleFlip);
     };
   }, [link?.type, link?.youtube_id]);
 
@@ -335,9 +410,10 @@ const PreviewPage: React.FC = () => {
             }}
           >
             <iframe
+              ref={videoIframeRef}
               src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
               className="w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               title={link.title}
             />
