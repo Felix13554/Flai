@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Phone, Instagram, Linkedin, Youtube, X, Facebook, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
+import { Mail, Phone, Instagram, Linkedin, Youtube, X, Facebook, MapPin, Send, Loader2, CheckCircle, Landmark } from 'lucide-react';
 import EditableContent from './EditableContent';
 import { useData } from '../contexts/DataContext';
 
@@ -100,8 +100,9 @@ const Footer: React.FC = () => {
           <div>
             <EditableContent contentKey="footer-contact-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Kontakt os" />
             <ul className="space-y-3 text-white/90">
-              <li>
-                <EditableContent contentKey="footer-legal-name" as="span" className="text-white/60 text-sm block mb-1" fallback="Flai PMV" />
+              <li className="flex items-center group">
+                <Landmark size={18} className="mr-2 flex-shrink-0" />
+                <EditableContent contentKey="footer-legal-name" as="span" fallback="Flai PMV" />
               </li>
               <li className="flex items-center group">
                 <Mail size={18} className="mr-2 flex-shrink-0" />
