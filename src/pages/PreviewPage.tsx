@@ -233,7 +233,20 @@ const PreviewPage: React.FC = () => {
         <div
           ref={videoWrapRef}
           className="w-full bg-neutral-900 flex items-start justify-center overflow-hidden"
-          style={{ paddingTop: TOP_OFFSET, paddingBottom: BOTTOM_OFFSET, height: '100vh' }}
+          style={{
+            paddingTop: TOP_OFFSET,
+            paddingBottom: BOTTOM_OFFSET,
+            // Shrink-wraps to the video's actual height instead of always
+            // reserving the full viewport. On narrow/portrait screens the
+            // video is width-constrained and ends up shorter than the
+            // available height — without this, that leftover space just
+            // sits empty between the video and the footer below it. Note
+            // this can never exceed 100vh: when the video IS
+            // height-constrained, videoSize.height already equals
+            // `100vh - TOP_OFFSET - BOTTOM_OFFSET`, so the sum below caps
+            // out at exactly 100vh in that case.
+            height: videoSize.height ? TOP_OFFSET + videoSize.height + BOTTOM_OFFSET : '100vh',
+          }}
         >
           <div
             style={{
