@@ -58,12 +58,12 @@ type MetaResult =
   | { type: 'folder'; id: string; name: string; count: number; items: FolderItem[] }
   | { type: 'unsupported' };
 
-// Gap (px) reserved above the video only — clears the fixed NavBar
-// (matches the `pt-20` used elsewhere on this page). The video is
-// top-aligned right below this gap and grows down/right until it hits
-// either the sides or the bottom of the viewport — no matching gap is
-// reserved at the bottom.
+// Gap (px) reserved above the video — clears the fixed NavBar (matches
+// the `pt-20` used elsewhere on this page). The video is top-aligned
+// right below this gap and grows down/right until it hits either the
+// sides or BOTTOM_OFFSET px above the bottom of the viewport.
 const TOP_OFFSET = 80;
+const BOTTOM_OFFSET = 40;
 const VIDEO_ASPECT = 16 / 9;
 
 const PreviewPage: React.FC = () => {
@@ -84,7 +84,7 @@ const PreviewPage: React.FC = () => {
   const [videoSize, setVideoSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 0, height: 0 };
     const availableWidth = window.innerWidth;
-    const availableHeight = window.innerHeight - TOP_OFFSET;
+    const availableHeight = window.innerHeight - TOP_OFFSET - BOTTOM_OFFSET;
     let width = availableWidth;
     let height = width / VIDEO_ASPECT;
     if (height > availableHeight) {
@@ -99,7 +99,7 @@ const PreviewPage: React.FC = () => {
 
     const computeSize = () => {
       const availableWidth = videoWrapRef.current?.clientWidth ?? window.innerWidth;
-      const availableHeight = window.innerHeight - TOP_OFFSET;
+      const availableHeight = window.innerHeight - TOP_OFFSET - BOTTOM_OFFSET;
 
       let width = availableWidth;
       let height = width / VIDEO_ASPECT;
@@ -233,14 +233,14 @@ const PreviewPage: React.FC = () => {
         <div
           ref={videoWrapRef}
           className="w-full bg-neutral-900 flex items-start justify-center overflow-hidden"
-          style={{ paddingTop: TOP_OFFSET, height: '100vh' }}
+          style={{ paddingTop: TOP_OFFSET, paddingBottom: BOTTOM_OFFSET, height: '100vh' }}
         >
           <div
             style={{
               width: videoSize.width || '100%',
               height: videoSize.height || undefined,
               maxWidth: '100%',
-              maxHeight: `calc(100vh - ${TOP_OFFSET}px)`,
+              maxHeight: `calc(100vh - ${TOP_OFFSET + BOTTOM_OFFSET}px)`,
             }}
           >
             <iframe
