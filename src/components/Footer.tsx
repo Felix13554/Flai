@@ -102,7 +102,7 @@ const Footer: React.FC = () => {
             <ul className="space-y-3 text-white/90">
               <li className="flex items-center group">
                 <Landmark size={18} className="mr-2 flex-shrink-0" />
-                <EditableContent contentKey="footer-legal-name" as="span" fallback="Flai PMV" />
+                <EditableContent contentKey="footer-legal-name" as="span" fallback="Flai" />
               </li>
               <li className="flex items-center group">
                 <Mail size={18} className="mr-2 flex-shrink-0" />
