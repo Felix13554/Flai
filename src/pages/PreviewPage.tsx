@@ -63,7 +63,7 @@ type MetaResult =
 // right below this gap and grows down/right until it hits either the
 // sides or BOTTOM_OFFSET px above the bottom of the viewport.
 const TOP_OFFSET = 80;
-const BOTTOM_OFFSET = 40;
+const BOTTOM_OFFSET = 20;
 const VIDEO_ASPECT = 16 / 9;
 
 const PreviewPage: React.FC = () => {
