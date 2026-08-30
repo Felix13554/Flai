@@ -97,8 +97,26 @@ const PreviewPage: React.FC = () => {
   useEffect(() => {
     if (link?.type !== 'video' || !link.youtube_id) return;
 
-    const computeSize = () => {
+    // Tracks the last WIDTH we actually sized against. Mobile browsers
+    // (iOS Safari especially) resize the *height* of the viewport as
+    // their address bar/toolbar collapses and re-expands while the user
+    // scrolls — with no real orientation or window-size change involved.
+    // Reacting to that made the video visibly grow when scrolling down
+    // and shrink back when scrolling up. The device's actual width never
+    // changes from that toolbar animation — only a real rotation or
+    // window resize changes it — so recomputation is gated on width:
+    // pure height-only events (i.e. scroll-driven toolbar movement) are
+    // ignored, while width changes (rotation, resize, zoom) or an
+    // explicit `force` (first mount, orientation events) always go through.
+    let lastWidth: number | null = null;
+
+    const computeSize = (force = false) => {
       const availableWidth = videoWrapRef.current?.clientWidth ?? window.innerWidth;
+      const roundedWidth = Math.round(availableWidth);
+
+      if (!force && lastWidth !== null && roundedWidth === lastWidth) return;
+      lastWidth = roundedWidth;
+
       const availableHeight = window.innerHeight - TOP_OFFSET - BOTTOM_OFFSET;
 
       let width = availableWidth;
@@ -127,35 +145,54 @@ const PreviewPage: React.FC = () => {
     // frame instead of one per pixel — the latter is what was causing the
     // scroll glitches: dozens of container-height writes a second while
     // resizing, each shifting the page's scroll position slightly.
-    const scheduleCompute = () => {
+    const scheduleCompute = (force = false) => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(computeSize);
+      rafId = requestAnimationFrame(() => computeSize(force));
     };
 
-    computeSize();
-    window.addEventListener('resize', scheduleCompute);
+    computeSize(true);
+    const handleResize = () => scheduleCompute(false);
+    window.addEventListener('resize', handleResize);
+    // visualViewport catches genuine viewport-width changes (pinch zoom,
+    // split-screen resize) that some mobile browsers don't reflect in
+    // window's own 'resize' event. Still gated by width in computeSize,
+    // so toolbar-driven height wobble during scroll is ignored here too.
+    window.visualViewport?.addEventListener('resize', handleResize);
 
-    // Mobile browsers (notably iOS Safari) fire 'orientationchange'
-    // before window.innerWidth/innerHeight actually reflect the new
-    // orientation — measuring immediately reads the stale (pre-flip)
-    // dimensions, so the video silently keeps its old size. A short delay
-    // lets the browser finish the layout flip before we measure.
-    const handleOrientation = () => setTimeout(computeSize, 150);
+    // A real rotation always changes the width, but different mobile
+    // browsers commit the new window dimensions at different points in
+    // the rotation animation — some as late as several hundred ms after
+    // 'orientationchange' fires. Re-measuring a few times over that
+    // window (each forced, so it isn't skipped by the width-gate above
+    // even if an early read still shows the pre-rotation width) makes
+    // sure the video ends up sized for wherever the dimensions actually
+    // land, instead of getting stuck on a stale read.
+    const orientationTimers: ReturnType<typeof setTimeout>[] = [];
+    const handleOrientation = () => {
+      [50, 200, 450, 800].forEach((delay) => {
+        orientationTimers.push(setTimeout(() => computeSize(true), delay));
+      });
+    };
     window.addEventListener('orientationchange', handleOrientation);
+    const orientationMedia = window.screen?.orientation;
+    orientationMedia?.addEventListener?.('change', handleOrientation);
 
     // Belt-and-suspenders: ResizeObserver catches size changes 'resize'
     // can miss entirely — ancestor/layout shifts, or environments where
     // window 'resize' doesn't fire reliably (some in-app/WebView browsers).
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && videoWrapRef.current) {
-      resizeObserver = new ResizeObserver(scheduleCompute);
+      resizeObserver = new ResizeObserver(() => scheduleCompute(false));
       resizeObserver.observe(videoWrapRef.current);
     }
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', scheduleCompute);
+      orientationTimers.forEach((t) => clearTimeout(t));
+      window.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleOrientation);
+      orientationMedia?.removeEventListener?.('change', handleOrientation);
       resizeObserver?.disconnect();
     };
   }, [link?.type, link?.youtube_id]);
