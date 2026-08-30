@@ -91,7 +91,7 @@ const PreviewPage: React.FC = () => {
       height = availableHeight;
       width = height * VIDEO_ASPECT;
     }
-    return { width, height };
+    return { width: Math.round(width), height: Math.round(height) };
   });
 
   useEffect(() => {
@@ -111,12 +111,53 @@ const PreviewPage: React.FC = () => {
         width = height * VIDEO_ASPECT;
       }
 
-      setVideoSize({ width, height });
+      // Round so the container's derived height (TOP_OFFSET + height +
+      // BOTTOM_OFFSET, see below) can't drift by fractional pixels between
+      // recomputes — that drift is what re-triggers the ResizeObserver
+      // below on every pass and shows up as scrollbar/scroll-position jitter.
+      setVideoSize((prev) => {
+        const next = { width: Math.round(width), height: Math.round(height) };
+        return prev.width === next.width && prev.height === next.height ? prev : next;
+      });
+    };
+
+    let rafId: number | null = null;
+    // Batches rapid-fire events (dragging a window edge, rotating a
+    // phone, devtools' device toolbar) into one recompute per animation
+    // frame instead of one per pixel — the latter is what was causing the
+    // scroll glitches: dozens of container-height writes a second while
+    // resizing, each shifting the page's scroll position slightly.
+    const scheduleCompute = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(computeSize);
     };
 
     computeSize();
-    window.addEventListener('resize', computeSize);
-    return () => window.removeEventListener('resize', computeSize);
+    window.addEventListener('resize', scheduleCompute);
+
+    // Mobile browsers (notably iOS Safari) fire 'orientationchange'
+    // before window.innerWidth/innerHeight actually reflect the new
+    // orientation — measuring immediately reads the stale (pre-flip)
+    // dimensions, so the video silently keeps its old size. A short delay
+    // lets the browser finish the layout flip before we measure.
+    const handleOrientation = () => setTimeout(computeSize, 150);
+    window.addEventListener('orientationchange', handleOrientation);
+
+    // Belt-and-suspenders: ResizeObserver catches size changes 'resize'
+    // can miss entirely — ancestor/layout shifts, or environments where
+    // window 'resize' doesn't fire reliably (some in-app/WebView browsers).
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && videoWrapRef.current) {
+      resizeObserver = new ResizeObserver(scheduleCompute);
+      resizeObserver.observe(videoWrapRef.current);
+    }
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', scheduleCompute);
+      window.removeEventListener('orientationchange', handleOrientation);
+      resizeObserver?.disconnect();
+    };
   }, [link?.type, link?.youtube_id]);
 
   useEffect(() => {
