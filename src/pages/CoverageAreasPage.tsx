@@ -207,7 +207,6 @@ const CoverageAreasPage: React.FC = () => {
     distance?: string;
   } | null>(null);
   const [checking, setChecking] = useState(false);
-  const [selectedZone, setSelectedZone] = useState<any>(null);
   const [zoneCoordinates, setZoneCoordinates] = useState<{ [key: string]: { lat: number; lon: number } }>({});
 
   const TOMTOM_API_KEY = import.meta.env.VITE_TOMTOM_API_KEY;
@@ -307,26 +306,7 @@ const CoverageAreasPage: React.FC = () => {
     }
   };
 
-  const handleZoneClick = async (zone: any) => {
-    setSelectedZone(zone);
-    if (!zoneCoordinates[zone.id]) {
-      try {
-        const response = await fetch(
-          `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(zone.center_address)}.json?key=${TOMTOM_API_KEY}&language=da-DK`
-        );
-        const data = await response.json();
-        if (data.results?.length > 0) {
-          const { lat, lon } = data.results[0].position;
-          setZoneCoordinates(prev => ({ ...prev, [zone.id]: { lat, lon } }));
-        }
-      } catch (error) {
-        console.error('Error geocoding address:', error);
-        toast.error('Kunne ikke finde adressen');
-      }
-    }
-  };
-
-  // Geocode zone centers in parallel — only used for map display, not city lookup
+  // Geocode zone centers in parallel — used for map display and city lookup
   useEffect(() => {
     if (addressZones.length === 0 || !TOMTOM_API_KEY) return;
 
@@ -351,7 +331,7 @@ const CoverageAreasPage: React.FC = () => {
 
       const newCoords: { [key: string]: { lat: number; lon: number } } = {};
       results.forEach(r => { if (r) newCoords[r.id] = { lat: r.lat, lon: r.lon }; });
-      setZoneCoordinates(newCoords);
+      setZoneCoordinates(prev => ({ ...prev, ...newCoords }));
     };
 
     geocodeAllZones();
@@ -558,12 +538,7 @@ const CoverageAreasPage: React.FC = () => {
                 {addressZones.map(zone => (
                   <div
                     key={zone.id}
-                    className={`flex items-start space-x-3 p-4 rounded-lg cursor-pointer transition-colors ${
-                      selectedZone?.id === zone.id
-                        ? 'bg-primary/10 border border-primary'
-                        : 'bg-neutral-700/20 border border-transparent hover:border-neutral-600'
-                    }`}
-                    onClick={() => handleZoneClick(zone)}
+                    className="flex items-start space-x-3 p-4 rounded-lg bg-neutral-700/20 border border-transparent"
                   >
                     <MapPin className="text-primary mt-1" size={20} />
                     <div className="flex-1">
