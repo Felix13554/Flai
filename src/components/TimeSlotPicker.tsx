@@ -288,8 +288,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
                   <img src={DAGSLYS_IMAGE_PLACEHOLDER} alt="Dagslys eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
                   <div>
                     <h4 className="font-semibold text-sm text-white">Dagslys</h4>
-                    <p className="text-[13px] text-neutral-300 mt-1">
-                      Giver et skarpt, rent og meget lyst resultat med korte skygger. Det er ideelt, hvis alt skal fremstå tydeligt og naturtro. Det har et lidt mindre dramatisk og filmisk udtryk, men er utroligt flot og detaljerigt.
+                    <p className="text-[13px] text-neutral-300 mt-1">Giver et skarpt, rent og meget lyst resultat med korte skygger. Det er ideelt, hvis alt skal fremstå tydeligt og naturtro. Det har et lidt mindre dramatisk og filmisk udtryk, men er utroligt flot og detaljerigt.
                     </p>
                   </div>
                 </div>
@@ -298,8 +297,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
                   <img src={SOLNEDGANG_IMAGE_PLACEHOLDER} alt="Solnedgang eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
                   <div>
                     <h4 className="font-semibold text-sm text-white">Solnedgang (Golden Hour)</h4>
-                    <p className="text-[13px] text-neutral-300 mt-1">
-                      Giver et langt mere farverigt og meget filmisk look. Det varme lys skaber dybde og stemning, men det betyder også, at vi får længere skygger, og at visse områder i billedet naturligt vil fremstå mørkere og mere kontrastfyldte.
+                    <p className="text-[13px] text-neutral-300 mt-1">Giver et langt mere farverigt og meget filmisk look. Det varme lys skaber dybde og stemning, men det betyder også, at vi får længere skygger, og at visse områder i billedet naturligt vil fremstå mørkere og mere kontrastfyldte.
                     </p>
                   </div>
                 </div>
