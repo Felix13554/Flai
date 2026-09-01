@@ -4,6 +4,10 @@ import { formatDate, formatTime, generateTimeSlots } from '../utils/booking';
 import EditableContent from './EditableContent';
 import { supabase } from '../utils/supabase';
 
+// Image placeholders: replace these URLs with real example images to show users how each option looks
+const DAGSLYS_IMAGE_PLACEHOLDER = 'https://placehold.co/400x250?text=Dagslys+eksempel';
+const SOLNEDGANG_IMAGE_PLACEHOLDER = 'https://placehold.co/400x250?text=Solnedgang+eksempel';
+
 interface TimeSlotPickerProps {
   onSelectTimeSlot: (slot: TimeSlot) => void;
   selectedSlot: TimeSlot | null;
@@ -276,28 +280,28 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
 
       {selectedDate && (
         <>
-          {/* Compact sunset recommendation banner */}
+          {/* Comparison schema for Dagslys vs Solnedgang */}
           <div className="my-6 relative overflow-hidden rounded-lg">
-            <div className="bg-gradient-to-r from-red-600/90 to-orange-600/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg border border-red-400/30 shadow-md">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="flex-shrink-0">
-                  <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-200" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                  </svg>
+            <div className="p-3 sm:p-4 rounded-lg border border-neutral-700/30 shadow-md bg-neutral-900">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                <div className="flex gap-3">
+                  <img src={DAGSLYS_IMAGE_PLACEHOLDER} alt="Dagslys eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold text-sm text-white">Dagslys</h4>
+                    <p className="text-[13px] text-neutral-300 mt-1">
+                      Giver et skarpt, rent og meget lyst resultat med korte skygger. Det er ideelt, hvis alt skal fremstå tydeligt og naturtro. Det har et lidt mindre dramatisk og filmisk udtryk, men er utroligt flot og detaljerigt.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <EditableContent
-                    contentKey="booking-sunset-recommendation-title"
-                    as="h3"
-                    className="text-sm sm:text-base font-bold text-white leading-tight"
-                    fallback="Solnedgang & Solopgang Anbefalet"
-                  />
-                  <EditableContent
-                    contentKey="booking-sunset-recommendation-description"
-                    as="p"
-                    className="text-[12px] sm:text-xs text-red-50/90 mt-0.5"
-                    fallback="For højeste kvalitet"
-                  />
+
+                <div className="flex gap-3">
+                  <img src={SOLNEDGANG_IMAGE_PLACEHOLDER} alt="Solnedgang eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold text-sm text-white">Solnedgang (Golden Hour)</h4>
+                    <p className="text-[13px] text-neutral-300 mt-1">
+                      Giver et langt mere farverigt og meget filmisk look. Det varme lys skaber dybde og stemning, men det betyder også, at vi får længere skygger, og at visse områder i billedet naturligt vil fremstå mørkere og mere kontrastfyldte.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
