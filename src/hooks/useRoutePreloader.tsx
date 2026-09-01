@@ -19,7 +19,6 @@ const ROUTE_IMPORTS: Record<string, () => Promise<any>> = {
   '/portfolio': () => import('../pages/PortfolioPage'),
   '/ratings': () => import('../pages/RatingsPage'),
   '/booking': () => import('../pages/BookingPage'),
-  '/payment': () => import('../pages/PaymentPage'),
   '/booking-success': () => import('../pages/BookingSuccessPage'),
   '/auth': () => import('../pages/AuthPage'),
   '/login': () => import('../pages/Login'),
