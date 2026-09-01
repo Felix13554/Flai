@@ -25,7 +25,6 @@ const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const ProductPage = lazy(() => import('./pages/ProductPage'));
 const BookingPage = lazy(() => import('./pages/BookingPage'));
 const BookingSuccessPage = lazy(() => import('./pages/BookingSuccessPage'));
-const PaymentPage = lazy(() => import('./pages/PaymentPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const AuthPage = lazy(() => import('./pages/AuthPage'));
@@ -146,7 +145,6 @@ function SiteShell() {
           <Route path="/donate/:linkId" element={<DonationPage />} />
           <Route path="/rate-booking/:token" element={<RateBookingPage />} />
           <Route path="/booking/:productId" element={<BookingPage />} />
-          <Route path="/payment" element={<PaymentPage />} />
           <Route path="/booking-success" element={<BookingSuccessPage />} />
           <Route path="/ratings" element={<RatingsPage />} />
           <Route path="/file/gdrive/:id" element={<DriveDownload />} />
