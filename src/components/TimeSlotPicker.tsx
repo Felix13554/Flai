@@ -4,10 +4,6 @@ import { formatDate, formatTime, generateTimeSlots } from '../utils/booking';
 import EditableContent from './EditableContent';
 import { supabase } from '../utils/supabase';
 
-// Image placeholders: replace these URLs with real example images to show users how each option looks
-const DAGSLYS_IMAGE_PLACEHOLDER = 'https://placehold.co/400x250?text=Dagslys+eksempel';
-const SOLNEDGANG_IMAGE_PLACEHOLDER = 'https://placehold.co/400x250?text=Solnedgang+eksempel';
-
 interface TimeSlotPickerProps {
   onSelectTimeSlot: (slot: TimeSlot) => void;
   selectedSlot: TimeSlot | null;
@@ -280,31 +276,6 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
 
       {selectedDate && (
         <>
-          {/* Comparison schema for Dagslys vs Solnedgang */}
-          <div className="my-6 relative overflow-hidden rounded-lg">
-            <div className="p-3 sm:p-4 rounded-lg border border-neutral-700/30 shadow-md bg-neutral-900">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                <div className="flex gap-3">
-                  <img src={DAGSLYS_IMAGE_PLACEHOLDER} alt="Dagslys eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
-                  <div>
-                    <h4 className="font-semibold text-sm text-white">Dagslys</h4>
-                    <p className="text-[13px] text-neutral-300 mt-1">Giver et skarpt, rent og meget lyst resultat med korte skygger. Det er ideelt, hvis alt skal fremstå tydeligt og naturtro. Det har et lidt mindre dramatisk og filmisk udtryk, men er utroligt flot og detaljerigt.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <img src={SOLNEDGANG_IMAGE_PLACEHOLDER} alt="Solnedgang eksempel" className="w-28 h-20 object-cover rounded-md flex-shrink-0" />
-                  <div>
-                    <h4 className="font-semibold text-sm text-white">Solnedgang (Golden Hour)</h4>
-                    <p className="text-[13px] text-neutral-300 mt-1">Giver et langt mere farverigt og meget filmisk look. Det varme lys skaber dybde og stemning, men det betyder også, at vi får længere skygger, og at visse områder i billedet naturligt vil fremstå mørkere og mere kontrastfyldte.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <EditableContent
             contentKey="timeslot_picker_select_time_heading"
             fallback="Vælg et tidspunkt"
