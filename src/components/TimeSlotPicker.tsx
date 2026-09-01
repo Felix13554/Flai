@@ -16,12 +16,68 @@ const categoryConfig = {
   sunset: { borderColor: 'border-orange-500', label: 'Solnedgang', color: 'text-orange-400' }
 };
 
+// ---- Bucketing helpers ----------------------------------------------------
+
+const timeToMinutes = (time24: string): number => {
+  const [h, m] = time24.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const minutesToLabel = (mins: number): string => {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return m === 0 ? `${h}` : `${h}:${m.toString().padStart(2, '0')}`;
+};
+
+const BUCKET_THRESHOLD = 7;
+
+// Jo flere tider, jo flere halve timer pr. gruppe (målet er ca. 5-7 knapper)
+const getBucketSize = (count: number): number => {
+  return Math.max(2, Math.ceil(count / 6));
+};
+
+type BucketItem =
+  | { type: 'single'; slot: TimeSlot }
+  | { type: 'bucket'; key: string; slots: TimeSlot[]; rangeLabel: string };
+
+const bucketSlots = (
+  slots: TimeSlot[],
+  formatFn: (time: string) => string
+): BucketItem[] => {
+  if (slots.length <= BUCKET_THRESHOLD) {
+    return slots.map(slot => ({ type: 'single', slot }));
+  }
+
+  const size = getBucketSize(slots.length);
+  const groups: BucketItem[] = [];
+
+  for (let i = 0; i < slots.length; i += size) {
+    const group = slots.slice(i, i + size);
+    const firstMin = timeToMinutes(formatFn(group[0].time));
+    // Slut-etiketten er starten af sidste slot + 30 min
+    const lastMin = timeToMinutes(formatFn(group[group.length - 1].time)) + 30;
+    const rangeLabel = `${minutesToLabel(firstMin)}-${minutesToLabel(lastMin)}`;
+
+    groups.push({
+      type: 'bucket',
+      key: `${group[0].id}-${group[group.length - 1].id}`,
+      slots: group,
+      rangeLabel,
+    });
+  }
+
+  return groups;
+};
+
+// ----------------------------------------------------------------------------
+
 const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selectedSlot }) => {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupedSlots, setGroupedSlots] = useState<Record<string, TimeSlot[]>>({});
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchBookedDates = async () => {
@@ -101,6 +157,18 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
     if (slot.available) {
       onSelectTimeSlot(slot);
     }
+  };
+
+  const toggleBucket = (key: string) => {
+    setExpandedBuckets(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   const formatTimeTo24Hour = (time: string): string => {
@@ -255,19 +323,65 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
                   className={`font-semibold mb-3 ${config.color} text-sm uppercase`}
                 />
                 <div className="space-y-2">
-                  {slots.map(slot => (
-                    <button
-                      key={slot.id}
-                      onClick={() => handleTimeSelect(slot)}
-                      className={`w-full px-3 py-2 rounded-lg text-center text-sm transition-all font-medium ${
-                        selectedSlot?.id === slot.id
-                          ? 'bg-neutral-700 text-white border border-neutral-500'
-                          : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
-                      }`}
-                    >
-                      {formatTimeTo24Hour(formatTime(slot.time))}
-                    </button>
-                  ))}
+                  {bucketSlots(slots, (t) => formatTimeTo24Hour(formatTime(t))).map(item => {
+                    if (item.type === 'single') {
+                      const slot = item.slot;
+                      return (
+                        <button
+                          key={slot.id}
+                          onClick={() => handleTimeSelect(slot)}
+                          className={`w-full px-3 py-2 rounded-lg text-center text-sm transition-all font-medium ${
+                            selectedSlot?.id === slot.id
+                              ? 'bg-neutral-700 text-white border border-neutral-500'
+                              : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
+                          }`}
+                        >
+                          {formatTimeTo24Hour(formatTime(slot.time))}
+                        </button>
+                      );
+                    }
+
+                    const isExpanded = expandedBuckets.has(item.key);
+
+                    if (!isExpanded) {
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => toggleBucket(item.key)}
+                          className="w-full px-3 py-2 rounded-lg text-center text-sm transition-all font-medium bg-neutral-800 text-neutral-200 hover:bg-neutral-700 flex items-center justify-between"
+                        >
+                          <span>{item.rangeLabel}</span>
+                          <span className="text-xs text-neutral-400">{item.slots.length} tider ▾</span>
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <div key={item.key} className="rounded-lg border border-neutral-700 overflow-hidden">
+                        <button
+                          onClick={() => toggleBucket(item.key)}
+                          className="w-full px-3 py-1.5 text-center text-xs text-neutral-400 bg-neutral-800/50 hover:bg-neutral-700"
+                        >
+                          {item.rangeLabel} ▴
+                        </button>
+                        <div className="p-2 space-y-2">
+                          {item.slots.map(slot => (
+                            <button
+                              key={slot.id}
+                              onClick={() => handleTimeSelect(slot)}
+                              className={`w-full px-3 py-2 rounded-lg text-center text-sm transition-all font-medium ${
+                                selectedSlot?.id === slot.id
+                                  ? 'bg-neutral-700 text-white border border-neutral-500'
+                                  : 'bg-neutral-900 text-neutral-200 hover:bg-neutral-700'
+                              }`}
+                            >
+                              {formatTimeTo24Hour(formatTime(slot.time))}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
