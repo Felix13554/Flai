@@ -48,8 +48,6 @@ const ROUTE_KEYS: Record<string, string[]> = {
     'booking-summary-time-label','booking-summary-editing-label','booking-summary-editing-included',
     'booking-summary-editing-yes','booking-summary-editing-no','booking-summary-total-label',
     'booking-back-button','booking-processing-text','booking-continue-button',
-  ],
-  '/payment': [
     'payment-page-title','payment-discount-code-title',
     'credits_payment_section_title','credits_payment_available_text',
     'credits_payment_option_none','credits_payment_option_all','credits_payment_option_custom',
