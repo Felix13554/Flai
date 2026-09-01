@@ -175,7 +175,7 @@ const NavBar: React.FC = () => {
                 )}
                 </span>
               </button>
-              <div className="absolute right-0 mt-3 w-64 bg-neutral-800 rounded-lg shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 border border-neutral-700">
+              <div className="absolute right-0 mt-3 w-64 bg-neutral-800 rounded-lg shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300">
                 {/* User Info Section */}
                 <div className="px-4 py-3 bg-neutral-900 border-b border-neutral-700">
                   <div className="flex items-center space-x-3">
@@ -377,7 +377,6 @@ const NavBar: React.FC = () => {
             <Link to="/products" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-tjenester" fallback="Vores tjenester" /></Link>
             <Link to="/portfolio" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-arbejde" fallback="Vores arbejde" /></Link>
             <Link to="/coverage" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vi-daekker" fallback="Vi dækker" /></Link>
-            <Link to="/ratings" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-anmeldelser" fallback="Anmeldelser" /></Link>
             
             {/* Contact button for mobile */}
             <button 
