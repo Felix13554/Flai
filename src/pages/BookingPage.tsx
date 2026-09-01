@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CheckCircle, AlertTriangle, CreditCard, Banknote, Coins, AlertCircle } from 'lucide-react';
+import { AlertTriangle, CreditCard, Banknote, Coins } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { Product, TimeSlot } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import TimeSlotPicker from '../components/TimeSlotPicker';
 import EditableContent from '../components/EditableContent';
 import GoogleLoginButton from '../components/GoogleLoginButton';
-import PanoramaViewer from '../components/PanoramaViewer';
 import StripePaymentForm from '../components/StripePaymentForm';
 import { useBookings } from '../hooks/useBookings';
-import { formatDate, formatTime, checkSlotAvailability } from '../utils/booking';
+import { checkSlotAvailability } from '../utils/booking';
 import { isAddressWithinRange, getFormattedDistance } from '../utils/location';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
@@ -36,32 +35,6 @@ const initializeStripe = async () => {
   }
 };
 
-// Resolve a YouTube video ID from either:
-//   - the "youtube:<videoId>" prefix format used by the portfolio, OR
-//   - any common full YouTube URL (youtu.be/…, youtube.com/watch?v=…, /embed/…, /shorts/…)
-// Returns null if the string is not a YouTube reference.
-const getYouTubeId = (url: string): string | null => {
-  // Portfolio-style prefix: "youtube:<videoId>"
-  if (url.startsWith('youtube:')) return url.split(':')[1] || null;
-
-  // Full URL formats
-  try {
-    const u = new URL(url);
-    if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('?')[0] || null;
-    if (u.hostname.includes('youtube.com')) {
-      const v = u.searchParams.get('v');
-      if (v) return v;
-      const parts = u.pathname.split('/').filter(Boolean);
-      if (['embed', 'shorts', 'v'].includes(parts[0])) return parts[1] || null;
-    }
-  } catch {
-    // not a valid URL – fall through
-  }
-  return null;
-};
-
-const isYouTubeUrl = (url: string) => getYouTubeId(url) !== null;
-
 const BookingPage: React.FC = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -77,7 +50,6 @@ const BookingPage: React.FC = () => {
   const [isAddressValid, setIsAddressValid] = useState<boolean>(true);
   const [distance, setDistance] = useState<string>('');
   const [isValidatingAddress, setIsValidatingAddress] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [guestEmail, setGuestEmail] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestEmailError, setGuestEmailError] = useState('');
@@ -87,7 +59,6 @@ const BookingPage: React.FC = () => {
   const [needsUserName, setNeedsUserName] = useState(false);
 
   // ---- Payment section state (merged from former PaymentPage) ----
-  const [showPayment, setShowPayment] = useState(false);
   const [finalBookingDetails, setFinalBookingDetails] = useState<{
     bookingDate: string;
     bookingTime: string;
@@ -107,23 +78,19 @@ const BookingPage: React.FC = () => {
   const [stripeReady, setStripeReady] = useState(false);
   const [customerName, setCustomerName] = useState('');
 
-  const editingIsPaidAddon =
-    !!finalBookingDetails?.includeEditing && !finalBookingDetails?.isEditingIncluded;
   const priceAfterDiscount = finalBookingDetails?.totalPrice || 0;
   const finalPrice = Math.max(0, priceAfterDiscount - creditsToUse);
   const canPayWithCreditsOnly = creditsToUse >= priceAfterDiscount && priceAfterDiscount > 0;
 
   useEffect(() => {
-    if (!showPayment) return;
     const setup = async () => {
       const promise = await initializeStripe();
       setStripeReady(!!promise);
     };
     setup();
-  }, [showPayment]);
+  }, []);
 
   useEffect(() => {
-    if (!showPayment) return;
     if (finalBookingDetails?.guestName) {
       setCustomerName(finalBookingDetails.guestName);
     } else if (user) {
@@ -133,7 +100,7 @@ const BookingPage: React.FC = () => {
         setCustomerName(fullName);
       })();
     }
-  }, [showPayment, user, finalBookingDetails]);
+  }, [user, finalBookingDetails]);
 
   useEffect(() => {
     if (creditUsageOption === 'none') {
@@ -153,19 +120,18 @@ const BookingPage: React.FC = () => {
   }, [creditUsageOption, customCreditsToUseInput, credits, priceAfterDiscount, paymentMethod]);
 
   useEffect(() => {
-    if (!showPayment) return;
     if (!stripeReady && paymentMethod === 'pay_now') {
       setPayError('Betalingssystem indlæses...');
     } else {
       setPayError(null);
     }
-  }, [showPayment, paymentMethod, stripeReady]);
+  }, [paymentMethod, stripeReady]);
 
   useEffect(() => {
-    if (finalPrice === 0 && paymentMethod === 'pay_now' && showPayment) {
+    if (finalPrice === 0 && paymentMethod === 'pay_now') {
       setPaymentMethod('credits');
     }
-  }, [finalPrice, paymentMethod, showPayment]);
+  }, [finalPrice, paymentMethod]);
 
   const sendBookingConfirmationEmail = async (booking: any) => {
     if (!finalBookingDetails || !product) return;
@@ -251,6 +217,12 @@ const BookingPage: React.FC = () => {
   };
 
   const handlePayWithCredits = async () => {
+    try {
+      await validateBookingBeforePayment();
+    } catch (error: any) {
+      toast.error(error.message || 'Udfyld bookingoplysningerne først');
+      return;
+    }
     if (!canPayWithCreditsOnly) { toast.error('Du har ikke nok credits til at dække hele beløbet'); return; }
     setPayLoading(true);
     setPayError(null);
@@ -268,6 +240,12 @@ const BookingPage: React.FC = () => {
   };
 
   const handlePayLater = async () => {
+    try {
+      await validateBookingBeforePayment();
+    } catch (error: any) {
+      toast.error(error.message || 'Udfyld bookingoplysningerne først');
+      return;
+    }
     setPayLoading(true);
     setPayError(null);
     try {
@@ -284,6 +262,12 @@ const BookingPage: React.FC = () => {
   };
 
   const handlePayCash = async () => {
+    try {
+      await validateBookingBeforePayment();
+    } catch (error: any) {
+      toast.error(error.message || 'Udfyld bookingoplysningerne først');
+      return;
+    }
     setPayLoading(true);
     setPayError(null);
     try {
@@ -299,7 +283,30 @@ const BookingPage: React.FC = () => {
     }
   };
 
+  const validateBookingBeforePayment = async () => {
+    if (!product || !finalBookingDetails) throw new Error('Udfyld venligst bookingoplysningerne først');
+    if (!selectedTimeSlot) throw new Error('Vælg venligst dato og tidspunkt');
+    if (!address.trim()) throw new Error('Indtast venligst en adresse');
+
+    if (!user) {
+      if (!guestEmail || !validateEmail(guestEmail)) throw new Error('Indtast venligst en gyldig email-adresse');
+      if (!guestName.trim()) throw new Error('Indtast venligst dit navn');
+    } else if (needsUserName && !userName.trim()) {
+      throw new Error('Indtast venligst dit navn');
+    }
+
+    const isAvailable = await checkSlotAvailability(finalBookingDetails.bookingDate, finalBookingDetails.bookingTime);
+    if (!isAvailable) throw new Error('Dette tidspunkt er desværre ikke længere ledigt');
+
+    const isValid = await isAddressWithinRange(finalBookingDetails.address);
+    if (!isValid) {
+      const dist = await getFormattedDistance(finalBookingDetails.address);
+      throw new Error(`Adressen er ${dist} fra vores base og er uden for vores dækningsområde.`);
+    }
+  };
+
   const createPaymentIntent = async () => {
+    await validateBookingBeforePayment();
     if (!finalBookingDetails || !product) throw new Error('Booking data mangler');
     const userEmail = user?.email || finalBookingDetails.guestEmail;
     const response = await fetch(
@@ -352,32 +359,28 @@ const BookingPage: React.FC = () => {
     await sendBookingConfirmationEmail(booking);
   };
 
-  // Once payment section is shown, re-validate slot availability + address
+  // Keep payment data synchronized with the live booking form.
   useEffect(() => {
-    if (!showPayment || !finalBookingDetails || !product) return;
-    const validate = async () => {
-      try {
-        const isAvailable = await checkSlotAvailability(finalBookingDetails.bookingDate, finalBookingDetails.bookingTime);
-        if (!isAvailable) {
-          toast.error('Dette tidspunkt er desværre ikke længere ledigt');
-          setShowPayment(false);
-          return;
-        }
-        const isValid = await isAddressWithinRange(finalBookingDetails.address);
-        if (!isValid) {
-          const dist = await getFormattedDistance(finalBookingDetails.address);
-          toast.error(`Adressen er ${dist} fra vores base`);
-          setShowPayment(false);
-        }
-      } catch (error) {
-        console.error('Error validating booking:', error);
-        toast.error('Der opstod en fejl ved validering af booking');
-        setShowPayment(false);
-      }
-    };
-    validate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPayment]);
+    if (!product || !selectedTimeSlot) {
+      setFinalBookingDetails(null);
+      return;
+    }
+
+    const effectiveGuestName = user ? (userName || customerName) : guestName;
+    const effectiveGuestEmail = user?.email || guestEmail;
+    const editingCost = (product.category === 'video' && !product.is_editing_included && includeEditing) ? 100 : 0;
+
+    setFinalBookingDetails({
+      bookingDate: selectedTimeSlot.date,
+      bookingTime: selectedTimeSlot.time,
+      address,
+      includeEditing,
+      isEditingIncluded: product.is_editing_included ?? false,
+      totalPrice: product.price + editingCost,
+      guestEmail: !user ? effectiveGuestEmail : undefined,
+      guestName: !user ? effectiveGuestName : undefined,
+    });
+  }, [product, selectedTimeSlot, address, includeEditing, user, userName, customerName, guestName, guestEmail]);
 
   // Restore booking state after Google OAuth redirect
   useEffect(() => {
@@ -550,117 +553,12 @@ const BookingPage: React.FC = () => {
     }
   };
 
-  const updateUserNameInAuth = async (name: string) => {
-    try {
-      const { error } = await supabase.auth.updateUser({
-        data: { full_name: name }
-      });
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Error updating user name:', error);
-      return false;
-    }
-  };
-
-  const handleContinue = async () => {
-    if (isProcessing) return;
-
-    if (!selectedTimeSlot) {
-      toast.error('Vælg venligst dato og tidspunkt');
-      return;
-    }
-
-    if (!address.trim()) {
-      toast.error('Indtast venligst en adresse');
-      return;
-    }
-
-    if (!user) {
-      if (!guestEmail) {
-        toast.error('Indtast venligst din email');
-        return;
-      }
-
-      if (!validateEmail(guestEmail)) {
-        toast.error('Indtast venligst en gyldig email-adresse');
-        return;
-      }
-
-      if (!guestName.trim()) {
-        toast.error('Indtast venligst dit navn');
-        return;
-      }
-    }
-
-    if (user && needsUserName && !userName.trim()) {
-      toast.error('Indtast venligst dit navn');
-      return;
-    }
-
-    if (!product) {
-      toast.error('Produktet blev ikke fundet');
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      if (user && needsUserName && userName.trim()) {
-        const updated = await updateUserNameInAuth(userName);
-        if (!updated) {
-          toast.error('Kunne ikke gemme dit navn. Prøv venligst igen.');
-          setIsProcessing(false);
-          return;
-        }
-      }
-
-      const isValid = await validateAddress(address);
-      if (!isValid) {
-        toast.error('Adressen er uden for vores dækningsområde');
-        setIsProcessing(false);
-        return;
-      }
-
-      // Only charge for editing if video category AND NOT included in product AND user opted in
-      const editingCost = (product.category === 'video' && !product.is_editing_included && includeEditing) ? 100 : 0;
-      const calculatedTotalPrice = product.price + editingCost;
-
-      setFinalBookingDetails({
-        bookingDate: selectedTimeSlot.date,
-        bookingTime: selectedTimeSlot.time,
-        address,
-        includeEditing,
-        isEditingIncluded: product.is_editing_included ?? false,
-        totalPrice: calculatedTotalPrice,
-        guestEmail: !user ? guestEmail : undefined,
-        guestName: !user ? guestName : userName,
-      });
-      setShowPayment(true);
-      setIsProcessing(false);
-      // Scroll to the payment section once it renders
-      setTimeout(() => {
-        document.getElementById('payment-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-    } catch (error) {
-      console.error('Error processing booking:', error);
-      toast.error('Der opstod en fejl. Prøv venligst igen.');
-      setIsProcessing(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="pt-24 pb-16 container">
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-300"></div>
-          <EditableContent
-            contentKey="booking-loading-text"
-            as="p"
-            className="mt-2"
-            fallback="Indlæser produkt..."
-          />
+          <EditableContent contentKey="booking-loading-text" as="p" className="mt-2" fallback="Indlæser produkt..." />
         </div>
       </div>
     );
@@ -670,97 +568,42 @@ const BookingPage: React.FC = () => {
     return (
       <div className="pt-24 pb-16 container">
         <div className="text-center py-12 text-error">
-          <EditableContent
-            contentKey="booking-product-not-found"
-            as="p"
-            fallback="Produktet blev ikke fundet. Gå tilbage til produktsiden og prøv igen."
-          />
-          <button 
-            onClick={() => navigate('/products')}
-            className="btn-primary mt-4"
-          >
-            <EditableContent
-              contentKey="booking-back-to-products-button"
-              fallback="Tilbage til Produkter"
-            />
+          <EditableContent contentKey="booking-product-not-found" as="p" fallback="Produktet blev ikke fundet. Gå tilbage til produktsiden og prøv igen." />
+          <button onClick={() => navigate('/products')} className="btn-primary mt-4">
+            <EditableContent contentKey="booking-back-to-products-button" fallback="Tilbage til Produkter" />
           </button>
         </div>
       </div>
     );
   }
 
+  const bookingReady = Boolean(
+    product &&
+    selectedTimeSlot &&
+    address.trim() &&
+    (user ? (!needsUserName || userName.trim()) : (guestName.trim() && validateEmail(guestEmail)))
+  );
+
   return (
     <div className="pt-24 pb-16">
       <div className="container">
         <div className="max-w-3xl mx-auto">
-          <EditableContent
-            contentKey="booking-page-title"
-            as="h1"
-            className="text-3xl font-bold mb-8"
-            fallback="Book Din Droneoptagelse"
-          />
-          
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
-            <EditableContent
-              contentKey="booking-product-info-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Produkt Information"
-            />
-            <div className="flex flex-col md:flex-row">
-              <div className="md:w-1/3 mb-4 md:mb-0">
-                {product.images[0] && isYouTubeUrl(product.images[0]) ? (
-                  <div className="relative w-full pt-[56.25%]">
-                    <iframe
-                      className="absolute inset-0 w-full h-full rounded-lg"
-                      src={`https://www.youtube.com/embed/${getYouTubeId(product.images[0])}`}
-                      title={product.name}
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
-                    />
-                  </div>
-                ) : product.images[0]?.startsWith('panorama:') ? (
-                  <div className="relative w-full pt-[56.25%] rounded-lg overflow-hidden">
-                    <div className="absolute inset-0">
-                      <PanoramaViewer
-                        url={product.images[0].replace('panorama:', '')}
-                        title={product.name}
-                        autoRotate={0.5}
-                        className="w-full h-full"
-                      />
-                    </div>
-                    <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-full px-2 py-0.5 pointer-events-none">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="5" ry="10"/><path d="M2 12h20"/></svg>
-                      <span className="text-white text-[0.6rem] font-bold tracking-wider">360°</span>
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-32 object-cover rounded-lg"
-                  />
-                )}
-              </div>
-              <div className="md:w-2/3 md:pl-6">
-                <h3 className="text-lg font-medium">{product.name}</h3>
-                <p className="text-neutral-300 mt-2">{product.description}</p>
-                <p className="text-neutral-300 font-semibold mt-3">{product.price} <EditableContent contentKey="booking-page-kr-3" fallback="kr" /></p>
-              </div>
+
+          {/* Product Header — same visual treatment as Simple Request */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2 text-neutral-400 text-sm mb-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              <EditableContent contentKey="simple-product-label" fallback="Produkt" />
             </div>
+            <h1 className="text-3xl font-bold">{product.name}</h1>
           </div>
 
-          {/* Personal Information Section */}
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
-            <EditableContent
-              contentKey="booking-personal-info-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Dine Oplysninger"
-            />
-            
+          {/* Personal Information */}
+          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+            <EditableContent contentKey="simple-personal-info-title" as="h2" className="text-xl font-semibold mb-4" fallback="Dine oplysninger" />
+
             {!user ? (
               <>
                 <EditableContent
@@ -769,674 +612,306 @@ const BookingPage: React.FC = () => {
                   className="text-neutral-300 mb-4"
                   fallback="Udfyld dine oplysninger for at fortsætte, eller log ind med Google for at udfylde automatisk."
                 />
-                
-                <div className="mb-6">
-                  <GoogleLoginButton
-                    buttonText="Udfyld med Google"
-                    redirectTo={`${window.location.origin}/booking/${productId}`}
-                    bookingState={{
-                      productId,
-                      selectedTimeSlot,
-                      address,
-                      includeEditing,
-                      totalPrice
-                    }}
-                  />
-                </div>
-
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-neutral-700"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-neutral-800 text-neutral-400"><EditableContent contentKey="booking-page-eller-udfyld-manuelt" fallback="eller udfyld manuelt" /></span>
-                  </div>
-                </div>
 
                 <div className="mb-4">
                   <label htmlFor="guestName" className="block text-sm font-medium text-neutral-300 mb-2">
-                    <EditableContent
-                      contentKey="booking-guest-name-label"
-                      fallback="Fulde navn *"
-                    />
+                    <EditableContent contentKey="simple-name-label" fallback="Dit navn" />
                   </label>
-                  <input
-                    type="text"
-                    id="guestName"
-                    value={guestName}
-                    onChange={handleGuestNameChange}
-                    onBlur={() => {
-                      if (!guestName.trim()) {
-                        setGuestNameError('Indtast venligst dit navn');
-                      }
-                    }}
-                    placeholder="John Doe"
-                    className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
-                      guestNameError ? 'border-red-500' : 'border-neutral-600'
-                    }`}
-                  />
-                  {guestNameError && (
-                    <p className="text-red-500 text-sm mt-2">{guestNameError}</p>
-                  )}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      id="guestName"
+                      value={guestName}
+                      onChange={handleGuestNameChange}
+                      className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${guestNameError ? 'border-red-500' : 'border-neutral-600'}`}
+                      placeholder="John Doe"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <GoogleLoginButton
+                        buttonText=""
+                        redirectTo={`${window.location.origin}/booking/${productId}`}
+                        bookingState={{ productId, selectedTimeSlot, address, includeEditing, guestEmail, guestName }}
+                        compact={true}
+                      />
+                    </div>
+                  </div>
+                  {guestNameError && <p className="text-red-500 text-sm mt-2">{guestNameError}</p>}
                 </div>
 
-                <div className="mb-4">
+                <div>
                   <label htmlFor="guestEmail" className="block text-sm font-medium text-neutral-300 mb-2">
-                    <EditableContent
-                      contentKey="booking-guest-email-label"
-                      fallback="Email-adresse *"
-                    />
+                    <EditableContent contentKey="simple-email-label" fallback="Din email" />
                   </label>
-                  <input
-                    type="email"
-                    id="guestEmail"
-                    value={guestEmail}
-                    onChange={handleGuestEmailChange}
-                    onBlur={() => {
-                      if (guestEmail && !validateEmail(guestEmail)) {
-                        setGuestEmailError('Indtast venligst en gyldig email-adresse');
-                      }
-                    }}
-                    placeholder="din@email.dk"
-                    className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
-                      guestEmailError ? 'border-red-500' : 'border-neutral-600'
-                    }`}
-                  />
-                  {guestEmailError && (
-                    <p className="text-red-500 text-sm mt-2">{guestEmailError}</p>
-                  )}
-                  <EditableContent
-                    contentKey="booking-email-description"
-                    as="p"
-                    className="text-neutral-400 text-sm mt-2"
-                    fallback="Vi sender bekræftelsen og detaljer om din booking til denne email-adresse."
-                  />
+                  <div className="relative">
+                    <input
+                      type="email"
+                      id="guestEmail"
+                      value={guestEmail}
+                      onChange={handleGuestEmailChange}
+                      className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${guestEmailError ? 'border-red-500' : 'border-neutral-600'}`}
+                      placeholder="din@email.dk"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <GoogleLoginButton
+                        buttonText=""
+                        redirectTo={`${window.location.origin}/booking/${productId}`}
+                        bookingState={{ productId, selectedTimeSlot, address, includeEditing, guestEmail, guestName }}
+                        compact={true}
+                      />
+                    </div>
+                  </div>
+                  {guestEmailError && <p className="text-red-500 text-sm mt-2">{guestEmailError}</p>}
                 </div>
               </>
             ) : needsUserName ? (
-              <>
+              <div>
                 <EditableContent
                   contentKey="booking-user-name-description"
                   as="p"
                   className="text-neutral-300 mb-4"
                   fallback="Vi har brug for dit navn for at kunne gennemføre bookingen."
                 />
-                
-                <div className="mb-4">
-                  <label htmlFor="userName" className="block text-sm font-medium text-neutral-300 mb-2">
-                    <EditableContent
-                      contentKey="booking-user-name-label"
-                      fallback="Fulde navn *"
-                    />
-                  </label>
-                  <input
-                    type="text"
-                    id="userName"
-                    value={userName}
-                    onChange={handleUserNameChange}
-                    onBlur={() => {
-                      if (!userName.trim()) {
-                        setUserNameError('Indtast venligst dit navn');
-                      }
-                    }}
-                    placeholder="John Doe"
-                    className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
-                      userNameError ? 'border-red-500' : 'border-neutral-600'
-                    }`}
-                  />
-                  {userNameError && (
-                    <p className="text-red-500 text-sm mt-2">{userNameError}</p>
-                  )}
-                </div>
-              </>
+                <label htmlFor="userName" className="block text-sm font-medium text-neutral-300 mb-2">
+                  <EditableContent contentKey="booking-user-name-label" fallback="Fulde navn *" />
+                </label>
+                <input
+                  type="text"
+                  id="userName"
+                  value={userName}
+                  onChange={handleUserNameChange}
+                  placeholder="John Doe"
+                  className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all ${userNameError ? 'border-red-500' : 'border-neutral-600'}`}
+                />
+                {userNameError && <p className="text-red-500 text-sm mt-2">{userNameError}</p>}
+              </div>
             ) : (
-              <div className="flex items-center space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
-                <CheckCircle size={20} className="text-green-400" />
-                <div>
-                  <p className="text-white font-medium">{userName}</p>
-                  <p className="text-neutral-300 text-sm">{user.email}</p>
-                </div>
+              <div className="p-4 border border-green-500/20 rounded-lg bg-green-500/10">
+                <p className="text-white font-medium">{userName || customerName}</p>
+                <p className="text-neutral-300 text-sm">{user.email}</p>
               </div>
             )}
           </div>
 
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
+          {/* Primary Booking Feature: user-controlled date/time */}
+          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+            <EditableContent contentKey="booking-time-selection-title" as="h2" className="text-xl font-semibold mb-4" fallback="Vælg Dato og Tid" />
             <EditableContent
-              contentKey="booking-time-selection-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Vælg Dato og Tid"
-            />
-            
-            <TimeSlotPicker 
-              onSelectTimeSlot={handleSelectTimeSlot}
-              selectedSlot={selectedTimeSlot}
-            />
-          </div>
-          
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
-            <EditableContent
-              contentKey="booking-address-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Adresse"
-            />
-            <EditableContent
-              contentKey="booking-address-description"
+              contentKey="booking-time-selection-description"
               as="p"
               className="text-neutral-300 mb-4"
-              fallback="Indtast adressen hvor droneoptagelsen skal finde sted."
+              fallback="Vælg selv det tidspunkt, der passer dig bedst."
             />
-            
-            <div>
-              <EditableContent
-                contentKey="booking-address-label"
-                as="label"
-                className="form-label"
-                fallback="Fuld adresse"
-              />
-              <textarea 
-                id="address" 
-                rows={3} 
-                className={`form-input resize-none ${!isAddressValid ? 'border-red-500' : ''}`}
-                placeholder="Gade, husnummer, postnummer, by"
-                value={address}
-                onChange={handleAddressChange}
-                onBlur={() => {
-                  if (address.trim()) {
-                    validateAddress(address);
-                  }
-                }}
-                required
-              ></textarea>
-              
-              {!isAddressValid && address && (
-                <div className="mt-2 text-red-500 flex items-start">
-                  <AlertTriangle size={16} className="mr-2 mt-1 flex-shrink-0" />
-                  <span>
-                    <EditableContent contentKey="booking-page-denne-adresse-er" fallback="Denne adresse er" /> {distance} <EditableContent contentKey="booking-page-fra-vores-base-og-er" fallback="fra vores base og er uden for vores dækningsområde." />
-                  </span>
+            <TimeSlotPicker onSelectTimeSlot={handleSelectTimeSlot} selectedSlot={selectedTimeSlot} />
+          </div>
+
+          {/* Address */}
+          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+            <EditableContent contentKey="simple-address-label" as="h2" className="text-xl font-semibold mb-4" fallback="Din adresse" />
+            <textarea
+              id="address"
+              rows={3}
+              value={address}
+              onChange={handleAddressChange}
+              onBlur={() => {
+                if (address.trim()) validateAddress(address);
+              }}
+              placeholder="Gade, husnummer, postnummer, by"
+              className={`w-full px-4 py-2 bg-neutral-700 border rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary transition-all resize-none ${!isAddressValid ? 'border-red-500' : 'border-neutral-600'}`}
+              required
+            />
+            {!isAddressValid && address && (
+              <div className="mt-2 text-red-500 flex items-start text-sm">
+                <AlertTriangle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
+                <span>
+                  <EditableContent contentKey="simple-request-page-denne-adresse-er" fallback="Denne adresse er" /> {distance} <EditableContent contentKey="simple-request-page-fra-vores-base-og-er" fallback="fra vores base og er uden for vores dækningsområde." />
+                </span>
+              </div>
+            )}
+            {isValidatingAddress && <p className="text-neutral-400 text-sm mt-2">Validerer adresse...</p>}
+          </div>
+
+          {/* Editing — same as Simple Request, and nothing else added */}
+          {product.category === 'video' && (
+            <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+              <EditableContent contentKey="simple-editing-title" as="h2" className="text-xl font-semibold mb-4" fallback="Tilvalg" />
+              {product.is_editing_included ? (
+                <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
+                  <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414-1.414l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <EditableContent contentKey="booking-editing-included-title" as="h3" className="font-medium text-green-400" fallback="Redigering inkluderet" />
+                    <EditableContent contentKey="booking-editing-included-description" as="p" className="text-neutral-300 mt-1" fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter." />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg bg-neutral-800/50">
+                  <input type="checkbox" id="editing" checked={includeEditing} onChange={(e) => setIncludeEditing(e.target.checked)} className="mt-1" />
+                  <div>
+                    <label htmlFor="editing" className="font-medium cursor-pointer text-white">
+                      <EditableContent contentKey="simple-editing-option-title" fallback="Redigering" />
+                    </label>
+                    <EditableContent contentKey="simple-editing-description" as="p" className="text-neutral-300 mt-1" fallback="Få redigering af dine optagelser, herunder klipning, effekter, lydeffekter og baggrundsmusik." />
+                    <EditableContent contentKey="simple-editing-price" as="p" className="text-neutral-300 font-semibold mt-2" fallback="+100 kr" />
+                  </div>
                 </div>
               )}
             </div>
-          </div>
-          
-          {product.category === 'video' && (
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
-            <EditableContent
-              contentKey="booking-extras-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Tilvalg"
-            />
-            
-            {product.is_editing_included ? (
-              <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
-                <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <div>
-                  <EditableContent
-                    contentKey="booking-editing-included-title"
-                    as="h3"
-                    className="font-medium text-green-400"
-                    fallback="Redigering inkluderet"
-                  />
-                  <EditableContent
-                    contentKey="booking-editing-included-description"
-                    as="p"
-                    className="text-neutral-300 mt-1"
-                    fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter."
-                  />
-                </div>
+          )}
+
+          {/* Payment Method — visible immediately; no continue/payment-step click */}
+          <div id="payment-section" className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+            <EditableContent contentKey="payment-page-title" as="h2" className="text-xl font-semibold mb-4" fallback="Betaling" />
+            <p className="text-neutral-300 text-sm mb-4">
+              <EditableContent contentKey="simple-payment-section-description" fallback="Vælg betalingsmetode og gennemfør din booking direkte her." />
+            </p>
+
+            {payError && (
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg p-4 mb-6 text-sm">
+                {payError}
               </div>
-            ) : (
-              <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg bg-neutral-800/50">
-                <input 
-                  type="checkbox" 
-                  id="editing" 
-                  className="mt-1"
-                  checked={includeEditing}
-                  onChange={(e) => setIncludeEditing(e.target.checked)}
-                />
-                <div>
-                  <EditableContent
-                    contentKey="booking-editing-option-title"
-                    as="label"
-                    className="font-medium cursor-pointer text-white"
-                    fallback="Redigering af optagelser"
-                  />
-                  <EditableContent
-                    contentKey="booking-editing-option-description"
-                    as="p"
-                    className="text-neutral-300 mt-1"
-                    fallback="Få redigering af dine optagelser, herunder klipning, effekter, lydeffekter og baggrundsmusik."
-                  />
-                  <EditableContent
-                    contentKey="booking-editing-option-price"
-                    as="p"
-                    className="text-neutral-300 font-semibold mt-2"
-                    fallback="+100 kr"
-                  />
+            )}
+
+            {user && credits > 0 && (
+              <div className="mb-6 p-4 border border-neutral-700 rounded-lg bg-neutral-800/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <Coins size={20} className="text-primary" />
+                  <span className="font-medium text-white">Brug Credits</span>
+                </div>
+                <p className="text-neutral-300 text-sm mb-3">Tilgængelige credits: <span className="font-semibold text-white">{credits}</span></p>
+                <div className="space-y-3">
+                  <label className="flex items-center text-sm">
+                    <input type="radio" name="creditUsage" value="none" checked={creditUsageOption === 'none'} onChange={() => setCreditUsageOption('none')} className="mr-2" />
+                    Brug ikke credits
+                  </label>
+                  <label className="flex items-center text-sm">
+                    <input type="radio" name="creditUsage" value="all" checked={creditUsageOption === 'all'} onChange={() => setCreditUsageOption('all')} className="mr-2" />
+                    Brug alle tilgængelige credits ({Math.min(credits, totalPrice)} credits)
+                  </label>
+                  <label className="flex items-center text-sm">
+                    <input type="radio" name="creditUsage" value="custom" checked={creditUsageOption === 'custom'} onChange={() => setCreditUsageOption('custom')} className="mr-2" />
+                    Brug tilpasset antal credits
+                  </label>
+                  {creditUsageOption === 'custom' && (
+                    <div className="ml-6">
+                      <input type="number" value={customCreditsToUseInput} onChange={(e) => setCustomCreditsToUseInput(e.target.value)} placeholder="Antal credits" min="0" max={Math.min(credits, totalPrice)} className="w-32 px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white" />
+                      <span className="ml-2 text-neutral-400">(max {Math.min(credits, totalPrice)})</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-          </div>
-          )}
-          
-          <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-8 border border-neutral-700">
-            <EditableContent
-              contentKey="booking-summary-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Opsummering"
-            />
-            
-            <div className="space-y-4 mb-6">
-              <div className="flex justify-between">
-                <EditableContent
-                  contentKey="booking-summary-product-label"
-                  as="span"
-                  className="text-neutral-300"
-                  fallback="Produkt"
-                />
-                <span className="text-white">{product.name}</span>
-              </div>
-              
-              {selectedTimeSlot && (
-                <>
-                  <div className="flex justify-between">
-                    <EditableContent
-                      contentKey="booking-summary-date-label"
-                      as="span"
-                      className="text-neutral-300"
-                      fallback="Dato"
-                    />
-                    <span className="text-white">{new Date(selectedTimeSlot.date).toLocaleDateString('da-DK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+
+            <div className="space-y-3">
+              {canPayWithCreditsOnly && (
+                <label className={`flex items-start space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${paymentMethod === 'credits' ? 'border-blue-500 bg-blue-500/10' : 'border-neutral-700 bg-neutral-800/50'}`}>
+                  <input type="radio" id="credits" name="payment_method" className="mt-1" checked={paymentMethod === 'credits'} onChange={() => setPaymentMethod('credits')} disabled={!bookingReady} />
+                  <div>
+                    <span className="font-medium text-white">Betal med credits</span>
+                    <p className="text-neutral-300 mt-1 text-sm">Brug dine credits til at betale for hele bookingen.</p>
                   </div>
-                  <div className="flex justify-between">
-                    <EditableContent
-                      contentKey="booking-summary-time-label"
-                      as="span"
-                      className="text-neutral-300"
-                      fallback="Tidspunkt"
-                    />
-                    <span className="text-white">{selectedTimeSlot.time}</span>
-                  </div>
-                </>
+                </label>
               )}
 
-              <div className="flex justify-between">
-                <EditableContent
-                  contentKey="booking-summary-base-price-label"
-                  as="span"
-                  className="text-neutral-300"
-                  fallback="Basis pris"
-                />
-                <span className="text-white">{product.price} <EditableContent contentKey="booking-page-kr-2" fallback="kr" /></span>
-              </div>
-
-              {/* Only show editing line item if video category AND NOT included in product AND user opted in */}
-              {product.category === 'video' && !product.is_editing_included && includeEditing && (
-                <div className="flex justify-between">
-                  <EditableContent
-                    contentKey="booking-summary-editing-label"
-                    as="span"
-                    className="text-neutral-300"
-                    fallback="Redigering"
-                  />
-                  <span className="text-white"><EditableContent contentKey="booking-page-100-kr" fallback="+100 kr" /></span>
+              <label className={`flex items-start space-x-3 p-4 border rounded-lg transition-colors ${paymentMethod === 'pay_now' ? 'border-blue-500 bg-blue-500/10' : 'border-neutral-700 bg-neutral-800/50'} ${!bookingReady ? 'opacity-70' : 'cursor-pointer'}`}>
+                <input type="radio" id="pay_now" name="payment_method" className="mt-1" checked={paymentMethod === 'pay_now'} onChange={() => setPaymentMethod('pay_now')} disabled={!bookingReady || !stripeReady} />
+                <div className="flex-1">
+                  <span className="font-medium text-white">Betal nu</span>
+                  <p className="text-neutral-300 mt-1 text-sm">Sikker betaling via Stripe.</p>
+                  <div className="flex items-center gap-2 mt-2 text-sm text-neutral-400"><CreditCard size={18} /> Visa, Mastercard, Klarna o.a.</div>
                 </div>
-              )}
+              </label>
 
-              {/* Show editing included badge if video category AND product includes it */}
-              {product.category === 'video' && product.is_editing_included && (
-                <div className="flex justify-between">
-                  <EditableContent
-                    contentKey="booking-summary-editing-label"
-                    as="span"
-                    className="text-neutral-300"
-                    fallback="Redigering"
-                  />
-                  <span className="text-green-400">
-                    <EditableContent
-                      contentKey="booking-summary-editing-included"
-                      fallback="Inkluderet"
-                    />
-                  </span>
+              <label className={`flex items-start space-x-3 p-4 border rounded-lg transition-colors ${paymentMethod === 'pay_later' ? 'border-blue-500 bg-blue-500/10' : 'border-neutral-700 bg-neutral-800/50'} ${!bookingReady ? 'opacity-70' : 'cursor-pointer'}`}>
+                <input type="radio" id="pay_later" name="payment_method" className="mt-1" checked={paymentMethod === 'pay_later'} onChange={() => setPaymentMethod('pay_later')} disabled={!bookingReady} />
+                <div>
+                  <span className="font-medium text-white">Betal efter optagelse</span>
+                  <p className="text-neutral-300 mt-1 text-sm">Vi sender dig en faktura efter optagelsen.</p>
                 </div>
-              )}
-            </div>
-            
-            <div className="border-t border-neutral-700 pt-4">
-              <div className="flex justify-between items-center">
-                <EditableContent
-                  contentKey="booking-summary-total-label"
-                  as="span"
-                  className="font-semibold text-white"
-                  fallback="Total"
-                />
-                <span className="text-xl font-bold text-white">{totalPrice} <EditableContent contentKey="booking-page-kr" fallback="kr" /></span>
-              </div>
+              </label>
+
+              <label className={`flex items-start space-x-3 p-4 border rounded-lg transition-colors ${paymentMethod === 'cash' ? 'border-blue-500 bg-blue-500/10' : 'border-neutral-700 bg-neutral-800/50'} ${!bookingReady ? 'opacity-70' : 'cursor-pointer'}`}>
+                <input type="radio" id="pay_cash" name="payment_method" className="mt-1" checked={paymentMethod === 'cash'} onChange={() => setPaymentMethod('cash')} disabled={!bookingReady} />
+                <div>
+                  <span className="font-medium text-white">Betal med kort eller kontant ved optagelse</span>
+                  <p className="text-neutral-300 mt-1 text-sm">Du betaler ved optagelsen.</p>
+                  <div className="flex items-center gap-2 mt-2 text-sm text-neutral-400"><Banknote size={18} /> Kontant eller kort</div>
+                </div>
+              </label>
             </div>
           </div>
-          
-          <div className="flex justify-between">
-            <button 
-              onClick={() => navigate('/products')}
-              className="btn-secondary"
-              disabled={isProcessing}
-            >
-              <EditableContent
-                contentKey="booking-back-button"
-                fallback="Tilbage"
-              />
-            </button>
-            
-            <button
-              onClick={handleContinue}
-              className="btn-primary flex items-center"
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  <EditableContent
-                    contentKey="booking-processing-text"
-                    fallback="Behandler..."
-                  />
-                </>
-              ) : (
-                <EditableContent
-                  contentKey="booking-continue-button"
-                  fallback="Fortsæt til Betaling"
+
+          {/* Stripe card form is inline; it becomes active as soon as required booking info exists. */}
+          {paymentMethod === 'pay_now' && bookingReady && finalBookingDetails && stripeReady && stripePromise && finalPrice > 0 ? (
+            <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700 space-y-4">
+              <EditableContent contentKey="simple-payment-section-title" as="h2" className="text-xl font-semibold" fallback="Gennemfør betaling" />
+              <Elements
+                stripe={stripePromise}
+                options={{
+                  mode: 'payment',
+                  amount: Math.round(finalPrice * 100),
+                  currency: 'dkk',
+                  locale: 'da',
+                  loader: 'auto',
+                  appearance: {
+                    theme: 'night',
+                    variables: {
+                      colorPrimary: '#0ea5e9',
+                      colorBackground: '#262626',
+                      colorText: '#ffffff',
+                      colorDanger: '#ef4444',
+                      fontFamily: 'system-ui, -apple-system, sans-serif',
+                      spacingUnit: '4px',
+                      borderRadius: '8px',
+                    },
+                  },
+                }}
+              >
+                <StripePaymentForm
+                  amount={finalPrice}
+                  customerName={customerName || guestName}
+                  customerEmail={user?.email || guestEmail}
+                  onCustomerNameChange={setCustomerName}
+                  onSuccess={() => navigate('/booking-success')}
+                  loading={payLoading}
+                  setLoading={setPayLoading}
+                  setError={setPayError}
+                  createPaymentIntent={createPaymentIntent}
+                  onPaymentComplete={handlePaymentComplete}
+                  submitButtonText={`Betal ${finalPrice} kr${creditsToUse > 0 ? ` (${creditsToUse} credits + ${finalPrice} kr)` : ''}`}
                 />
-              )}
-            </button>
-          </div>
+              </Elements>
+            </div>
+          ) : paymentMethod === 'pay_now' && bookingReady && finalPrice > 0 && !stripeReady ? (
+            <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700 text-neutral-300">Betalingssystem indlæses...</div>
+          ) : null}
 
-          {/* Payment section — rendered inline below the booking form, replacing the old separate PaymentPage */}
-          {showPayment && finalBookingDetails && (
-            <div id="payment-section" className="mt-8 pt-8 border-t border-neutral-700">
-              <EditableContent
-                contentKey="payment-page-title"
-                as="h2"
-                className="text-2xl font-bold mb-6"
-                fallback="Gennemfør Din Booking"
-              />
-
-              {payError && (
-                <div className="bg-red-500/10 border border-red-500 text-red-500 rounded-lg p-4 mb-6">
-                  {payError}
-                </div>
-              )}
-
-              {user && credits > 0 && (
-                <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
-                  <EditableContent contentKey="credits_payment_section_title" as="h2" className="text-xl font-semibold mb-4 flex items-center" fallback="Brug Credits" />
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center">
-                      <Coins size={20} className="text-primary mr-2" />
-                      <span className="text-neutral-300 flex items-center gap-1">
-                        <EditableContent contentKey="credits_payment_available_text" fallback="Tilgængelige credits:" />
-                        <span className="font-semibold text-white">{credits}</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-3 mb-4">
-                    <label className="flex items-center">
-                      <input type="radio" name="creditUsage" value="none" checked={creditUsageOption === 'none'} onChange={(e) => setCreditUsageOption(e.target.value as any)} className="mr-2" />
-                      <EditableContent contentKey="credits_payment_option_none" fallback="Brug ikke credits" />
-                    </label>
-                    <label className="flex items-center">
-                      <input type="radio" name="creditUsage" value="all" checked={creditUsageOption === 'all'} onChange={(e) => setCreditUsageOption(e.target.value as any)} className="mr-2" />
-                      <span className="flex items-center gap-1">
-                        <EditableContent contentKey="credits_payment_option_all" fallback="Brug alle tilgængelige credits" />
-                        <span>({Math.min(credits, priceAfterDiscount)} <EditableContent contentKey="payment-page-credits" fallback="credits)" /></span>
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input type="radio" name="creditUsage" value="custom" checked={creditUsageOption === 'custom'} onChange={(e) => setCreditUsageOption(e.target.value as any)} className="mr-2" />
-                      <EditableContent contentKey="credits_payment_option_custom" fallback="Brug tilpasset antal credits" />
-                    </label>
-                    {creditUsageOption === 'custom' && (
-                      <div className="ml-6">
-                        <input
-                          type="number"
-                          value={customCreditsToUseInput}
-                          onChange={(e) => setCustomCreditsToUseInput(e.target.value)}
-                          placeholder="Antal credits"
-                          min="0"
-                          max={Math.min(credits, priceAfterDiscount)}
-                          className="w-32 px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white"
-                        />
-                        <span className="ml-2 text-neutral-400"><EditableContent contentKey="payment-page-max" fallback="(max" /> {Math.min(credits, priceAfterDiscount)})</span>
-                      </div>
-                    )}
-                  </div>
-                  {creditsToUse > 0 && (
-                    <div className="bg-neutral-700/50 rounded-lg p-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <EditableContent contentKey="credits_payment_using_text" as="span" className="text-neutral-300" fallback="Bruger credits:" />
-                        <span className="text-primary font-semibold">{creditsToUse}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <EditableContent contentKey="credits_payment_remaining_text" as="span" className="text-neutral-300" fallback="Credits tilbage:" />
-                        <span className="text-neutral-300">{credits - creditsToUse}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
-                <EditableContent contentKey="payment-method-title" as="h2" className="text-xl font-semibold mb-4" fallback="Vælg Betalingsmetode" />
-                <div className="space-y-4">
-                  {canPayWithCreditsOnly && (
-                    <div className="flex items-start space-x-3 p-4 border border-primary rounded-lg cursor-pointer hover:border-primary/80 transition-colors bg-primary/10">
-                      <input type="radio" id="credits" name="payment_method" className="mt-1" checked={paymentMethod === 'credits'} onChange={() => setPaymentMethod('credits')} />
-                      <div className="flex-1">
-                        <EditableContent contentKey="payment-credits-option-title" as="label" className="font-medium cursor-pointer text-white" fallback="Betal med credits" />
-                        <EditableContent contentKey="payment-credits-option-description" as="p" className="text-neutral-300 mt-1" fallback="Brug dine credits til at betale for hele bestillingen. Ingen yderligere betaling nødvendig." />
-                        <div className="flex space-x-2 mt-2">
-                          <Coins size={20} className="text-primary" />
-                          <EditableContent contentKey="payment-credits-instant" as="span" className="text-sm text-primary" fallback="Øjeblikkelig betaling" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {finalPrice > 0 && (
-                    <>
-                      <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg cursor-pointer hover:border-neutral-600 transition-colors bg-neutral-800/50">
-                        <input type="radio" id="pay_now" name="payment_method" className="mt-1" checked={paymentMethod === 'pay_now'} onChange={() => setPaymentMethod('pay_now')} disabled={!stripeReady} required />
-                        <div className="flex-1">
-                          <EditableContent contentKey="payment-card-option-title" as="label" className="font-medium cursor-pointer text-white" fallback="Betal nu" />
-                          <EditableContent contentKey="payment-card-option-description" as="p" className="text-neutral-300 mt-1" fallback="Sikker betaling via Stripe." />
-                          <div className="flex space-x-2 mt-2">
-                            <CreditCard size={20} className="text-neutral-400" />
-                            <EditableContent contentKey="payment-card-types" as="span" className="text-sm text-neutral-400" fallback="Visa, Mastercard, Klarna o.a." />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg cursor-pointer hover:border-neutral-600 transition-colors bg-neutral-800/50">
-                        <input type="radio" id="pay_later" name="payment_method" className="mt-1" checked={paymentMethod === 'pay_later'} onChange={() => setPaymentMethod('pay_later')} />
-                        <div>
-                          <EditableContent contentKey="payment-invoice-option-title" as="label" className="font-medium cursor-pointer text-white" fallback="Betal efter optagelse" />
-                          <EditableContent contentKey="payment-invoice-option-description" as="p" className="text-neutral-300 mt-1" fallback="Vi sender dig en faktura. Du kan betale, når du er tilfreds med resultatet – vi garanterer 100% tilfredshed!" />
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg cursor-pointer hover:border-neutral-600 transition-colors bg-neutral-800/50">
-                        <input type="radio" id="pay_cash" name="payment_method" className="mt-1" checked={paymentMethod === 'cash'} onChange={() => setPaymentMethod('cash')} />
-                        <div>
-                          <EditableContent contentKey="payment-cash-option-title" as="label" className="font-medium cursor-pointer text-white" fallback="Betal med kort eller kontant ved optagelse" />
-                          <EditableContent contentKey="payment-cash-option-description" as="p" className="text-neutral-300 mt-1" fallback="Du betaler med kort eller kontant ved optagelsen." />
-                          <div className="flex space-x-2 mt-2">
-                            <Banknote size={20} className="text-neutral-400" />
-                            <EditableContent contentKey="payment-cash-types" as="span" className="text-sm text-neutral-400" fallback="Kontant eller kort" />
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {paymentMethod === 'pay_now' && finalPrice > 0 && stripeReady && stripePromise && (
-                <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
-                  <Elements
-                    stripe={stripePromise}
-                    options={{
-                      mode: 'payment',
-                      amount: Math.round(finalPrice * 100),
-                      currency: 'dkk',
-                      locale: 'da',
-                      loader: 'auto',
-                      appearance: {
-                        theme: 'night',
-                        variables: {
-                          colorPrimary: '#0ea5e9',
-                          colorBackground: '#404040',
-                          colorText: '#ffffff',
-                          colorDanger: '#ef4444',
-                          fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
-                          spacingUnit: '4px',
-                          borderRadius: '8px',
-                        },
-                      },
-                    }}
-                  >
-                    <StripePaymentForm
-                      amount={finalPrice}
-                      customerName={customerName}
-                      customerEmail={user?.email || finalBookingDetails.guestEmail || ''}
-                      onCustomerNameChange={setCustomerName}
-                      onSuccess={() => navigate('/booking-success')}
-                      loading={payLoading}
-                      setLoading={setPayLoading}
-                      setError={setPayError}
-                      createPaymentIntent={createPaymentIntent}
-                      onPaymentComplete={handlePaymentComplete}
-                      submitButtonText={`Betal ${finalPrice} kr${creditsToUse > 0 ? ` (${creditsToUse} credits + ${finalPrice} kr)` : ''}`}
-                    />
-                  </Elements>
-                </div>
-              )}
-
-              {paymentMethod === 'pay_now' && finalPrice === 0 && (
-                <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
-                  <div className="bg-primary/10 border border-primary rounded-lg p-4 mb-4">
-                    <div className="flex items-center">
-                      <AlertCircle size={20} className="text-primary mr-2" />
-                      <p className="text-white">
-                        <EditableContent contentKey="payment-page-dit-beloeb-er-daekket-af" fallback="Dit beløb er dækket af credits. Vælg venligst &quot;Betal med credits&quot; betalingsmetoden nedenfor." />
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {paymentMethod !== 'pay_now' && (
-                <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
-                  <div className="min-h-[48px]">
-                    <button
-                      onClick={
-                        paymentMethod === 'credits' ? handlePayWithCredits :
-                        paymentMethod === 'pay_later' ? handlePayLater :
-                        handlePayCash
-                      }
-                      className="w-full px-6 py-3 bg-neutral-800 text-white border border-neutral-700 font-medium rounded-lg hover:bg-neutral-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={payLoading}
-                    >
-                      {payLoading ? (
-                        <span className="flex items-center justify-center">
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          <EditableContent contentKey="payment-processing-text" fallback="Behandler..." />
-                        </span>
-                      ) : paymentMethod === 'credits' ? (
-                        <EditableContent contentKey="credits_payment_pay_credits_button" fallback={`Betal med ${creditsToUse} credits`} />
-                      ) : paymentMethod === 'pay_later' ? (
-                        <EditableContent contentKey="payment-complete-booking-button" fallback="Gennemfør Booking" />
-                      ) : (
-                        <EditableContent contentKey="payment-cash-booking-button" fallback="Gennemfør Booking" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Order summary */}
-              <div className="bg-neutral-800 rounded-xl shadow-md p-6 border border-neutral-700">
-                <EditableContent contentKey="payment-order-summary-title" as="h2" className="text-xl font-semibold mb-4" fallback="Din booking" />
-                <div className="space-y-4 mb-6">
-                  <div className="flex justify-between">
-                    <EditableContent contentKey="payment-summary-product-label" as="span" className="text-neutral-300" fallback="Produkt" />
-                    <span className="text-white">{product?.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <EditableContent contentKey="payment-summary-date-label" as="span" className="text-neutral-300" fallback="Dato" />
-                    <span className="text-white">{formatDate(finalBookingDetails.bookingDate)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <EditableContent contentKey="payment-summary-time-label" as="span" className="text-neutral-300" fallback="Tidspunkt" />
-                    <span className="text-white">{formatTime(finalBookingDetails.bookingTime)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <EditableContent contentKey="payment-summary-address-label" as="span" className="text-neutral-300" fallback="Adresse" />
-                    <span className="text-white text-right">{finalBookingDetails.address}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <EditableContent contentKey="payment-summary-base-price-label" as="span" className="text-neutral-300" fallback="Basis pris" />
-                    <span className="text-white">{product?.price} <EditableContent contentKey="payment-page-kr-4" fallback="kr" /></span>
-                  </div>
-
-                  {editingIsPaidAddon && (
-                    <div className="flex justify-between">
-                      <EditableContent contentKey="payment-summary-editing-label" as="span" className="text-neutral-300" fallback="Redigering" />
-                      <span className="text-white"><EditableContent contentKey="payment-page-100-kr" fallback="100 kr" /></span>
-                    </div>
-                  )}
-
-                  {finalBookingDetails.isEditingIncluded && (
-                    <div className="flex justify-between">
-                      <EditableContent contentKey="payment-summary-editing-label" as="span" className="text-neutral-300" fallback="Redigering" />
-                      <span className="text-green-400">
-                        <EditableContent contentKey="payment-summary-editing-included" fallback="Inkluderet" />
-                      </span>
-                    </div>
-                  )}
-
-                  {creditsToUse > 0 && (
-                    <div className="flex justify-between">
-                      <EditableContent contentKey="payment-summary-credits-label" as="span" className="text-primary" fallback="Credits brugt" />
-                      <span className="text-primary">-{creditsToUse} <EditableContent contentKey="payment-page-kr-3" fallback="kr" /></span>
-                    </div>
-                  )}
-                </div>
-                <div className="border-t border-neutral-700 pt-4 mb-4">
-                  <div className="flex justify-between items-center">
-                    <EditableContent contentKey="payment-summary-total-label" as="span" className="font-semibold text-white" fallback="Total" />
-                    <div className="text-right">
-                      {creditsToUse > 0 && (
-                        <div className="text-sm text-neutral-400 line-through">{finalBookingDetails.totalPrice} <EditableContent contentKey="payment-page-kr-2" fallback="kr" /></div>
-                      )}
-                      <span className="text-xl font-bold text-white">{finalPrice} <EditableContent contentKey="payment-page-kr" fallback="kr" /></span>
-                    </div>
-                  </div>
-                </div>
-                <EditableContent contentKey="payment-terms-notice" as="p" className="text-sm text-neutral-400" fallback="Opsummering" />
-              </div>
+          {paymentMethod === 'pay_now' && bookingReady && finalPrice === 0 && (
+            <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+              <div className="bg-primary/10 border border-primary rounded-lg p-4 text-white">Dit beløb er fuldt dækket af dine credits.</div>
+              <button onClick={handlePayWithCredits} disabled={payLoading} className="btn-primary w-full mt-4">
+                {payLoading ? 'Behandler...' : `Gennemfør booking med ${creditsToUse} credits`}
+              </button>
             </div>
           )}
+
+          {paymentMethod !== 'pay_now' && bookingReady && (
+            <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
+              <button
+                onClick={paymentMethod === 'credits' ? handlePayWithCredits : paymentMethod === 'pay_later' ? handlePayLater : handlePayCash}
+                className="w-full px-6 py-3 bg-neutral-800 text-white border border-neutral-700 font-medium rounded-lg hover:bg-neutral-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={payLoading}
+              >
+                {payLoading ? 'Behandler...' : paymentMethod === 'credits' ? `Betal med ${creditsToUse} credits` : 'Gennemfør Booking'}
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
   );
 };
+
 
 export default BookingPage;
