@@ -1,0 +1,87 @@
+[build]
+command = "npx vite build"
+publish = "dist"
+
+[build.environment]
+NODE_VERSION = "18"
+NPM_FLAGS = "--legacy-peer-deps"
+NPM_CONFIG_CACHE = "/opt/build/cache/npm"
+
+[[edge_functions]]
+path = "/.netlify/edge-functions/ip-location"
+function = "ip-location"
+
+[[redirects]]
+from = "/.netlify/functions/*"
+to = "/.netlify/functions/:splat"
+status = 200
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+
+# HTML — never cache, always revalidate
+[[headers]]
+for = "/index.html"
+
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+X-Frame-Options = "DENY"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Hashed assets — immutable, 1 year
+[[headers]]
+for = "/assets/*"
+
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
+X-Content-Type-Options = "nosniff"
+
+# Static files (webp, pdf, etc) — cache 1 week, revalidate
+[[headers]]
+for = "/*.webp"
+
+[headers.values]
+Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
+
+[[headers]]
+for = "/*.pdf"
+
+[headers.values]
+Cache-Control = "public, max-age=604800"
+
+# Security headers for everything
+[[headers]]
+for = "/*"
+
+[headers.values]
+X-Frame-Options = "DENY"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
+Permissions-Policy = "camera=(), microphone=()"
+
+[[headers]]
+for = "/review-4.html"
+
+[headers.values]
+X-Frame-Options = "SAMEORIGIN"
+Content-Security-Policy = ""
+
+[[headers]]
+for = "/review-20.html"
+
+[headers.values]
+X-Frame-Options = "SAMEORIGIN"
+Content-Security-Policy = ""
+
+# Enable Netlify Functions v2 (required for drive-download.mjs streaming)
+[functions]
+  node_bundler = "esbuild"
+
+# Explicitly declare drive-download as a v2 streaming function.
+# This ensures Netlify uses the .mjs ES-module entry point and does NOT
+# buffer the response — avoiding the ~125 MB truncation / corrupt ZIP issue.
+[functions."drive-download"]
+  node_bundler = "esbuild"
