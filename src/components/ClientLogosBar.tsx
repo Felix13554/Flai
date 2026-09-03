@@ -21,13 +21,20 @@ export interface ClientLogosBarProps {
 // however many logos there are (adding logos doesn't speed the loop up).
 const MARQUEE_SPEED_PX_PER_SEC = 50;
 
+// How many logos to prioritize / preload (tune to your layout)
+const PRIORITY_LOGOS = 6;
+
 // Separate component (not a helper function) so each logo gets its own
 // useAdaptiveShadow hook instance — calling that hook a variable number of
 // times inside a .map() within ClientLogosBar itself would violate the
 // rules of hooks (hook count must stay constant across a given component
 // instance's renders, and logos.length can change).
-const OverlayLogo: React.FC<{ logo: { id: string; website_url: string; logo_url: string; name: string } }> = ({
+const OverlayLogo: React.FC<{
+  logo: { id: string; website_url: string; logo_url: string; name: string };
+  priority?: boolean;
+}> = ({
   logo,
+  priority = false,
 }) => {
   const [ref, shadowStyle] = useAdaptiveShadow<HTMLImageElement>('logo');
   return (
@@ -37,7 +44,11 @@ const OverlayLogo: React.FC<{ logo: { id: string; website_url: string; logo_url:
         src={logo.logo_url}
         alt={logo.name}
         className="clb-logo-img"
-        loading="lazy"
+        // prioritize the first few visible logos
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        // use passthrough to set fetchpriority on modern browsers
+        {...{ fetchpriority: priority ? 'high' : 'low' }}
         style={shadowStyle}
       />
     </a>
@@ -126,16 +137,41 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
     return () => ro.disconnect();
   }, [logos.length]);
 
+  // Preload & prioritize the first few logos so they fetch earlier
+  useEffect(() => {
+    if (!logos || logos.length === 0) return;
+    const count = Math.min(PRIORITY_LOGOS, logos.length);
+    const head = document.head;
+    const links: HTMLLinkElement[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const href = logos[i].logo_url;
+      if (!href) continue;
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.href = href;
+      // safe to set crossOrigin if the images are served from a CORS-enabled CDN
+      link.crossOrigin = 'anonymous';
+      head.appendChild(link);
+      links.push(link);
+    }
+
+    return () => {
+      links.forEach((l) => head.removeChild(l));
+    };
+  }, [logos]);
+
   const shouldAnimate = isOverflowing && !reducedMotion;
   // Reduced-motion users still get all the logos, just via a swipeable
   // static row instead of an auto-scrolling one.
   const shouldScrollFallback = isOverflowing && reducedMotion;
 
-  const renderLogo = (logo: (typeof logos)[number], keySuffix: string) =>
+  const renderLogo = (logo: (typeof logos)[number], keySuffix: string, index: number) =>
     isOverlay ? (
       // Overlay variant sits directly on the video, so its logos need the
       // same adaptive drop-shadow treatment as the FLAI logo/subtitle.
-      <OverlayLogo key={`${logo.id}${keySuffix}`} logo={logo} />
+      <OverlayLogo key={`${logo.id}${keySuffix}`} logo={logo} priority={index < PRIORITY_LOGOS && keySuffix === '-a'} />
     ) : (
       <a
         key={`${logo.id}${keySuffix}`}
@@ -145,7 +181,15 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
         className="clb-logo-link"
         title={logo.name}
       >
-        <img src={logo.logo_url} alt={logo.name} className="clb-logo-img" loading="lazy" />
+        <img
+          src={logo.logo_url}
+          alt={logo.name}
+          className="clb-logo-img"
+          // prioritize the first visible logos, keep duplicates/later ones lazy
+          loading={index < PRIORITY_LOGOS && keySuffix === '-a' ? 'eager' : 'lazy'}
+          decoding="async"
+          {...{ fetchpriority: index < PRIORITY_LOGOS && keySuffix === '-a' ? 'high' : 'low' }}
+        />
       </a>
     );
 
@@ -218,16 +262,16 @@ const ClientLogosBar: React.FC<ClientLogosBarProps> = ({ variant = 'section' }) 
           .client-logos-bar .clb-viewport { padding-inline: ${isOverlay ? '14px' : '0'}; }
         }
       `}</style>
-      <div className={isOverlay ? `w-full max-w-screen-xl mx-auto px-6 transition-[padding] duration-300 ${confirmedEmpty ? 'pb-0' : 'pb-6 sm:pb-8'}` : 'w-full max-w-screen-xl mx-auto px-6 py-5 md:py-6'}>
+      <div className={isOverlay ? `w-full max-w-screen-xl mx-auto px-6 transition-[padding] duration-300 ${confirmedEmpty ? 'pb-0' : 'pb-6 sm:pb-8'}` : 'w-full max-w-screen-xl mx-auto px-6 py-5 md:py-8'}>
         <div className={isOverlay ? 'clb-slot' : undefined}>
           <div className="clb-viewport" ref={viewportRef}>
             <div className="clb-track">
               <div className="clb-group" ref={groupRef}>
-                {logos.map((logo) => renderLogo(logo, '-a'))}
+                {logos.map((logo, i) => renderLogo(logo, '-a', i))}
               </div>
               {shouldAnimate && (
                 <div className="clb-group" aria-hidden="true">
-                  {logos.map((logo) => renderLogo(logo, '-b'))}
+                  {logos.map((logo, i) => renderLogo(logo, '-b', i))}
                 </div>
               )}
             </div>
