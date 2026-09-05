@@ -25,7 +25,6 @@ const BookingPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [address, setAddress] = useState('');
-  const [includeEditing, setIncludeEditing] = useState(false);
   const [totalPrice, setTotalPrice] = useState(0);
   const [isAddressValid, setIsAddressValid] = useState<boolean>(true);
   const [distance, setDistance] = useState<string>('');
@@ -328,19 +327,18 @@ const BookingPage: React.FC = () => {
 
     const effectiveGuestName = customerName || (user ? userName : guestName);
     const effectiveGuestEmail = customerEmail || (user?.email || guestEmail);
-    const editingCost = (product.category === 'video' && !product.is_editing_included && includeEditing) ? 100 : 0;
 
     setFinalBookingDetails({
       bookingDate: selectedTimeSlot.date,
       bookingTime: selectedTimeSlot.time,
       address,
-      includeEditing,
+      includeEditing: product.is_editing_included ?? false,
       isEditingIncluded: product.is_editing_included ?? false,
-      totalPrice: product.price + editingCost,
+      totalPrice: product.price,
       guestEmail: !user ? effectiveGuestEmail : undefined,
       guestName: !user ? effectiveGuestName : undefined,
     });
-  }, [product, selectedTimeSlot, address, includeEditing, user, userName, customerName, customerEmail, guestName, guestEmail]);
+  }, [product, selectedTimeSlot, address, user, userName, customerName, customerEmail, guestName, guestEmail]);
 
   // Restore booking state after Google OAuth redirect
   useEffect(() => {
@@ -363,9 +361,6 @@ const BookingPage: React.FC = () => {
             setGuestName(state.guestName);
             setUserName(state.guestName);
             setCustomerName(state.guestName);
-          }
-          if (state.includeEditing !== undefined) {
-            setIncludeEditing(state.includeEditing);
           }
           // Clear the saved state after restoration
           sessionStorage.removeItem('bookingState');
@@ -435,23 +430,6 @@ const BookingPage: React.FC = () => {
 
     fetchProduct();
   }, [productId]);
-
-  // Recalculate total price:
-  // - If editing is included in the product, no extra charge ever
-  // - If editing is NOT included but user opts in, add 100 kr
-  useEffect(() => {
-    if (product) {
-      const editingCost = (product.category === 'video' && !product.is_editing_included && includeEditing) ? 100 : 0;
-      setTotalPrice(product.price + editingCost);
-    }
-  }, [product, includeEditing]);
-
-  // Auto-enable editing toggle if product includes it (for UI clarity), but no charge added
-  useEffect(() => {
-    if (product?.is_editing_included) {
-      setIncludeEditing(true);
-    }
-  }, [product]);
 
   const validateAddress = async (address: string) => {
     if (!address.trim()) {
@@ -591,7 +569,7 @@ const BookingPage: React.FC = () => {
                     <GoogleLoginButton
                       buttonText=""
                       redirectTo={`${window.location.origin}/booking/${productId}`}
-                      bookingState={{ productId, selectedTimeSlot, address, includeEditing, guestEmail: customerEmail, guestName: customerName }}
+                      bookingState={{ productId, selectedTimeSlot, address, guestEmail: customerEmail, guestName: customerName }}
                       compact={true}
                     />
                   </div>
@@ -622,7 +600,7 @@ const BookingPage: React.FC = () => {
                     <GoogleLoginButton
                       buttonText=""
                       redirectTo={`${window.location.origin}/booking/${productId}`}
-                      bookingState={{ productId, selectedTimeSlot, address, includeEditing, guestEmail: customerEmail, guestName: customerName }}
+                      bookingState={{ productId, selectedTimeSlot, address, guestEmail: customerEmail, guestName: customerName }}
                       compact={true}
                     />
                   </div>
@@ -676,32 +654,19 @@ const BookingPage: React.FC = () => {
             <TimeSlotPicker onSelectTimeSlot={handleSelectTimeSlot} selectedSlot={selectedTimeSlot} />
           </div>
 
-          {/* Editing — same as Simple Request, and nothing else added */}
-          {product.category === 'video' && (
+          {/* Editing — informational only; there is no extra-cost editing option to choose at booking */}
+          {product.category === 'video' && product.is_editing_included && (
             <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
               <EditableContent contentKey="simple-editing-title" as="h2" className="text-xl font-semibold mb-4" fallback="Tilvalg" />
-              {product.is_editing_included ? (
-                <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
-                  <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414-1.414l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <div>
-                    <EditableContent contentKey="booking-editing-included-title" as="h3" className="font-medium text-green-400" fallback="Redigering inkluderet" />
-                    <EditableContent contentKey="booking-editing-included-description" as="p" className="text-neutral-300 mt-1" fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter." />
-                  </div>
+              <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
+                <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414-1.414l4-4z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <EditableContent contentKey="booking-editing-included-title" as="h3" className="font-medium text-green-400" fallback="Redigering inkluderet" />
+                  <EditableContent contentKey="booking-editing-included-description" as="p" className="text-neutral-300 mt-1" fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter." />
                 </div>
-              ) : (
-                <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg bg-neutral-800/50">
-                  <input type="checkbox" id="editing" checked={includeEditing} onChange={(e) => setIncludeEditing(e.target.checked)} className="mt-1" />
-                  <div>
-                    <label htmlFor="editing" className="font-medium cursor-pointer text-white">
-                      <EditableContent contentKey="simple-editing-option-title" fallback="Redigering" />
-                    </label>
-                    <EditableContent contentKey="simple-editing-description" as="p" className="text-neutral-300 mt-1" fallback="Få redigering af dine optagelser, herunder klipning, effekter, lydeffekter og baggrundsmusik." />
-                    <EditableContent contentKey="simple-editing-price" as="p" className="text-neutral-300 font-semibold mt-2" fallback="+100 kr" />
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           )}
 
