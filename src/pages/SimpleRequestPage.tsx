@@ -28,7 +28,6 @@ const SimpleRequestPage: React.FC = () => {
     customerEmail: '',
     customerName: '',
     customerAddress: '',
-    wantsEditing: false,
     paymentMethod: 'pay_now',
   });
 
@@ -72,7 +71,6 @@ const SimpleRequestPage: React.FC = () => {
           const state = JSON.parse(savedState);
           if (state.productId) setFormData(prev => ({ ...prev, productId: state.productId }));
           if (state.customerAddress) setFormData(prev => ({ ...prev, customerAddress: state.customerAddress }));
-          if (state.wantsEditing !== undefined) setFormData(prev => ({ ...prev, wantsEditing: state.wantsEditing }));
           if (state.paymentMethod) setFormData(prev => ({ ...prev, paymentMethod: state.paymentMethod }));
           sessionStorage.removeItem('smartBookingState');
           toast.success('Velkommen tilbage! Dine oplysninger er udfyldt.');
@@ -229,15 +227,12 @@ const SimpleRequestPage: React.FC = () => {
       productId: selectedProductId,
       productName: product?.name || '',
       productPrice: product?.price || 0,
-      wantsEditing: false,
     }));
     setErrors(prev => ({ ...prev, productId: '' }));
   };
 
   const calculateTotalPrice = () => {
-    let total = formData.productPrice;
-    if (formData.wantsEditing && selectedProduct && selectedProduct.category === 'video' && !selectedProduct.is_editing_included) total += 100;
-    return total;
+    return formData.productPrice;
   };
 
   // Handle invoice / on-site submissions
@@ -280,7 +275,7 @@ const SimpleRequestPage: React.FC = () => {
             customerEmail: formData.customerEmail,
             customerName: formData.customerName,
             customerAddress: formData.customerAddress,
-            wantsEditing: (selectedProduct?.category === 'video' && selectedProduct?.is_editing_included) ? true : (selectedProduct?.category === 'video' ? formData.wantsEditing : false),
+            wantsEditing: selectedProduct?.category === 'video' ? (selectedProduct?.is_editing_included ?? false) : false,
             paymentMethod: formData.paymentMethod,
           }),
         }
@@ -331,7 +326,7 @@ const SimpleRequestPage: React.FC = () => {
           customerEmail: formData.customerEmail,
           customerName: formData.customerName,
           customerAddress: formData.customerAddress,
-          wantsEditing: (selectedProduct?.category === 'video' && selectedProduct?.is_editing_included) ? true : (selectedProduct?.category === 'video' ? formData.wantsEditing : false),
+          wantsEditing: selectedProduct?.category === 'video' ? (selectedProduct?.is_editing_included ?? false) : false,
           paymentMethod: formData.paymentMethod,
         }),
       }
@@ -366,7 +361,7 @@ const SimpleRequestPage: React.FC = () => {
             productId: formData.productId,
             productName: formData.productName,
             address: formData.customerAddress,
-            includeEditing: selectedProduct?.category === 'video' ? formData.wantsEditing : false,
+            includeEditing: selectedProduct?.category === 'video' ? (selectedProduct?.is_editing_included ?? false) : false,
             guestEmail: formData.customerEmail,
             customerName: formData.customerName,
             mode: 'smart',
@@ -420,7 +415,7 @@ const SimpleRequestPage: React.FC = () => {
             customerEmail: formData.customerEmail,
             customerName: formData.customerName,
             customerAddress: formData.customerAddress,
-            wantsEditing: (selectedProduct?.category === 'video' && selectedProduct?.is_editing_included) ? true : (selectedProduct?.category === 'video' ? formData.wantsEditing : false),
+            wantsEditing: selectedProduct?.category === 'video' ? (selectedProduct?.is_editing_included ?? false) : false,
             paymentMethod: 'credits',
           }),
         }
@@ -562,7 +557,7 @@ const SimpleRequestPage: React.FC = () => {
                       <GoogleLoginButton
                         buttonText=""
                         redirectTo={`${window.location.origin}/simple-request${prefilledProductId ? `?product_id=${prefilledProductId}&product_name=${encodeURIComponent(prefilledProductName || '')}` : ''}`}
-                        bookingState={{ productId: formData.productId, customerAddress: formData.customerAddress, wantsEditing: formData.wantsEditing, paymentMethod: formData.paymentMethod }}
+                        bookingState={{ productId: formData.productId, customerAddress: formData.customerAddress, paymentMethod: formData.paymentMethod }}
                         compact={true}
                       />
                     </div>
@@ -591,7 +586,7 @@ const SimpleRequestPage: React.FC = () => {
                       <GoogleLoginButton
                         buttonText=""
                         redirectTo={`${window.location.origin}/simple-request${prefilledProductId ? `?product_id=${prefilledProductId}&product_name=${encodeURIComponent(prefilledProductName || '')}` : ''}`}
-                        bookingState={{ productId: formData.productId, customerAddress: formData.customerAddress, wantsEditing: formData.wantsEditing, paymentMethod: formData.paymentMethod }}
+                        bookingState={{ productId: formData.productId, customerAddress: formData.customerAddress, paymentMethod: formData.paymentMethod }}
                         compact={true}
                       />
                     </div>
@@ -636,39 +631,19 @@ const SimpleRequestPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Editing Option - only for video category products */}
-            {selectedProduct && selectedProduct.category === 'video' && (
+            {/* Editing — informational only; there is no extra-cost editing option to choose */}
+            {selectedProduct && selectedProduct.category === 'video' && selectedProduct.is_editing_included && (
               <div className="bg-neutral-800 rounded-xl shadow-md p-6 mb-6 border border-neutral-700">
                 <EditableContent contentKey="simple-editing-title" as="h2" className="text-xl font-semibold mb-4" fallback="Tilvalg" />
-
-                {selectedProduct.is_editing_included ? (
-                  <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
-                    <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <EditableContent contentKey="booking-editing-included-title" as="h3" className="font-medium text-green-400" fallback="Redigering inkluderet" />
-                      <EditableContent contentKey="booking-editing-included-description" as="p" className="text-neutral-300 mt-1" fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter." />
-                    </div>
+                <div className="flex items-start space-x-3 p-4 border border-green-500/20 rounded-lg bg-green-500/10">
+                  <svg className="w-6 h-6 text-green-400 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <EditableContent contentKey="booking-editing-included-title" as="h3" className="font-medium text-green-400" fallback="Redigering inkluderet" />
+                    <EditableContent contentKey="booking-editing-included-description" as="p" className="text-neutral-300 mt-1" fallback="Dette produkt inkluderer redigering som farvekorrigering, klipning, baggrundsmusik og lydeffekter." />
                   </div>
-                ) : (
-                  <div className="flex items-start space-x-3 p-4 border border-neutral-700 rounded-lg bg-neutral-800/50">
-                    <input
-                      type="checkbox"
-                      id="editing"
-                      checked={formData.wantsEditing}
-                      onChange={(e) => setFormData(prev => ({ ...prev, wantsEditing: e.target.checked }))}
-                      className="mt-1"
-                    />
-                    <div>
-                      <label htmlFor="editing" className="font-medium cursor-pointer text-white">
-                        <EditableContent contentKey="simple-editing-option-title" fallback="Redigering" />
-                      </label>
-                      <EditableContent contentKey="simple-editing-description" as="p" className="text-neutral-300 mt-1" fallback="Få redigering af dine optagelser, herunder klipning, effekter, lydeffekter og baggrundsmusik." />
-                      <EditableContent contentKey="simple-editing-price" as="p" className="text-neutral-300 font-semibold mt-2" fallback="+100 kr" />
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             )}
 
