@@ -1,33 +1,16 @@
 /**
  * DriveDownload.tsx
  *
- * Download flow:
+ * Download flow — always via the browser's normal download mechanism:
+ *   1. GET /api/gofile-proxy?id=<id>  →  { methodBUrl, fileName, fileSizeBytes }
+ *   2. fetch(methodBUrl) → arrayBuffer → Blob → hidden <a download> click
+ *      (or a plain <a> click when we don't need to track progress)
+ *   Files land in the browser's normal Downloads folder. No File System
+ *   Access API, no direct disk writes — simple and consistent everywhere.
+ *   Files > 5 GB (METHOD_B_MAX_BYTES) show a browser-wall message instead,
+ *   since buffering that much into RAM as a Blob isn't safe.
  *
- *   FSAPI browsers (Chrome, Edge, Opera, Brave) — ZIP files:
- *     1. GET /api/gofile-proxy?id=<id>  →  { token, downloadUrl, fileSizeBytes }
- *        (tiny JSON response, safe on Vercel)
- *     2. fetch(downloadUrl, { Authorization: Bearer <token> })
- *        — fetches the raw ZIP directly from Google, Vercel carries 0 bytes
- *     3. response.body.pipeThrough(progressTransform).pipeTo(writable)
- *        — native pipe straight to FSAPI writable on disk
- *     The ZIP file is saved as-is; the user extracts it locally.
- *     This completely avoids Vercel's function timeout — the data path is
- *     Google → browser → disk with no serverless function in the middle.
- *
- *   FSAPI browsers — non-ZIP files:
- *     Same token+direct-stream approach, same path.
- *
- *   Non-FSAPI browsers:
- *     Method B (?alt=media&key=APIKEY). If > 5 GB → browser wall.
- *
- * FIXES:
- *   - ZIP + FSAPI branch now streams Google → disk directly (no Vercel proxy).
- *     Previously it used gofile-proxy?mode=stream which hit Vercel's function
- *     timeout at ~3-5 GB, aborted the writable, and fell back to Method B.
- *   - createWritable({ keepExistingData: false }) — explicit truncation so
- *     replacing an existing file doesn't stall at 7 KB.
- *   - Native pipeThrough/pipeTo replaces manual read loop.
- *   - React #310 on Safari: all hooks declared unconditionally.
+ * React #310 on Safari: all hooks declared unconditionally.
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -40,7 +23,6 @@ import { createClient } from "@supabase/supabase-js";
 import EditableContent from "./EditableContent";
 import {
   getGoogleDriveFile,
-  hasFSAPI,
   METHOD_B_MAX_BYTES,
   BrowserUnsupportedError,
   type DownloadProgressCallback,
@@ -322,7 +304,6 @@ const DriveDownload: React.FC = () => {
   // ── ALL hooks declared unconditionally (fixes React #310 on Safari) ─────────
   // FSAPI is checked inside state/effect, never at module level, so hook order
   // is always identical regardless of browser capabilities.
-  const [fsapiAvailable,  setFsapiAvailable]  = useState(false);
   const [shareUrl,        setShareUrl]         = useState<string | null>(null);
   const [fileName,        setFileName]         = useState<string>("download");
   const [folderName,      setFolderName]       = useState<string>("download");
@@ -345,11 +326,6 @@ const DriveDownload: React.FC = () => {
 
   // Abort controller ref so we can cancel in-flight downloads
   const abortRef = useRef<AbortController | null>(null);
-
-  // ── Detect FSAPI once, client-side only ──────────────────────────────────────
-  useEffect(() => {
-    setFsapiAvailable(hasFSAPI());
-  }, []);
 
   // ── Load file metadata ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -378,13 +354,13 @@ const DriveDownload: React.FC = () => {
     })();
   }, [id, navigate]);
 
-  // ── Decide browser wall once we know FSAPI status + file size ───────────────
+  // ── Decide browser wall once we know the file size ───────────────────────────
   useEffect(() => {
     if (!sizeLoaded) return;
-    if (!fsapiAvailable && fileSizeBytes > METHOD_B_MAX_BYTES) {
+    if (fileSizeBytes > METHOD_B_MAX_BYTES) {
       setShowBrowserWall(true);
     }
-  }, [sizeLoaded, fsapiAvailable, fileSizeBytes]);
+  }, [sizeLoaded, fileSizeBytes]);
 
   // ── Auto-load folder info from ZIP index ─────────────────────────────────────
   useEffect(() => {
@@ -419,314 +395,102 @@ const DriveDownload: React.FC = () => {
     abortRef.current = abort;
 
     try {
-      if (fsapiAvailable && isZip) {
-        // ── Method A: ZIP + FSAPI — stream raw ZIP directly from Google to disk ──
-        //
-        // CRITICAL: we do NOT route through gofile-proxy?mode=stream here.
-        // That endpoint re-encodes the ZIP server-side inside a Vercel function,
-        // which has a hard execution timeout (10 s Hobby / 60 s Pro).  At typical
-        // broadband speeds a 25-40 GB file hits that ceiling at 3-5 GB, the
-        // function closes the response body, writable.abort() is called, and the
-        // download silently falls back to Method B.
-        //
-        // Instead: get only the auth token from the proxy (a tiny JSON call that
-        // completes in < 1 s), then fetch the raw ZIP directly from Google's CDN
-        // with an Authorization header.  The data path is:
-        //
-        //   Google CDN → browser (RAM never accumulates) → FSAPI writable → disk
-        //
-        // Vercel carries exactly 0 bytes of file data and has no timeout to hit.
+      // Guard: >5 GB is too risky to buffer as a Blob in RAM.
+      if (fileSizeBytes > METHOD_B_MAX_BYTES) {
+        throw new BrowserUnsupportedError(fileSizeBytes);
+      }
 
-        setProgress({ overall: 0, status: "Henter filinfo…" });
+      setProgress({ overall: 0, status: "Henter filinfo…" });
 
-        const proxyRes = await fetch(`/api/gofile-proxy?id=${encodeURIComponent(id)}`, { signal: abort.signal });
-        if (!proxyRes.ok) {
-          let detail = `Server fejl (${proxyRes.status})`;
-          try { const b = await proxyRes.json(); detail = b.detail || b.error || detail; } catch { /* */ }
-          throw new Error(detail);
-        }
-        const info = await proxyRes.json();
-        if (info.error) throw new Error(info.detail || info.error);
+      const proxyRes = await fetch(`/api/gofile-proxy?id=${encodeURIComponent(id)}`, { signal: abort.signal });
+      if (!proxyRes.ok) {
+        let detail = `Server fejl (${proxyRes.status})`;
+        try { const b = await proxyRes.json(); detail = b.detail || b.error || detail; } catch { /* */ }
+        throw new Error(detail);
+      }
+      const info = await proxyRes.json();
+      if (info.error) throw new Error(info.detail || info.error);
 
-        const { token, downloadUrl: googleUrl, fileName: serverFileName, fileSizeBytes: serverSize } = info;
-        const saveName = serverFileName || fileName;
+      const methodBUrl: string | null = info.methodBUrl || null;
+      const saveName: string = info.fileName || fileName;
+      const serverSize = typeof info.fileSizeBytes === "number" ? info.fileSizeBytes : fileSizeBytes;
 
-        if (!token || !googleUrl) {
-          throw new Error(
-            "Service account token ikke tilgængeligt. " +
-            "Kontrollér at GOOGLE_SERVICE_ACCOUNT_KEY er sat korrekt i Vercel."
-          );
-        }
+      if (serverSize > METHOD_B_MAX_BYTES) {
+        throw new BrowserUnsupportedError(serverSize);
+      }
 
-        setProgress({ overall: 1, status: "Åbner gem-dialog…" });
+      if (!methodBUrl) {
+        throw new Error(
+          info.isPublicFallback
+            ? "Filen er privat i Google Drive. Sæt adgang til 'Alle med linket' i Google Drive."
+            : "Download-URL mangler. Kontakt support eller prøv igen."
+        );
+      }
 
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: saveName,
-          types: [{ description: "ZIP Archive", accept: { "application/zip": [".zip"], "application/octet-stream": [] } }],
-        });
+      setProgress({ overall: 5, status: "Forbinder til Google Drive…" });
 
-        setProgress({ overall: 2, status: "Forbinder til Google Drive…" });
+      // Fetch the file directly from Google (methodBUrl already has alt=media +
+      // acknowledgeAbuse=true so no virus-scan interstitial will be returned).
+      const driveRes = await fetch(methodBUrl, { signal: abort.signal });
+      if (!driveRes.ok) {
+        throw new Error(`Google Drive svarede med ${driveRes.status}`);
+      }
 
-        // Fetch directly from Google — Authorization header, no Vercel in path.
-        const response = await fetch(googleUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: abort.signal,
-        });
+      // Guard: if Google returns HTML instead of bytes (e.g. session cookie wall)
+      const ct = driveRes.headers.get("Content-Type") || "";
+      if (ct.includes("text/html")) {
+        throw new Error(
+          "Google Drive returnerede en HTML-side i stedet for fildata. " +
+          "Kontrollér at filen er delt korrekt og prøv igen."
+        );
+      }
 
-        if (!response.ok) {
-          throw new Error(`Google Drive svarede med ${response.status}`);
-        }
-
-        const contentType = response.headers.get("Content-Type") || "";
-        if (contentType.includes("text/html")) {
-          throw new Error(
-            "Google Drive returnerede en HTML-bekræftelsesside i stedet for fildata. " +
-            "Kontrollér at filen er delt korrekt med service-kontoen."
-          );
-        }
-
-        if (!response.body) throw new Error("Din browser understøtter ikke streaming.");
-
-        const contentLength = response.headers.get("Content-Length");
-        const total = contentLength ? parseInt(contentLength, 10) : (serverSize || 0);
-
-        // Progress TransformStream — counts bytes as they pass through to disk.
-        let received = 0;
-        const startTime = Date.now();
-
-        const progressTransform = new TransformStream<Uint8Array, Uint8Array>({
-          transform(chunk, controller) {
-            received += chunk.byteLength;
-            const pct = total > 0 ? Math.min(99, Math.round((received / total) * 100)) : 0;
-            const elapsedMs = Date.now() - startTime;
-            const speedBps  = elapsedMs > 0 ? received / (elapsedMs / 1000) : 0;
-
-            let status: string;
-            if (total > 0 && speedBps > 0) {
-              const remSec = (total - received) / speedBps;
-              status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)} — ${fmtTime(remSec)} tilbage`;
-            } else if (total > 0) {
-              status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)}`;
-            } else {
-              status = `Downloader… ${fmtGB(received)}`;
-            }
-
-            setProgress({ overall: pct, status });
-            controller.enqueue(chunk);
-          },
-        });
-
-        // keepExistingData: false — truncate any pre-existing file so "Replace"
-        // doesn't stall at 7 KB with stale bytes from the previous download.
-        const writable = await handle.createWritable({ keepExistingData: false });
-
-        // Native pipe: Google CDN → progressTransform → disk.
-        // No JS scheduler in the hot path; backpressure handled by the platform.
-        await response.body
-          .pipeThrough(progressTransform)
-          .pipeTo(writable);
-
-        setProgress({ overall: 100, status: "Download fuldført!", done: true });
-        setDownloadDone(true);
-
-      } else if (!fsapiAvailable) {
-        // ── Method B (non-FSAPI) ───────────────────────────────────────────────
-        // BrowserUnsupportedError for >5 GB was already gated by showBrowserWall
-        // state, but we guard here too in case the wall hasn't rendered yet.
-        if (fileSizeBytes > METHOD_B_MAX_BYTES) {
-          throw new BrowserUnsupportedError(fileSizeBytes);
-        }
-
-        // Fetch the proxy endpoint to get the methodBUrl (alt=media with API key).
-        // We then use fetch+blob+object URL instead of a bare <a> click so that:
-        //   a) The browser always sees the full Content-Length from Google.
-        //   b) The file lands in Downloads with the correct name immediately — no
-        //      lingering .crswap because the blob is already complete before we
-        //      trigger the save.
-        // For very large files on non-FSAPI browsers (already blocked above) this
-        // would require loading everything into RAM, hence the 5 GB guard.
-        setProgress({ overall: 0, status: "Henter filinfo…" });
-
-        const proxyRes = await fetch(`/api/gofile-proxy?id=${encodeURIComponent(id)}`, { signal: abort.signal });
-        if (!proxyRes.ok) {
-          let detail = `Server fejl (${proxyRes.status})`;
-          try { const b = await proxyRes.json(); detail = b.detail || b.error || detail; } catch { /* */ }
-          throw new Error(detail);
-        }
-        const info = await proxyRes.json();
-        if (info.error) throw new Error(info.detail || info.error);
-
-        const methodBUrl: string | null = info.methodBUrl || null;
-        const saveName: string = info.fileName || fileName;
-
-        if (!methodBUrl) {
-          throw new Error(
-            info.isPublicFallback
-              ? "Filen er privat i Google Drive. Sæt adgang til 'Alle med linket' i Google Drive."
-              : "Download-URL mangler. Kontakt support eller prøv igen."
-          );
-        }
-
-        setProgress({ overall: 5, status: "Forbinder til Google Drive…" });
-
-        // Fetch the file directly from Google (methodBUrl already has alt=media +
-        // acknowledgeAbuse=true so no virus-scan interstitial will be returned).
-        const driveRes = await fetch(methodBUrl, { signal: abort.signal });
-        if (!driveRes.ok) {
-          throw new Error(`Google Drive svarede med ${driveRes.status}`);
-        }
-
-        // Guard: if Google returns HTML instead of bytes (e.g. session cookie wall)
-        const ct = driveRes.headers.get("Content-Type") || "";
-        if (ct.includes("text/html")) {
-          throw new Error(
-            "Google Drive returnerede en HTML-side i stedet for fildata. " +
-            "Kontrollér at filen er delt korrekt og prøv igen."
-          );
-        }
-
-        if (!driveRes.body) {
-          // No streaming API (old Safari) — fall back to blob via arrayBuffer
-          setProgress({ overall: 10, status: "Downloader…" });
-          const buf = await driveRes.arrayBuffer();
-          const blob = new Blob([buf]);
-          _triggerBlobDownload(blob, saveName);
-          setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
-          setDownloadDone(true);
-          return;
-        }
-
-        // Stream with progress — works on modern Safari 15.4+ (ReadableStream)
-        const contentLength = driveRes.headers.get("Content-Length");
-        const total = contentLength ? parseInt(contentLength, 10) : 0;
-        const reader = driveRes.body.getReader();
-        const chunks: Uint8Array[] = [];
-        let received = 0;
-        const startTime = Date.now();
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.byteLength;
-
-          const elapsedMs = Date.now() - startTime;
-          const speedBps  = elapsedMs > 0 ? received / (elapsedMs / 1000) : 0;
-          const pct = total > 0 ? Math.min(95, Math.round((received / total) * 100)) : 0;
-
-          let status: string;
-          if (total > 0 && speedBps > 0) {
-            const remSec = (total - received) / speedBps;
-            status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)} — ${fmtTime(remSec)} tilbage`;
-          } else if (total > 0) {
-            status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)}`;
-          } else {
-            status = `Downloader… ${fmtBytes(received)}`;
-          }
-          setProgress({ overall: pct, status });
-        }
-
-        // All bytes received — assemble blob and trigger save
-        const blob = new Blob(chunks);
-        _triggerBlobDownload(blob, saveName);
+      if (!driveRes.body) {
+        // No streaming API (old Safari) — fall back to plain arrayBuffer
+        setProgress({ overall: 10, status: "Downloader…" });
+        const buf = await driveRes.arrayBuffer();
+        _triggerBlobDownload(new Blob([buf]), saveName);
         setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
         setDownloadDone(true);
-
-      } else {
-        // ── fsapiAvailable but not a ZIP: direct FSAPI stream from Google ──────
-        // Get token from proxy (gofile-proxy default mode) then stream directly.
-        setProgress({ overall: 0, status: "Henter filinfo…" });
-
-        const proxyRes = await fetch(`/api/gofile-proxy?id=${encodeURIComponent(id)}`, { signal: abort.signal });
-        if (!proxyRes.ok) {
-          let detail = `Server fejl (${proxyRes.status})`;
-          try { const b = await proxyRes.json(); detail = b.detail || b.error || detail; } catch { /* */ }
-          throw new Error(detail);
-        }
-        const info = await proxyRes.json();
-        if (info.error) throw new Error(info.detail || info.error);
-
-        const { token, downloadUrl, methodBUrl, fileName: serverFileName, fileSizeBytes: serverSize } = info;
-        const saveName = serverFileName || fileName;
-
-        // Prefer FSAPI direct stream with SA token; fall back to Method B blob
-        if (token && downloadUrl) {
-          setProgress({ overall: 1, status: "Åbner gem-dialog…" });
-
-          const handle = await (window as any).showSaveFilePicker({
-            suggestedName: saveName,
-            types: [{ description: "Fil", accept: { "application/octet-stream": [] } }],
-          });
-
-          setProgress({ overall: 3, status: "Forbinder til Google Drive…" });
-
-          const response = await fetch(downloadUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-            signal: abort.signal,
-          });
-
-          if (!response.ok) throw new Error(`Google Drive svarede med ${response.status}`);
-          const ctCheck = response.headers.get("Content-Type") || "";
-          if (ctCheck.includes("text/html")) {
-            throw new Error("Google Drive returnerede en HTML-bekræftelsesside i stedet for fildata.");
-          }
-          if (!response.body) throw new Error("Din browser understøtter ikke streaming.");
-
-          const contentLength = response.headers.get("Content-Length");
-          const total = contentLength ? parseInt(contentLength, 10) : 0;
-          const writable = await handle.createWritable();
-          const reader = response.body.getReader();
-          let received = 0;
-          const startTime = Date.now();
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              await writable.write(value);
-              received += value.byteLength;
-
-              const elapsedMs = Date.now() - startTime;
-              const speedBps  = elapsedMs > 0 ? received / (elapsedMs / 1000) : 0;
-              const pct = total > 0 ? Math.min(99, Math.round((received / total) * 100)) : 0;
-
-              let status: string;
-              if (total > 0 && speedBps > 0) {
-                const remSec = (total - received) / speedBps;
-                status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)} — ${fmtTime(remSec)} tilbage`;
-              } else {
-                status = `Downloader… ${fmtBytes(received)}`;
-              }
-              setProgress({ overall: pct, status });
-            }
-            await writable.close();
-            setProgress({ overall: 100, status: "Download fuldført!", done: true });
-            setDownloadDone(true);
-          } catch (err) {
-            await writable.abort();
-            throw err;
-          }
-        } else if (methodBUrl) {
-          // No SA token (public file) — use blob download (avoids .crswap)
-          const sizeCheck = typeof serverSize === "number" ? serverSize : fileSizeBytes;
-          if (!fsapiAvailable && sizeCheck > METHOD_B_MAX_BYTES) {
-            throw new BrowserUnsupportedError(sizeCheck);
-          }
-          setProgress({ overall: 0, status: "Forbinder til Google Drive…" });
-          const driveRes = await fetch(methodBUrl, { signal: abort.signal });
-          if (!driveRes.ok) throw new Error(`Google Drive svarede med ${driveRes.status}`);
-          const ctCheck2 = driveRes.headers.get("Content-Type") || "";
-          if (ctCheck2.includes("text/html")) {
-            throw new Error("Google Drive returnerede en HTML-side i stedet for fildata.");
-          }
-          const buf = await driveRes.arrayBuffer();
-          _triggerBlobDownload(new Blob([buf]), saveName);
-          setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
-          setDownloadDone(true);
-        } else {
-          throw new Error("Ingen gyldig download-URL tilgængelig. Kontakt support.");
-        }
+        return;
       }
+
+      // Stream with progress, then hand the finished Blob to the browser's
+      // normal download mechanism — simple, and works the same everywhere.
+      const contentLength = driveRes.headers.get("Content-Length");
+      const total = contentLength ? parseInt(contentLength, 10) : 0;
+      const reader = driveRes.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      const startTime = Date.now();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.byteLength;
+
+        const elapsedMs = Date.now() - startTime;
+        const speedBps  = elapsedMs > 0 ? received / (elapsedMs / 1000) : 0;
+        const pct = total > 0 ? Math.min(95, Math.round((received / total) * 100)) : 0;
+
+        let status: string;
+        if (total > 0 && speedBps > 0) {
+          const remSec = (total - received) / speedBps;
+          status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)} — ${fmtTime(remSec)} tilbage`;
+        } else if (total > 0) {
+          status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)}`;
+        } else {
+          status = `Downloader… ${fmtBytes(received)}`;
+        }
+        setProgress({ overall: pct, status });
+      }
+
+      // All bytes received — assemble blob and trigger the browser download.
+      const blob = new Blob(chunks);
+      _triggerBlobDownload(blob, saveName);
+      setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
+      setDownloadDone(true);
     } catch (err: any) {
       if (err?.name === "AbortError") {
         setDownloading(false);
@@ -747,15 +511,14 @@ const DriveDownload: React.FC = () => {
       setDownloading(false);
       abortRef.current = null;
     }
-  }, [id, fileName, folderName, isZip, fsapiAvailable, fileSizeBytes]);
+  }, [id, fileName, fileSizeBytes]);
 
   // ── Render guards (after all hooks) ──────────────────────────────────────────
 
   if (!id) return null;
 
-  // Still loading size — show spinner (applies to non-FSAPI browsers only until
-  // we know whether to show the wall; FSAPI browsers proceed directly).
-  if (!sizeLoaded && !fsapiAvailable) {
+  // Still loading size — show spinner until we know whether to show the wall.
+  if (!sizeLoaded) {
     return (
       <div className="min-h-screen bg-dark flex items-center justify-center pt-16 pb-8">
         <Loader size={28} className="text-neutral-500 animate-spin" />
