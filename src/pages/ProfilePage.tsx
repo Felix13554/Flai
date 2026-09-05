@@ -666,7 +666,7 @@ const ProfilePage: React.FC = () => {
                                       <EditableContent contentKey="profile-booking-editing-label" as="div" className="text-sm text-neutral-400" fallback="Redigering" />
                                       <div className="text-neutral-100">
                                         {booking.include_editing
-                                          ? <EditableContent contentKey="profile-booking-editing-yes" fallback="Ja (+100 kr)" />
+                                          ? <EditableContent contentKey="profile-booking-editing-yes" fallback="Ja" />
                                           : <EditableContent contentKey="profile-booking-editing-no" fallback="Nej" />
                                         }
                                       </div>
