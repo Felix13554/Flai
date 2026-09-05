@@ -445,8 +445,8 @@ const ProductPage: React.FC = () => {
                 </ul>
               </div>
 
-              {/* Optional Editing */}
-              {product.category === 'video' && (product.is_editing_included ? (
+              {/* Editing — informational only; there is no extra-cost editing option to choose */}
+              {product.category === 'video' && product.is_editing_included && (
                 <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
                   <div className="flex items-center">
                     <svg className="w-6 h-6 text-green-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
@@ -468,28 +468,7 @@ const ProductPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-neutral-800/50 rounded-lg p-4">
-                  <EditableContent
-                    contentKey="product-page-editing-title"
-                    as="h3"
-                    className="font-semibold mb-2"
-                    fallback="Tilvalg: redigering"
-                  />
-                  <EditableContent
-                    contentKey="product-page-editing-description"
-                    as="p"
-                    className="text-neutral-300 text-sm mb-2"
-                    fallback="Få redigering af dine optagelser, herunder klipning, effekter, lydeffekter og baggrundsmusik."
-                  />
-                  <EditableContent
-                    contentKey="product-page-editing-price"
-                    as="p"
-                    className="text-primary font-semibold"
-                    fallback="+100 kr"
-                  />
-                </div>
-              ))}
+              )}
 
               {/* Book Now Buttons */}
               <div className="pt-4 flex flex-row space-x-3">
