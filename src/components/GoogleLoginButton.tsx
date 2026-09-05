@@ -11,10 +11,8 @@ interface GoogleLoginButtonProps {
     productId?: string;
     selectedTimeSlot?: any;
     address?: string;
-    includeEditing?: boolean;
     totalPrice?: number;
     customerAddress?: string;
-    wantsEditing?: boolean;
     paymentMethod?: string;
   };
   compact?: boolean;
