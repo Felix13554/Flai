@@ -555,55 +555,6 @@ const BookingsManager: React.FC = () => {
     }
   };
 
-  const handleEditingToggle = async (checked: boolean) => {
-    try {
-      const currentBooking = bookings.find(b => b.id === editingBooking);
-      
-      if (!currentBooking) {
-        toast.error('Kunne ikke finde booking');
-        return;
-      }
-
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .select('is_editing_included')
-        .eq('id', editingData.product_id)
-        .single();
-
-      if (productError) {
-        console.error('Error fetching product:', productError);
-        toast.error('Kunne ikke hente produktinfo');
-        return;
-      }
-
-      if (product.is_editing_included) {
-        toast.info('Dette produkt inkluderer allerede redigering');
-        setEditingData(prev => ({ ...prev, include_editing: checked }));
-        return;
-      }
-
-      const EDITING_COST = 100;
-      const originalPrice = currentBooking.original_price || 0;
-      const discountAmount = currentBooking.discount_amount || 0;
-      const creditsUsed = currentBooking.credits_used || 0;
-      
-      let calculatedPrice = originalPrice;
-      if (checked) calculatedPrice += EDITING_COST;
-      calculatedPrice -= discountAmount;
-      calculatedPrice -= creditsUsed;
-      calculatedPrice = Math.max(0, calculatedPrice);
-
-      setEditingData(prev => ({
-        ...prev,
-        include_editing: checked,
-        price: calculatedPrice
-      }));
-    } catch (error) {
-      console.error('Error in handleEditingToggle:', error);
-      toast.error('Kunne ikke opdatere pris');
-    }
-  };
-
   const sendBookingCompletionEmail = async (booking: any) => {
     try {
       const emailPayload = {
@@ -1206,14 +1157,11 @@ const BookingsManager: React.FC = () => {
                         if (productId) {
                           const selectedProduct = products.find(p => p.id === parseInt(productId));
                           if (selectedProduct) {
-                            let calculatedPrice = selectedProduct.price;
-                            if (newBookingData.include_editing && !selectedProduct.is_editing_included) {
-                              calculatedPrice += 100;
-                            }
-                            setNewBookingData(prev => ({ 
-                              ...prev, 
+                            setNewBookingData(prev => ({
+                              ...prev,
                               product_id: productId,
-                              price: calculatedPrice
+                              price: selectedProduct.price,
+                              include_editing: selectedProduct.is_editing_included || false,
                             }));
                           }
                         } else {
@@ -1304,36 +1252,6 @@ const BookingsManager: React.FC = () => {
               </div>
 
               <div className="flex items-center space-x-4">
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newBookingData.include_editing}
-                    onChange={async (e) => {
-                      const checked = e.target.checked;
-                      if (newBookingData.product_id) {
-                        const selectedProduct = products.find(p => p.id === parseInt(newBookingData.product_id));
-                        if (selectedProduct) {
-                          let newPrice = selectedProduct.price;
-                          if (!selectedProduct.is_editing_included && checked) {
-                            newPrice += 100;
-                          }
-                          setNewBookingData(prev => ({ 
-                            ...prev, 
-                            include_editing: checked,
-                            price: newPrice
-                          }));
-                        } else {
-                          setNewBookingData(prev => ({ ...prev, include_editing: checked }));
-                        }
-                      } else {
-                        setNewBookingData(prev => ({ ...prev, include_editing: checked }));
-                      }
-                    }}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-neutral-300"><EditableContent contentKey="bookings-manager-inkluder-redigering-100-kr-hvis" fallback="Inkluder Redigering (+100 kr hvis inkluderet)" /></span>
-                </label>
-
                 <label className="flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -1558,7 +1476,7 @@ const BookingsManager: React.FC = () => {
                     {booking.include_editing && (
                       <span className="inline-flex items-center px-3 py-1.5 bg-primary/10 text-primary text-sm rounded-lg font-medium">
                         <Edit3 size={14} className="mr-2" />
-                        <EditableContent contentKey="bookings-manager-inkluderer-redigering-100-kr" fallback="Inkluderer redigering (+100 kr)" /></span> )}
+                        <EditableContent contentKey="bookings-manager-inkluderer-redigering-100-kr" fallback="Inkluderer redigering" /></span> )}
                   </div> 
 
                   {/* Location */}
@@ -1855,7 +1773,7 @@ const BookingsManager: React.FC = () => {
                           <div className="col-span-2">
                             <span className="inline-flex items-center px-3 py-1.5 bg-primary/10 text-primary text-sm rounded-lg font-medium">
                               <Edit3 size={14} className="mr-2" />
-                              <EditableContent contentKey="bookings-manager-inkluderer-redigering-100-kr-2" fallback="Inkluderer redigering (+100 kr)" /></span>
+                              <EditableContent contentKey="bookings-manager-inkluderer-redigering-100-kr-2" fallback="Inkluderer redigering" /></span>
                           </div>
                         )}
                       </div>
@@ -2175,18 +2093,6 @@ const BookingsManager: React.FC = () => {
                         onChange={(e) => setEditingData({ ...editingData, booking_time: e.target.value })}
                         className="form-input w-full"
                       />
-                    </div>
-
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id={`editing-${booking.id}`}
-                        checked={editingData.include_editing}
-                        onChange={(e) => handleEditingToggle(e.target.checked)}
-                        className="mr-2 h-4 w-4"
-                      />
-                      <label htmlFor={`editing-${booking.id}`} className="text-sm text-neutral-300">
-                        <EditableContent contentKey="bookings-manager-inkluder-redigering" fallback="Inkluder Redigering" /></label>
                     </div>
 
                     <div>
