@@ -5,29 +5,14 @@
  *
  * ── Download strategy ─────────────────────────────────────────────────────────
  *
- *   Method A — File System Access API (Chromium desktop only):
- *     1. GET /api/gofile-proxy?id=<id>  →  { token, downloadUrl, ... }
- *     2. fetch(downloadUrl, { headers: { Authorization: "Bearer <token>" } })
- *     3. Stream via response.body.pipeThrough(progressTransform).pipeTo(writable)
- *     File goes: Google → browser → disk. Vercel = 0 bytes.
- *     Supports files of any size. Shows real GB/GB progress + ETA.
+ *   Always uses the browser's normal download mechanism (?alt=media&key=APIKEY,
+ *   a hidden <a> click, or a fetched Blob when we need to force a filename).
+ *   No File System Access API, no direct disk writes — the browser's own
+ *   download manager and Downloads folder handle everything. Simple and
+ *   consistent across all browsers.
  *
- *   Method B — ?alt=media&key=APIKEY (all browsers, publicly shared files):
- *     Hidden <a> click — browser download manager takes over.
- *     Blocked for files > 5 GB on non-FSAPI browsers.
- *
- * FIXES:
- *   #1  _downloadViaFSAPI now uses native ReadableStream.pipeThrough() +
- *       WritableStream.pipeTo() instead of a manual JS read loop.  This removes
- *       the JS scheduler from the hot path and improves throughput on large files.
- *
- *   #2  createWritable() is called with { keepExistingData: false } (explicit).
- *       Without this flag some Chromium versions keep stale bytes from a
- *       previous file when the user picks an existing file and clicks "Replace",
- *       which caused the download to stall at ~7 KB and never complete.
- *
- *   #3  A progress TransformStream replaces the old manual chunk-counting loop,
- *       decoupling progress tracking from the write path entirely.
+ *   Blocked for files > 5 GB (METHOD_B_MAX_BYTES) since loading a Blob that
+ *   large into RAM is unsafe.
  */
 
 export interface GoogleDriveUploadResult {
@@ -55,7 +40,7 @@ export type DownloadProgressCallback = (event: {
   error?: string;
 }) => void;
 
-/** Thrown when the browser lacks FSAPI and the file exceeds the safe Method B limit (5 GB). */
+/** Thrown when the file exceeds the safe browser-download limit (5 GB). */
 export class BrowserUnsupportedError extends Error {
   public readonly fileSizeBytes: number;
   constructor(fileSizeBytes: number) {
@@ -65,13 +50,8 @@ export class BrowserUnsupportedError extends Error {
   }
 }
 
-/** 5 GB — above this, Method B (browser download manager) is too risky without FSAPI. */
+/** 5 GB — above this, loading the file into a Blob in RAM is too risky. */
 export const METHOD_B_MAX_BYTES = 5 * 1024 * 1024 * 1024;
-
-/** Returns true if the browser supports File System Access API (needed for large files). */
-export function hasFSAPI(): boolean {
-  return typeof window !== "undefined" && "showSaveFilePicker" in window;
-}
 
 // ─── Upload ────────────────────────────────────────────────────────────────────
 
@@ -268,32 +248,16 @@ export async function downloadGoogleDriveFile(
   if (info.error) throw new Error(info.detail || info.error);
 
   const {
-    token,
-    downloadUrl,
     methodBUrl,
     fileName: serverFileName,
     fileSizeBytes,
-    canStreamDirect,
     isPublicFallback,
   } = info;
 
-  const saveName    = serverFileName || fileName;
-  const sizeBytes   = typeof fileSizeBytes === "number" ? fileSizeBytes : 0;
-  const fsapiAvail  = hasFSAPI();
+  const saveName  = serverFileName || fileName;
+  const sizeBytes = typeof fileSizeBytes === "number" ? fileSizeBytes : 0;
 
-  // ── Method A: File System Access API ──────────────────────────────────────
-  if (canStreamDirect && token && downloadUrl && fsapiAvail) {
-    try {
-      await _downloadViaFSAPI(token, downloadUrl, saveName, onProgress);
-      return { wasStreamed: true };
-    } catch (err: any) {
-      if (err?.name === "AbortError") throw err;
-      console.warn("[download] FSAPI failed, falling back to Method B:", err.message);
-    }
-  }
-
-  // ── Method B ──────────────────────────────────────────────────────────────
-  if (!fsapiAvail && sizeBytes > METHOD_B_MAX_BYTES) {
+  if (sizeBytes > METHOD_B_MAX_BYTES) {
     throw new BrowserUnsupportedError(sizeBytes);
   }
 
@@ -309,124 +273,6 @@ export async function downloadGoogleDriveFile(
 
   _downloadViaAltMedia(methodBUrl, saveName, onProgress);
   return { wasStreamed: false };
-}
-
-// ─── Method A implementation ──────────────────────────────────────────────────
-//
-// FIX #1: Uses response.body.pipeThrough(progressTransform).pipeTo(writable)
-//   — native Web Streams pipe with no JS scheduler in the hot path.
-//
-// FIX #2: createWritable({ keepExistingData: false }) is passed explicitly.
-//   Without this, replacing an existing file in some Chromium builds keeps
-//   stale bytes from the previous file, causing the download to appear to
-//   complete at ~7 KB while the rest of the stream is silently discarded.
-//
-// FIX #3: Progress is tracked via a TransformStream that counts bytes as they
-//   pass through, fully decoupled from the write path.
-
-async function _downloadViaFSAPI(
-  token: string,
-  downloadUrl: string,
-  fileName: string,
-  onProgress?: DownloadProgressCallback
-): Promise<void> {
-  onProgress?.({ overall: 1, status: "Åbner gem-dialog…" });
-
-  const handle = await (window as any).showSaveFilePicker({
-    suggestedName: fileName,
-    types: [{
-      description: "ZIP Archive",
-      accept: { "application/zip": [".zip"], "application/octet-stream": [] },
-    }],
-  });
-
-  onProgress?.({ overall: 3, status: "Forbinder til Google Drive…" });
-
-  const response = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Google Drive svarede med ${response.status}`);
-  }
-  if (!response.body) {
-    throw new Error("Din browser understøtter ikke streaming.");
-  }
-
-  const contentType = response.headers.get("Content-Type") || "";
-  if (contentType.includes("text/html")) {
-    throw new Error(
-      "Google Drive returnerede en HTML-bekræftelsesside i stedet for fildata. " +
-      "Kontrollér at filen er delt korrekt og prøv igen."
-    );
-  }
-
-  const contentLength = response.headers.get("Content-Length");
-  const total = contentLength ? parseInt(contentLength, 10) : 0;
-  const startTime = Date.now();
-  let received = 0;
-
-  /** Format bytes as GB with 3 decimal places */
-  function fmtGB(bytes: number): string {
-    return (bytes / 1_073_741_824).toFixed(3) + " GB";
-  }
-
-  /** Format seconds as "Xm Ys" or "Xs" */
-  function fmtTime(seconds: number): string {
-    if (seconds < 60) return `${Math.ceil(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.ceil(seconds % 60);
-    return `${m}m ${s}s`;
-  }
-
-  // FIX #3: Progress TransformStream — counts bytes as they flow through,
-  // then passes them on unmodified to the writable.
-  const progressTransform = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      received += chunk.byteLength;
-
-      const pct = total > 0 ? Math.min(99, Math.round((received / total) * 100)) : 0;
-      const elapsedMs = Date.now() - startTime;
-      const speedBps  = elapsedMs > 0 ? (received / (elapsedMs / 1000)) : 0;
-
-      let status: string;
-      if (total > 0) {
-        const receivedGB = fmtGB(received);
-        const totalGB    = fmtGB(total);
-        if (speedBps > 0) {
-          const remainingSec = (total - received) / speedBps;
-          status = `Downloader… ${receivedGB} / ${totalGB} — ${fmtTime(remainingSec)} tilbage`;
-        } else {
-          status = `Downloader… ${receivedGB} / ${totalGB}`;
-        }
-      } else {
-        status = `Downloader… ${fmtGB(received)}`;
-      }
-
-      onProgress?.({ overall: pct, status });
-      controller.enqueue(chunk);
-    },
-  });
-
-  // FIX #2: Pass keepExistingData: false so any pre-existing file content is
-  // truncated before writing begins.  This prevents the "replace → 7 KB stuck"
-  // bug where the new stream appears to finish instantly because the writable
-  // was never actually truncated and reports success after the first few KB.
-  const writable = await handle.createWritable({ keepExistingData: false });
-
-  try {
-    // FIX #1: Native pipe — no JS read loop, no backpressure management needed.
-    await response.body
-      .pipeThrough(progressTransform)
-      .pipeTo(writable);
-
-    onProgress?.({ overall: 100, status: "Download fuldført!", done: true });
-  } catch (err) {
-    // pipeTo() closes the writable on success and aborts on error.
-    // If it throws, the writable has already been aborted by the stream
-    // machinery, so we just re-throw.
-    throw err;
-  }
 }
 
 // ─── Method B implementation — ?alt=media&key=APIKEY ─────────────────────────
