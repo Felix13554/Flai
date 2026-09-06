@@ -325,13 +325,13 @@ const PortfolioPage: React.FC = () => {
             contentKey="portfolio-page-title"
             as="h1"
             className="text-3xl md:text-4xl font-bold text-center mb-4"
-            fallback="Vores arbejde"
+            fallback="Projekter"
           />
           <EditableContent
             contentKey="portfolio-page-subtitle"
             as="p"
             className="text-center text-lg text-neutral-300 max-w-2xl mx-auto"
-            fallback="Udforsk vores seneste film og projekter."
+            fallback="Udforsk mine seneste projekter."
           />
         </div>
       </div>

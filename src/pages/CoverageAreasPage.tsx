@@ -379,7 +379,7 @@ const CoverageAreasPage: React.FC = () => {
             contentKey="coverage-page-subtitle"
             as="p"
             className="text-center text-lg text-neutral-300 max-w-2xl mx-auto"
-            fallback="Vi tilbyder droneoptagelser i følgende områder. Kontakt os hvis du har spørgsmål om dækning i dit område."
+            fallback="Jeg tilbyder droneoptagelser i følgende områder. Kontakt mig hvis du har spørgsmål om dækning i dit område."
           />
         </div>
       </div>

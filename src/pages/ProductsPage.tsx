@@ -37,13 +37,13 @@ const ProductsPage: React.FC = () => {
             contentKey="services-title"
             as="h1"
             className="text-3xl md:text-4xl font-bold text-center mb-4"
-            fallback="Vores Tjenester"
+            fallback="Tjenester"
           />
           <EditableContent
             contentKey="services-subtitle"
             as="p"
             className="text-center text-lg text-neutral-300 max-w-2xl mx-auto"
-            fallback="Udforsk vores udvalg af optagelser eller billeder og find den perfekte løsning til dit næste projekt."
+            fallback="Udforsk mit udvalg af optagelser og billeder og find den perfekte løsning til dit næste projekt."
           />
         </div>
       </div>

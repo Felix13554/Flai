@@ -98,7 +98,7 @@ const Footer: React.FC = () => {
           </div>
           
           <div>
-            <EditableContent contentKey="footer-contact-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Kontakt os" />
+            <EditableContent contentKey="footer-contact-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Kontakt" />
             <ul className="space-y-3 text-white/90">
               <li className="flex items-center group">
                 <Landmark size={18} className="mr-2 flex-shrink-0" />
@@ -136,7 +136,7 @@ const Footer: React.FC = () => {
           </div>
           
           <div>
-            <EditableContent contentKey="footer-contact-form-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Send os en besked" />
+            <EditableContent contentKey="footer-contact-form-heading" as="h3" className="text-lg font-semibold mb-4" fallback="Send en besked" />
             
             {isSuccess ? (
               <div className="flex items-center space-x-2 bg-success/20 border border-success rounded-lg px-4 py-3 mb-6">
