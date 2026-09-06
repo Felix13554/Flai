@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ImageUpload from './ImageUpload';
 import toast from 'react-hot-toast';
 import { CONTENT_KEYS } from 'virtual:content-keys';
+import { unknownKeysMap } from '../content/unknown-keys';
 import JsonFieldEditor, { detectJsonKind } from './JsonFieldEditor';
 
 // ─── Admin settings ────────────────────────────────────────────────────────
@@ -63,6 +64,21 @@ CONTENT_KEYS.forEach(({ key, fallback, file }) => {
     hardcodedKeyRegistry.set(key, {
       fallback,
       category,
+      description: key,
+      pageHint: '',
+    });
+  }
+});
+
+// ── Seed from unknown-keys.ts (deployed content the source scanner can't
+//    find — dynamic contexts, meta tags, SSR-only paths). Without this,
+//    these keys are live at runtime (via unknownKeysMap in DataContext) but
+//    never show up as editable/hardcoded entries in the content editor. ──
+Object.entries(unknownKeysMap).forEach(([key, fallback]) => {
+  if (!hardcodedKeyRegistry.has(key)) {
+    hardcodedKeyRegistry.set(key, {
+      fallback,
+      category: 'uncategorized',
       description: key,
       pageHint: '',
     });
