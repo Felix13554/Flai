@@ -1141,26 +1141,36 @@ const HomePage: React.FC = () => {
   // Handles any number of configured projects — 1, 2, 3, or more — nothing
   // here assumes a fixed count.
   const heroProjectItems = useMemo(
-    () => parseHeroProjectsContent(getContent('content', '[
-  {
-    \"number\": \"01\",
-    \"industry\": \"Specialister i salg af smågrise\",
-    \"clientLogoUrl\": \"https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/client-logos/1782478431391-38f16914.webp?square\",
-    \"cloudinaryVideoUrl\": \"https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/scan-pork.m3u8\",
-    \"projectSlug\": \"Specialister i salg af smågrise\",
-    \"website\": \"https://scan-pork.com/\"
-  },
-  {
-    \"number\": \"02\",
-    \"industry\": \"Leverandør til print, skilte- og bilindpakningsfirmaer\",
-    \"clientLogoUrl\": \"https://vikiallo.dk/wp-content/uploads/vikiallo-white-LOGO@2x.png\",
-    \"cloudinaryVideoUrl\": \"https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/vikiallo.m3u8\",
-    \"projectSlug\": \"Leverandør til print, skilte- og bilindpakningsfirmaer\",
-    \"website\": \"https://vikiallo.dk/\"
-  }
-]', 'image'), heroProjectsContent.content),
-    [getContent],
-  );
+  () => parseHeroProjectsContent(
+    getContent(
+      'content',
+      JSON.stringify([
+        {
+          number: '01',
+          industry: 'Specialister i salg af smågrise',
+          clientLogoUrl:
+            'https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/client-logos/1782478431391-38f16914.webp?square',
+          cloudinaryVideoUrl:
+            'https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/scan-pork.m3u8',
+          projectSlug: 'Specialister i salg af smågrise',
+          website: 'https://scan-pork.com/',
+        },
+        {
+          number: '02',
+          industry: 'Leverandør til print, skilte- og bilindpakningsfirmaer',
+          clientLogoUrl:
+            'https://vikiallo.dk/wp-content/uploads/vikiallo-white-LOGO@2x.png',
+          cloudinaryVideoUrl:
+            'https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/vikiallo.m3u8',
+          projectSlug: 'Leverandør til print, skilte- og bilindpakningsfirmaer',
+          website: 'https://vikiallo.dk/',
+        },
+      ])
+    ),
+    heroProjectsContent.content
+  ),
+  [getContent]
+);
 
   // Which project's video/content is currently shown. Lifted up here
   // (rather than owned inside the carousel) because the active project's
