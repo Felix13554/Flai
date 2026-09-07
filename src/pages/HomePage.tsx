@@ -1059,7 +1059,7 @@ const Section_9009b281 = ((
         </section>
       );
     };
-  return (() => null) as React.ComponentType;
+return Testimonials;
 })(
   React.useState, React.useEffect, React.useRef, React.useMemo, React.useLayoutEffect
 ) as React.ComponentType;
