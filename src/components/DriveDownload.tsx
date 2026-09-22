@@ -1,19 +1,21 @@
 /**
  * DriveDownload.tsx
  *
- * Download flow — always via the browser's normal download mechanism:
- *   1. GET /api/gofile-proxy?id=<id>  →  { methodBUrl, fileName, fileSizeBytes }
- *   2. fetch(methodBUrl) → arrayBuffer → Blob → hidden <a download> click
- *      (or a plain <a> click when we don't need to track progress)
- *   Files land in the browser's normal Downloads folder. No File System
- *   Access API, no direct disk writes — simple and consistent everywhere.
- *   Files > 5 GB (METHOD_B_MAX_BYTES) show a browser-wall message instead,
- *   since buffering that much into RAM as a Blob isn't safe.
+ * Download flow — a single native browser download, no client-side JS
+ * buffering at all:
+ *   1. Click the download button → hidden <a> click against
+ *      /api/gofile-proxy?id=<id>&mode=raw
+ *   2. Our server authenticates with Google Drive, opens a stream, and pipes
+ *      the bytes straight through with Content-Disposition: attachment set.
+ *   3. The browser sees a normal attachment response and handles it exactly
+ *      like downloading from any file server — it shows up instantly in the
+ *      native downloads tray and streams to disk from the first byte. No
+ *      fetch(), no Blob, no size ceiling, no browser-support wall needed.
  *
  * React #310 on Safari: all hooks declared unconditionally.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Download, Home, Share2, Loader, AlertCircle, CheckCircle2,
@@ -21,12 +23,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import EditableContent from "./EditableContent";
-import {
-  getGoogleDriveFile,
-  METHOD_B_MAX_BYTES,
-  BrowserUnsupportedError,
-  type DownloadProgressCallback,
-} from "../utils/google-drive-utils";
+import { getGoogleDriveFile } from "../utils/google-drive-utils";
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -56,16 +53,6 @@ interface DownloadProgress {
   error?: string;
 }
 
-// ─── Browser logos ─────────────────────────────────────────────────────────────
-
-const CDN = "https://cdnjs.cloudflare.com/ajax/libs/browser-logos/75.0.1";
-const SUPPORTED_BROWSERS = [
-  { name: "Google Chrome",  img: `${CDN}/chrome/chrome_64x64.png`,  img2x: `${CDN}/chrome/chrome_128x128.png`,  url: "https://www.google.com/chrome/" },
-  { name: "Microsoft Edge", img: `${CDN}/edge/edge_64x64.png`,      img2x: `${CDN}/edge/edge_128x128.png`,      url: "https://www.microsoft.com/edge" },
-  { name: "Opera",          img: `${CDN}/opera/opera_64x64.png`,    img2x: `${CDN}/opera/opera_128x128.png`,    url: "https://www.opera.com/" },
-  { name: "Brave",          img: `${CDN}/brave/brave_64x64.png`,    img2x: `${CDN}/brave/brave_128x128.png`,    url: "https://brave.com/" },
-];
-
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtBytes(bytes: number): string {
@@ -74,77 +61,6 @@ function fmtBytes(bytes: number): string {
   if (bytes >= 1_024)         return (bytes / 1_024).toFixed(0) + " KB";
   return bytes + " B";
 }
-
-function fmtGB(bytes: number): string {
-  return (bytes / 1_073_741_824).toFixed(3) + " GB";
-}
-
-function fmtTime(seconds: number): string {
-  if (seconds < 60) return `${Math.ceil(seconds)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.ceil(seconds % 60);
-  return `${m}m ${s}s`;
-}
-
-// ─── Browser wall ──────────────────────────────────────────────────────────────
-
-interface BrowserWallProps {
-  fileSizeBytes: number;
-  shareUrl: string | null;
-  onNavigateHome: () => void;
-}
-
-const BrowserWall: React.FC<BrowserWallProps> = ({ fileSizeBytes, shareUrl, onNavigateHome }) => {
-  const sizeGB = fileSizeBytes > 0
-    ? (fileSizeBytes / (1024 ** 3)).toFixed(1) + " GB"
-    : "over 5 GB";
-  return (
-    <div className="min-h-screen bg-dark flex items-center justify-center pt-16 pb-8">
-      <div className="text-center max-w-lg w-full px-4">
-        <div className="mb-5">
-          <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-            <AlertCircle size={32} className="text-amber-400" />
-          </div>
-        </div>
-        <h1 className="text-2xl font-bold text-white mb-2"><EditableContent contentKey="drive-download-browser-ikke-understoettet" fallback="Browser ikke understøttet" /></h1>
-        <p className="text-neutral-300 mb-2 leading-relaxed">
-          <EditableContent contentKey="drive-download-denne-mappe-er" fallback="Denne mappe er" /> <span className="text-white font-semibold">{sizeGB}</span> <EditableContent contentKey="drive-download-og-kraever-direkte-streaming-til" fallback="og kræver           direkte streaming til harddisken. Din nuværende browser understøtter ikke denne funktion." />
-        </p>
-        <p className="text-neutral-400 text-sm mb-8">
-          <EditableContent contentKey="drive-download-aabn-denne-side-i-en" fallback="Åbn denne side i en af følgende browsere for at downloade:" />
-        </p>
-        <div className="flex items-end justify-center gap-8 mb-8 flex-wrap">
-          {SUPPORTED_BROWSERS.map(({ name, img, img2x, url }) => (
-            <a key={name} href={url} target="_blank" rel="noopener noreferrer"
-               className="flex flex-col items-center gap-2.5 group" title={`Download ${name}`}>
-              <img src={img} srcSet={`${img} 1x, ${img2x} 2x`} alt={name} width={56} height={56}
-                className="rounded-xl shadow-lg shadow-black/40 ring-2 ring-transparent group-hover:ring-white/25 group-hover:scale-110 transition-all duration-200"
-                loading="eager" decoding="async" />
-              <span className="text-xs text-neutral-400 group-hover:text-white transition-colors whitespace-nowrap">{name}</span>
-            </a>
-          ))}
-        </div>
-        <div className="bg-neutral-800/60 border border-neutral-700/60 rounded-lg px-4 py-3 mb-6 text-sm text-neutral-400 text-left">
-          <span className="text-neutral-300 font-medium"><EditableContent contentKey="drive-download-tip" fallback="Tip:" /></span>{" "}
-          <EditableContent contentKey="drive-download-kopi-r-sidens-url-og" fallback="Kopiér sidens URL og indsæt den i Chrome, Edge, Opera eller Brave for straks at starte download." />
-        </div>
-        <div className="flex flex-col gap-3">
-          {shareUrl && (
-            <a href={shareUrl.startsWith("http") ? shareUrl : `https://${shareUrl}`}
-               target="_blank" rel="noopener noreferrer"
-               className="flex items-center justify-center gap-2 bg-neutral-700 hover:bg-neutral-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
-              <Share2 size={20} /> <EditableContent contentKey="drive-download-del-projekt" fallback="Del projekt" />
-            </a>
-          )}
-          <button onClick={onNavigateHome}
-            className="flex items-center justify-center gap-2 bg-neutral-700 hover:bg-neutral-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
-            <Home size={20} /> <EditableContent contentKey="drive-download-til-forside" fallback="Til forside" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ─── File kind detection ────────────────────────────────────────────────────────
 // Only extensions a plain <img> tag can actually render get a real thumbnail
@@ -321,12 +237,6 @@ const DriveDownload: React.FC = () => {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [progress,      setProgress]      = useState<DownloadProgress | null>(null);
 
-  // Whether we should show the browser wall (determined after sizeLoaded)
-  const [showBrowserWall, setShowBrowserWall] = useState(false);
-
-  // Abort controller ref so we can cancel in-flight downloads
-  const abortRef = useRef<AbortController | null>(null);
-
   // ── Load file metadata ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!id) { navigate("/"); return; }
@@ -354,14 +264,6 @@ const DriveDownload: React.FC = () => {
     })();
   }, [id, navigate]);
 
-  // ── Decide browser wall once we know the file size ───────────────────────────
-  useEffect(() => {
-    if (!sizeLoaded) return;
-    if (fileSizeBytes > METHOD_B_MAX_BYTES) {
-      setShowBrowserWall(true);
-    }
-  }, [sizeLoaded, fileSizeBytes]);
-
   // ── Auto-load folder info from ZIP index ─────────────────────────────────────
   useEffect(() => {
     if (!id || !isZip || folderInfo || folderInfoLoading) return;
@@ -383,151 +285,49 @@ const DriveDownload: React.FC = () => {
   }, [id, isZip, folderInfo, folderInfoLoading, folderName]);
 
   // ── Download handler ─────────────────────────────────────────────────────────
-  const handleDownload = useCallback(async () => {
+  // No fetch(), no Blob, no client-side buffering: a single click against our
+  // own /api/gofile-proxy?mode=raw endpoint, which streams the file through
+  // with Content-Disposition: attachment set. The browser takes it from
+  // there exactly like any normal file download — native downloads tray,
+  // native progress, disk from the first byte.
+  const handleDownload = useCallback(() => {
     if (!id) return;
 
     setDownloading(true);
     setDownloadDone(false);
     setDownloadError(null);
-    setProgress(null);
-
-    const abort = new AbortController();
-    abortRef.current = abort;
+    setProgress({ overall: 0, status: "Download startet — se din browsers download-bjælke." });
 
     try {
-      // Guard: >5 GB is too risky to buffer as a Blob in RAM.
-      if (fileSizeBytes > METHOD_B_MAX_BYTES) {
-        throw new BrowserUnsupportedError(fileSizeBytes);
-      }
-
-      setProgress({ overall: 0, status: "Henter filinfo…" });
-
-      const proxyRes = await fetch(`/api/gofile-proxy?id=${encodeURIComponent(id)}`, { signal: abort.signal });
-      if (!proxyRes.ok) {
-        let detail = `Server fejl (${proxyRes.status})`;
-        try { const b = await proxyRes.json(); detail = b.detail || b.error || detail; } catch { /* */ }
-        throw new Error(detail);
-      }
-      const info = await proxyRes.json();
-      if (info.error) throw new Error(info.detail || info.error);
-
-      const methodBUrl: string | null = info.methodBUrl || null;
-      const saveName: string = info.fileName || fileName;
-      const serverSize = typeof info.fileSizeBytes === "number" ? info.fileSizeBytes : fileSizeBytes;
-
-      if (serverSize > METHOD_B_MAX_BYTES) {
-        throw new BrowserUnsupportedError(serverSize);
-      }
-
-      if (!methodBUrl) {
-        throw new Error(
-          info.isPublicFallback
-            ? "Filen er privat i Google Drive. Sæt adgang til 'Alle med linket' i Google Drive."
-            : "Download-URL mangler. Kontakt support eller prøv igen."
-        );
-      }
-
-      setProgress({ overall: 5, status: "Forbinder til Google Drive…" });
-
-      // Fetch the file directly from Google (methodBUrl already has alt=media +
-      // acknowledgeAbuse=true so no virus-scan interstitial will be returned).
-      const driveRes = await fetch(methodBUrl, { signal: abort.signal });
-      if (!driveRes.ok) {
-        throw new Error(`Google Drive svarede med ${driveRes.status}`);
-      }
-
-      // Guard: if Google returns HTML instead of bytes (e.g. session cookie wall)
-      const ct = driveRes.headers.get("Content-Type") || "";
-      if (ct.includes("text/html")) {
-        throw new Error(
-          "Google Drive returnerede en HTML-side i stedet for fildata. " +
-          "Kontrollér at filen er delt korrekt og prøv igen."
-        );
-      }
-
-      if (!driveRes.body) {
-        // No streaming API (old Safari) — fall back to plain arrayBuffer
-        setProgress({ overall: 10, status: "Downloader…" });
-        const buf = await driveRes.arrayBuffer();
-        _triggerBlobDownload(new Blob([buf]), saveName);
-        setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
-        setDownloadDone(true);
-        return;
-      }
-
-      // Stream with progress, then hand the finished Blob to the browser's
-      // normal download mechanism — simple, and works the same everywhere.
-      const contentLength = driveRes.headers.get("Content-Length");
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-      const reader = driveRes.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      const startTime = Date.now();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.byteLength;
-
-        const elapsedMs = Date.now() - startTime;
-        const speedBps  = elapsedMs > 0 ? received / (elapsedMs / 1000) : 0;
-        const pct = total > 0 ? Math.min(95, Math.round((received / total) * 100)) : 0;
-
-        let status: string;
-        if (total > 0 && speedBps > 0) {
-          const remSec = (total - received) / speedBps;
-          status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)} — ${fmtTime(remSec)} tilbage`;
-        } else if (total > 0) {
-          status = `Downloader… ${fmtGB(received)} / ${fmtGB(total)}`;
-        } else {
-          status = `Downloader… ${fmtBytes(received)}`;
-        }
-        setProgress({ overall: pct, status });
-      }
-
-      // All bytes received — assemble blob and trigger the browser download.
-      const blob = new Blob(chunks);
-      _triggerBlobDownload(blob, saveName);
-      setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
-      setDownloadDone(true);
+      _triggerNativeDownload(`/api/gofile-proxy?id=${encodeURIComponent(id)}&mode=raw`);
     } catch (err: any) {
-      if (err?.name === "AbortError") {
-        setDownloading(false);
-        setProgress(null);
-        return;
-      }
-      if (err instanceof BrowserUnsupportedError) {
-        setFileSizeBytes(err.fileSizeBytes);
-        setSizeLoaded(true);
-        setShowBrowserWall(true);
-        setDownloading(false);
-        setProgress(null);
-        return;
-      }
       console.error("Download error:", err);
       setDownloadError(err.message || "Download mislykkedes. Prøv igen.");
-    } finally {
       setDownloading(false);
-      abortRef.current = null;
+      setProgress(null);
+      return;
     }
-  }, [id, fileName, fileSizeBytes]);
+
+    // We hand off to the browser's own download manager here, so we can't
+    // track byte-level progress from JS — just reflect that it started.
+    window.setTimeout(() => {
+      setDownloading(false);
+      setDownloadDone(true);
+      setProgress({ overall: 100, status: "Download startet — se din browsers download-bjælke.", done: true });
+    }, 600);
+  }, [id]);
 
   // ── Render guards (after all hooks) ──────────────────────────────────────────
 
   if (!id) return null;
 
-  // Still loading size — show spinner until we know whether to show the wall.
+  // Still loading file metadata.
   if (!sizeLoaded) {
     return (
       <div className="min-h-screen bg-dark flex items-center justify-center pt-16 pb-8">
         <Loader size={28} className="text-neutral-500 animate-spin" />
       </div>
     );
-  }
-
-  if (showBrowserWall) {
-    return <BrowserWall fileSizeBytes={fileSizeBytes} shareUrl={shareUrl} onNavigateHome={() => navigate("/")} />;
   }
 
   // ── Normal download UI ────────────────────────────────────────────────────────
@@ -649,23 +449,19 @@ const DriveDownload: React.FC = () => {
   );
 };
 
-// ─── Blob download helper (avoids .crswap by delivering fully-loaded blob) ─────
-// Using an object URL means the browser saves the file in a single atomic write
-// rather than streaming it through the download manager's temp file mechanism.
+// ─── Native download trigger ────────────────────────────────────────────────
+// Same-origin click against our streaming endpoint. No object URL, no Blob —
+// the server response itself carries Content-Disposition: attachment, so the
+// browser starts a real native download the instant the click fires.
 
-function _triggerBlobDownload(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
+function _triggerNativeDownload(url: string): void {
   const a = document.createElement("a");
   a.href = url;
-  a.download = fileName;
+  a.rel = "noopener";
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
-  // Revoke after a short delay so the browser has time to initiate the save
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  }, 10_000);
+  setTimeout(() => document.body.removeChild(a), 5_000);
 }
 
 export default DriveDownload;
