@@ -399,7 +399,7 @@ const DriveDownload: React.FC = () => {
             </div>
           )}
           {downloadDone && !downloading && (
-            <p className="text-green-400 text-xs mb-3"><EditableContent contentKey="drive-download-download-fuldfoert-tjek-din-downloads" fallback="Download fuldført — tjek din downloads-mappe." /></p>
+            <p className="text-green-400 text-xs mb-3"><EditableContent contentKey="drive-download-download-fuldfoert-tjek-din-downloads" fallback="Download påbegyndt" /></p>
           )}
           {downloadError && (
             <div className="flex items-center gap-2 bg-red-900/30 border border-red-500/40 text-red-300 rounded-lg px-3 py-2 mb-3 text-xs">
