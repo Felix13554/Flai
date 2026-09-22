@@ -94,12 +94,16 @@ const BookingsManager: React.FC = () => {
     businessCvr: '',
     address: '',
     finalizeOnly: false,
+    createBankTransferVersion: false,
   });
   const [sendingInvoice, setSendingInvoice] = useState(false);
-  // Result popup shown after a successful finalize/send, with the PDF download link
+  // Result popup shown after a successful finalize/send, with the PDF download link(s)
   const [invoiceResult, setInvoiceResult] = useState<{
     invoicePdf: string | null;
     invoiceUrl: string | null;
+    bankTransferPdf: string | null;
+    combinedPdf: string | null;
+    bankTransferPdfError: string | null;
     wasSent: boolean;
   } | null>(null);
   
@@ -406,6 +410,7 @@ const BookingsManager: React.FC = () => {
       businessCvr: '',
       address: booking.address || '',
       finalizeOnly: false,
+      createBankTransferVersion: false,
     });
   };
 
@@ -417,13 +422,14 @@ const BookingsManager: React.FC = () => {
       businessCvr: '',
       address: '',
       finalizeOnly: false,
+      createBankTransferVersion: false,
     });
   };
 
   const handleSendInvoice = async () => {
     if (!invoicingBooking) return;
 
-    const { isBusiness, businessName, businessCvr, address, finalizeOnly } = invoiceFormData;
+    const { isBusiness, businessName, businessCvr, address, finalizeOnly, createBankTransferVersion } = invoiceFormData;
 
     if (!address.trim()) {
       toast.error('Adresse er påkrævet');
@@ -453,6 +459,7 @@ const BookingsManager: React.FC = () => {
               ...(businessCvr.trim() ? { businessCvr: businessCvr.trim() } : {}),
             }),
             ...(finalizeOnly && { finalizeOnly: true }),
+            ...(createBankTransferVersion && { createBankTransferVersion: true }),
           }),
         }
       );
@@ -482,8 +489,17 @@ const BookingsManager: React.FC = () => {
         setInvoiceResult({
           invoicePdf: result.invoicePdf || null,
           invoiceUrl: result.invoiceUrl || null,
+          bankTransferPdf: result.bankTransferPdf || null,
+          combinedPdf: result.combinedPdf || null,
+          bankTransferPdfError: result.bankTransferPdfError || null,
           wasSent: !!result.wasSent,
         });
+
+        // The Stripe invoice was still created/sent successfully even if the
+        // bank-transfer PDF generation failed — surface it as a warning only.
+        if (result.bankTransferPdfError) {
+          toast.error(`Bankoverførsel-PDF kunne ikke genereres: ${result.bankTransferPdfError}`);
+        }
       }
     } catch (error: any) {
       console.error('BookingsManager: Error sending invoice:', error);
@@ -1994,6 +2010,23 @@ const BookingsManager: React.FC = () => {
                           </span>
                         </label>
                       </div>
+
+                      {/* Bank transfer version toggle */}
+                      <div className="flex items-start gap-3 p-3 bg-neutral-700/30 rounded-lg border border-neutral-600">
+                        <input
+                          type="checkbox"
+                          id={`bank-transfer-version-${booking.id}`}
+                          checked={invoiceFormData.createBankTransferVersion}
+                          onChange={(e) => setInvoiceFormData(prev => ({ ...prev, createBankTransferVersion: e.target.checked }))}
+                          className="mt-1"
+                        />
+                        <label htmlFor={`bank-transfer-version-${booking.id}`} className="text-sm text-neutral-300">
+                          <EditableContent contentKey="admin-bookings-invoice-bank-transfer-label" fallback="Opret bankoverførsel-version" />
+                          <span className="block text-xs text-neutral-500 mt-0.5">
+                            <EditableContent contentKey="admin-bookings-invoice-bank-transfer-hint" fallback="Genererer også en PDF-version uden onlinebetalingslink, samt en kombineret PDF, til kunder der betaler via bankoverførsel." />
+                          </span>
+                        </label>
+                      </div>
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-end gap-3">
@@ -2448,6 +2481,15 @@ const BookingsManager: React.FC = () => {
                 : <EditableContent contentKey="admin-bookings-invoice-result-finalized-desc" fallback="Fakturaen er klar, men er ikke sendt til kunden." />
               }
             </p>
+            {invoiceResult.bankTransferPdfError && (
+              <div className="flex items-start gap-2 text-left p-3 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <AlertCircle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-400">
+                  <EditableContent contentKey="admin-bookings-invoice-result-bank-transfer-error-prefix" fallback="Bankoverførsel-PDF kunne ikke genereres: " />
+                  {invoiceResult.bankTransferPdfError}
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-3">
               {invoiceResult.invoicePdf && (
                 <a
@@ -2458,6 +2500,28 @@ const BookingsManager: React.FC = () => {
                 >
                   <Download size={16} className="mr-2" />
                   <EditableContent contentKey="admin-bookings-invoice-result-download" fallback="Download PDF Faktura" />
+                </a>
+              )}
+              {invoiceResult.bankTransferPdf && (
+                <a
+                  href={invoiceResult.bankTransferPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center px-5 py-2.5 bg-neutral-600 text-white rounded-lg hover:bg-neutral-500 transition-colors font-medium"
+                >
+                  <Download size={16} className="mr-2" />
+                  <EditableContent contentKey="admin-bookings-invoice-result-download-bank-transfer" fallback="Download Bankoverførsel-PDF" />
+                </a>
+              )}
+              {invoiceResult.combinedPdf && (
+                <a
+                  href={invoiceResult.combinedPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center px-5 py-2.5 bg-neutral-600 text-white rounded-lg hover:bg-neutral-500 transition-colors font-medium"
+                >
+                  <Download size={16} className="mr-2" />
+                  <EditableContent contentKey="admin-bookings-invoice-result-download-combined" fallback="Download Kombineret PDF" />
                 </a>
               )}
               <button
