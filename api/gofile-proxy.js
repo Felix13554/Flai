@@ -765,6 +765,82 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ── MODE: raw — pipe the original file straight through as a native ───────
+  // browser download. No ZIP parsing, no client-side fetch/Blob: we just
+  // authenticate server-side, open a stream to Google Drive, and forward the
+  // bytes to the browser with Content-Disposition: attachment set. The
+  // browser then treats it exactly like downloading from any normal file
+  // server — it shows up in the native downloads tray immediately and writes
+  // straight to disk as bytes arrive, with zero buffering on either end.
+  if (mode === "raw") {
+    let accessToken, fileMetadata;
+    try {
+      ({ accessToken, fileMetadata } = await resolveFileInfo(id, apiKey));
+    } catch (err) {
+      return res.status(err.statusCode || 502).json({ error: err.message });
+    }
+
+    const fileName  = fileMetadata.name || "download";
+    const mimeType  = fileMetadata.mimeType || "application/octet-stream";
+    const totalSize = fileMetadata.size ? parseInt(String(fileMetadata.size), 10) : 0;
+
+    const upstreamUrl = accessToken
+      ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`
+      : apiKey
+      ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&key=${encodeURIComponent(apiKey)}&supportsAllDrives=true&acknowledgeAbuse=true`
+      : null;
+
+    if (!upstreamUrl) {
+      return res.status(403).json({ error: "Ingen adgang til at hente filen (hverken service-konto eller API-nøgle virkede)." });
+    }
+
+    let upstreamRes;
+    try {
+      upstreamRes = await fetch(upstreamUrl, accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined);
+    } catch (err) {
+      return res.status(502).json({ error: `Kunne ikke forbinde til Google Drive: ${err.message}` });
+    }
+
+    if (!upstreamRes.ok) {
+      return res.status(502).json({ error: `Google Drive svarede med ${upstreamRes.status}` });
+    }
+
+    const upstreamContentType = upstreamRes.headers.get("Content-Type") || "";
+    if (upstreamContentType.includes("text/html")) {
+      return res.status(502).json({ error: "Google Drive returnerede en HTML-side i stedet for fildata. Kontrollér deling af filen." });
+    }
+
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
+    if (totalSize) res.setHeader("Content-Length", String(totalSize));
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    if (!upstreamRes.body) {
+      // Extremely old runtime with no streaming fetch body — fall back to a
+      // single buffered read rather than failing outright.
+      const buf = Buffer.from(await upstreamRes.arrayBuffer());
+      return res.status(200).send(buf);
+    }
+
+    // True pass-through: bytes flow Google → this function → the browser's
+    // download manager. Nothing is ever accumulated in full.
+    const reader = upstreamRes.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const ok = res.write(Buffer.from(value));
+        if (!ok) await new Promise((resolve) => res.once("drain", resolve));
+      }
+      res.end();
+    } catch (err) {
+      console.error("[gofile-proxy] raw stream error:", err.message);
+      try { res.end(); } catch { /* response already closed */ }
+    }
+    return;
+  }
+
   // ── Default: return metadata + tokens for direct download ─────────────────
   let accessToken, fileMetadata, usedFallback;
   try {
