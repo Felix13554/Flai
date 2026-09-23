@@ -1209,6 +1209,13 @@ const HomePage: React.FC = () => {
   const activeProjectPublicId = activeProject
     ? extractCloudinaryPublicId(activeProject.cloudinaryVideoUrl)
     : undefined;
+  // Optional vertical/mobile cut for the active project — falls back to
+  // `undefined` (which makes HeroVideoSection just keep using the desktop
+  // id on mobile too) whenever the CMS entry hasn't set a mobile video.
+  const activeProjectMobilePublicId =
+    activeProject?.cloudinaryVideoUrlMobile
+      ? extractCloudinaryPublicId(activeProject.cloudinaryVideoUrlMobile)
+      : undefined;
 
   // Advance to the next project only once the current one's video has
   // played all the way through (HeroVideoSection's `onEnded`), instead of
@@ -1238,6 +1245,12 @@ const HomePage: React.FC = () => {
       if (!item) return;
       const id = extractCloudinaryPublicId(item.cloudinaryVideoUrl);
       if (id && id !== activeProjectPublicId) neighborIds.add(id);
+      // Also warm the mobile cut, if this project has one — whichever
+      // variant ends up playing (desktop or mobile) is then already cached.
+      if (item.cloudinaryVideoUrlMobile) {
+        const mobileId = extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile);
+        if (mobileId && mobileId !== activeProjectMobilePublicId) neighborIds.add(mobileId);
+      }
     });
     if (neighborIds.size === 0) return;
 
@@ -1248,7 +1261,7 @@ const HomePage: React.FC = () => {
       if (ric && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId as number);
       else window.clearTimeout(idleId as number);
     };
-  }, [activeProjectIndex, heroProjectItems, activeProjectPublicId]);
+  }, [activeProjectIndex, heroProjectItems, activeProjectPublicId, activeProjectMobilePublicId]);
 
   const homeSections = useMemo(() => {
     if (!isHomeSectionsLoaded) return DEPLOYED_HOME_SECTIONS;
@@ -1281,6 +1294,7 @@ const HomePage: React.FC = () => {
       {isSiteContentLoaded ? (
         <HeroVideoSection
           publicId={activeProjectPublicId}
+          mobilePublicId={activeProjectMobilePublicId}
           // Only wired up with 2+ projects — with a single project (or
           // none) the video should keep looping forever, same as before.
           onEnded={heroProjectItems.length > 1 ? handleProjectVideoEnded : undefined}
