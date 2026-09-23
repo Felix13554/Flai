@@ -37,6 +37,12 @@ export interface HeroProjectItem {
    *  extractCloudinaryPublicId either way before handing it to
    *  <HeroVideoSection publicId={...}>). */
   cloudinaryVideoUrl: string
+  /** Optional — a separate Cloudinary video for MOBILE (portrait/small
+   *  screen) viewports, same public_id-or-full-URL format as
+   *  `cloudinaryVideoUrl`. When set, mobile visitors see this vertical cut
+   *  instead of the desktop/horizontal one; when omitted, mobile falls back
+   *  to `cloudinaryVideoUrl` exactly as before this field existed. */
+  cloudinaryVideoUrlMobile?: string
   /** Optional — the client's own website. When present, the client logo in
    *  the hero becomes a link that opens this in a new tab. When absent
    *  (older CMS entries), the logo just renders as before, unlinked. */
@@ -55,6 +61,7 @@ function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
     typeof p.industry === 'string' &&
     typeof p.clientLogoUrl === 'string' &&
     typeof p.cloudinaryVideoUrl === 'string' &&
+    (p.cloudinaryVideoUrlMobile === undefined || typeof p.cloudinaryVideoUrlMobile === 'string') &&
     (p.website === undefined || typeof p.website === 'string')
   )
 }
@@ -87,11 +94,11 @@ export function parseHeroProjectsContent(
 export const heroProjectsContent: HeroProjectsContent = {
   content: [
     {
-      number: '01',
-      industry: 'Dronefotografering & -optagelser',
-      clientLogoUrl: '/Logo.webp',
+      number: '',
+      industry: '',
+      clientLogoUrl: '',
       cloudinaryVideoUrl: '',
-      website: 'https://flai.dk',
+      website: '',
     },
   ],
 }
