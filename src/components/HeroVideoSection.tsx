@@ -178,6 +178,50 @@ function useIsMobileViewport() {
   return isMobile
 }
 
+// Which VIDEO VARIANT should be playing right now — driven by actual
+// aspect/orientation (width < height), not the MOBILE_BREAKPOINT_PX layout
+// breakpoint above. Those are two different questions: `useIsMobileViewport`
+// decides layout (nav style, height-freeze behaviour) and stays tied to a
+// fixed pixel width; this hook decides "is the viewport currently taller
+// than it is wide", which is what should pick between a vertical/portrait
+// clip and a horizontal/landscape clip. A tablet or a foldable browser
+// window can be >=768px wide while still in a portrait aspect, and a phone
+// rotated to landscape can still be <768px tall — in both cases the old
+// width-only check picked the wrong variant.
+function useIsPortraitOrientation() {
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth < window.innerHeight
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(orientation: portrait)')
+    const handler = () => setIsPortrait(mq.matches)
+    handler()
+    mq.addEventListener('change', handler)
+    // Belt-and-suspenders: some mobile browsers fire the resize/rotation
+    // sequence in a way that lags the matchMedia listener by a frame.
+    // orientationchange (where available) forces an immediate re-check.
+    const onOrientationChange = () => handler()
+    if (typeof screen !== 'undefined' && screen.orientation) {
+      screen.orientation.addEventListener('change', onOrientationChange)
+    } else {
+      window.addEventListener('orientationchange', onOrientationChange)
+    }
+    return () => {
+      mq.removeEventListener('change', handler)
+      if (typeof screen !== 'undefined' && screen.orientation) {
+        screen.orientation.removeEventListener('change', onOrientationChange)
+      } else {
+        window.removeEventListener('orientationchange', onOrientationChange)
+      }
+    }
+  }, [])
+
+  return isPortrait
+}
+
 // Measures viewport height ONCE (on mount) and freezes it permanently for
 // that page load — it is never recalculated in response to `resize`, since
 // on mobile browsers `resize` fires both for genuine viewport changes AND
@@ -253,14 +297,20 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   const isMobile = useIsMobileViewport()
   const frozenHeight = useFrozenViewportHeight(isMobile)
+  // Drives which VIDEO VARIANT plays (see hook comment above) — this is a
+  // real portrait/landscape check, deliberately independent of the
+  // MOBILE_BREAKPOINT_PX layout flag, so rotating a phone or resizing a
+  // window always shows the vertical clip in portrait and the horizontal
+  // clip in landscape, regardless of raw pixel width.
+  const isPortrait = useIsPortraitOrientation()
 
-  // Pick the desktop/horizontal id unless a mobile/vertical variant was
-  // given AND the viewport is currently mobile — this is the ONLY place
-  // that decides which orientation plays, so both the controlled
-  // (project-carousel) videoSrc below and any future consumer stay in
-  // sync with the same `isMobile` flag the layout itself uses.
+  // Pick the vertical/mobile id whenever the viewport is currently in a
+  // portrait aspect AND a distinct vertical variant was given — this is the
+  // ONLY place that decides which orientation plays, so both the controlled
+  // (project-carousel) videoSrc below and any future consumer stay in sync
+  // with the same `isPortrait` flag.
   const effectiveControlledPublicId =
-    isMobile && controlledMobilePublicId ? controlledMobilePublicId : controlledPublicId
+    isPortrait && controlledMobilePublicId ? controlledMobilePublicId : controlledPublicId
 
   const isControlled = effectiveControlledPublicId != null && effectiveControlledPublicId !== ''
 
@@ -392,7 +442,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     if (next === publicIdRef.current) {
       // The resolved id didn't change. If this run was triggered by
-      // `isMobile` flipping but the project has no distinct mobile variant
+      // `isPortrait` flipping but the project has no distinct mobile variant
       // (hasDistinctMobileVariant === false), there is nothing to switch
       // to — ignore the breakpoint crossing completely: no ready-state
       // reset, no videoKey bump, no interruption to whatever is currently
@@ -426,24 +476,27 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       resumeTimeRef.current = null
     }
 
-    // Only reset to the poster/loading state for a genuine project change,
-    // not for an orientation handoff — the handoff keeps whatever frame is
-    // currently visible (video stays mounted at the same z-order) and just
-    // swaps source + seeks, so snapping back to the poster would introduce
-    // exactly the visible flash this is meant to avoid. The new <video>
-    // element (key changes with publicId) still needs a moment to become
-    // ready again, so we do still clear videoReady/showPlayButton — the
-    // resume-seek above just ensures it comes back at the right timestamp
-    // rather than at 0.
-    setVideoReady(false)
+    // Only reset to the poster/loading state for a genuine project change.
+    // For an orientation handoff we deliberately do NOT touch videoReady:
+    // flipping it false would drop posterOpaque back to true and flash the
+    // static poster image over the video for the ~1 frame it takes the new
+    // <video> element (key changes with publicId, below) to seek to the
+    // resume position and start compositing again. Instead we leave
+    // videoReady exactly as it is — the OLD element's last composited frame
+    // stays visible underneath (both video and poster layers are always
+    // mounted at fixed z-order; only the <video> tag's `key` changes, so
+    // React unmounts/remounts it, but the poster layer's opacity is
+    // untouched by this branch) right up until the new element's own
+    // 'playing'/rVFC callback fires and hands off — which happens quickly
+    // since it's resuming from a cached seek point, not a cold load.
     setShowPlayButton(false)
     setPublicId(next)
-    // Depends on `isMobile` too (not just the desktop/mobile ids
-    // themselves) so crossing the breakpoint — e.g. rotating a phone or
-    // resizing across 768px — re-evaluates which of the two ids is
-    // "current" and swaps the playing video accordingly, when there IS a
-    // distinct variant to swap to.
-  }, [effectiveControlledPublicId, isControlled, isMobile, hasDistinctMobileVariant, controlledMobilePublicId, controlledPublicId])
+    // Depends on `isPortrait` too (not just the desktop/mobile ids
+    // themselves) so an orientation change — rotating a phone, or resizing
+    // a window across the portrait/landscape aspect boundary — re-evaluates
+    // which of the two ids is "current" and swaps the playing video
+    // accordingly, when there IS a distinct variant to swap to.
+  }, [effectiveControlledPublicId, isControlled, isPortrait, hasDistinctMobileVariant, controlledMobilePublicId, controlledPublicId])
 
   // CMS replacement listener — only relevant in uncontrolled (singleton)
   // mode. In controlled mode the parent owns publicId entirely, so this
