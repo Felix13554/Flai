@@ -264,6 +264,16 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   const isControlled = effectiveControlledPublicId != null && effectiveControlledPublicId !== ''
 
+  // Whether this project actually HAS a distinct mobile variant to switch
+  // to. When it doesn't (mobilePublicId omitted, or equal to publicId),
+  // crossing the responsive breakpoint must be a complete no-op for
+  // playback — there is nothing to switch to, so we should not reset,
+  // reload, or otherwise touch the currently-playing video at all.
+  const hasDistinctMobileVariant =
+    controlledMobilePublicId != null &&
+    controlledMobilePublicId !== '' &&
+    controlledMobilePublicId !== controlledPublicId
+
   // The engine's WeakMap key is the {videoRef, sectionRef} object itself, so
   // for the NavBar (which lives outside this component, as a sibling above
   // the routed page) to share the same engine/registrations as the hero's
@@ -308,6 +318,12 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const videoSrc = useMemo(() => cloudinaryMp4Url(publicId), [publicId])
   videoSrcRef.current = videoSrc
 
+  // Holds a playback position (in seconds) to resume from the next time the
+  // video element re-attaches after an orientation swap (mobile<->desktop
+  // variant change of the SAME project). Set right before we swap `publicId`
+  // in the effect below; consumed once, in the ref callback, then cleared.
+  const resumeTimeRef = useRef<number | null>(null)
+
   // ── Ref callback ─────────────────────────────────────────────────────────────
   // Intentionally stable (no deps). Reads src from videoSrcRef to avoid the
   // brief src-reassignment flicker that occurred when this ran on every render.
@@ -328,14 +344,28 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     el.muted  = true
     el.volume = 0
     el.src    = videoSrcRef.current
+    // If an orientation swap (same project, mobile<->desktop variant) just
+    // queued a resume position, seek to it as soon as metadata is available
+    // so playback continues from where the previous variant left off
+    // instead of restarting from 0. One-shot: consumed and cleared here.
+    if (resumeTimeRef.current != null) {
+      const resumeAt = resumeTimeRef.current
+      resumeTimeRef.current = null
+      const seekWhenReady = () => {
+        el.currentTime = resumeAt
+        el.removeEventListener('loadedmetadata', seekWhenReady)
+      }
+      el.addEventListener('loadedmetadata', seekWhenReady)
+    }
     el.play().catch(() => {})
   }, [])
 
   // Controlled mode: react to the parent swapping `publicId` (e.g. the user
   // clicking a different project tab in the carousel, or the carousel
-  // auto-advancing after a video's `ended` event). Goes through the exact
-  // same "ready" reset the CMS listener below uses, so playback engages
-  // identically either way.
+  // auto-advancing after a video's `ended` event) — AND to the viewport
+  // crossing the mobile/desktop breakpoint while the SAME project is active
+  // (a portrait<->landscape rotation or window resize swapping between
+  // `mobilePublicId` and `publicId`).
   //
   // IMPORTANT: this compares against `publicIdRef` (a ref kept in sync with
   // the `publicId` state on every render — see below), not the `publicId`
@@ -359,16 +389,61 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   useEffect(() => {
     if (!isControlled) return
     const next = effectiveControlledPublicId as string
+
+    if (next === publicIdRef.current) {
+      // The resolved id didn't change. If this run was triggered by
+      // `isMobile` flipping but the project has no distinct mobile variant
+      // (hasDistinctMobileVariant === false), there is nothing to switch
+      // to — ignore the breakpoint crossing completely: no ready-state
+      // reset, no videoKey bump, no interruption to whatever is currently
+      // playing.
+      if (!hasDistinctMobileVariant) return
+      // Otherwise this is a genuine "same id requested again" case (e.g.
+      // parent re-passed the same project) — keep the old behaviour of
+      // restarting that clip.
+      setVideoReady(false)
+      setShowPlayButton(false)
+      setVideoKey((k) => k + 1)
+      return
+    }
+
+    // The resolved id IS changing. Two cases:
+    //  - A different PROJECT was selected (tab click / carousel advance):
+    //    start that project fresh, from 0.
+    //  - The SAME project crossed the responsive breakpoint and is handing
+    //    off between its desktop and mobile variants: preserve playback
+    //    position across the swap instead of restarting from 0.
+    const isOrientationHandoff =
+      hasDistinctMobileVariant &&
+      (next === controlledMobilePublicId || next === controlledPublicId) &&
+      (publicIdRef.current === controlledMobilePublicId || publicIdRef.current === controlledPublicId)
+
+    if (isOrientationHandoff) {
+      const currentEl = videoRef.current
+      resumeTimeRef.current =
+        currentEl && isFinite(currentEl.currentTime) ? currentEl.currentTime : null
+    } else {
+      resumeTimeRef.current = null
+    }
+
+    // Only reset to the poster/loading state for a genuine project change,
+    // not for an orientation handoff — the handoff keeps whatever frame is
+    // currently visible (video stays mounted at the same z-order) and just
+    // swaps source + seeks, so snapping back to the poster would introduce
+    // exactly the visible flash this is meant to avoid. The new <video>
+    // element (key changes with publicId) still needs a moment to become
+    // ready again, so we do still clear videoReady/showPlayButton — the
+    // resume-seek above just ensures it comes back at the right timestamp
+    // rather than at 0.
     setVideoReady(false)
     setShowPlayButton(false)
-    if (next !== publicIdRef.current) setPublicId(next)
-    else                               setVideoKey((k) => k + 1)
+    setPublicId(next)
     // Depends on `isMobile` too (not just the desktop/mobile ids
     // themselves) so crossing the breakpoint — e.g. rotating a phone or
     // resizing across 768px — re-evaluates which of the two ids is
-    // "current" and swaps the playing video accordingly, even if neither
-    // controlledPublicId nor controlledMobilePublicId changed.
-  }, [effectiveControlledPublicId, isControlled, isMobile])
+    // "current" and swaps the playing video accordingly, when there IS a
+    // distinct variant to swap to.
+  }, [effectiveControlledPublicId, isControlled, isMobile, hasDistinctMobileVariant, controlledMobilePublicId, controlledPublicId])
 
   // CMS replacement listener — only relevant in uncontrolled (singleton)
   // mode. In controlled mode the parent owns publicId entirely, so this
@@ -526,7 +601,10 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     // Reset to 0 immediately for this (new) video — avoids the progress line
     // briefly showing the previous project's leftover fraction before this
-    // element's own timeupdate ticks start coming in.
+    // element's own timeupdate ticks start coming in. When resuming across
+    // an orientation handoff (resumeTimeRef set), the very next timeupdate
+    // tick will immediately report the resumed fraction, so this initial 0
+    // is only visible for a single frame at most.
     onProgressRef.current?.(0)
     const onTimeUpdate = () => {
       if (destroyed) return
