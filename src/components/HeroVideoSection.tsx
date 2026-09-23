@@ -63,6 +63,17 @@ export interface HeroVideoSectionProps {
    */
   publicId?: string
   /**
+   * Optional controlled Cloudinary public_id for the MOBILE (portrait/small
+   * screen) viewport. When provided, this video plays instead of `publicId`
+   * whenever the viewport is currently classified as mobile (same
+   * `useIsMobileViewport` check — <768px — that already drives the layout's
+   * mobile/desktop split). Falls back to `publicId` on mobile if this is
+   * omitted, so callers that don't have a vertical cut simply keep seeing
+   * the desktop/horizontal video on every screen size, unchanged from
+   * before this prop existed.
+   */
+  mobilePublicId?: string
+  /**
    * Called when the current video finishes a full playthrough. When provided,
    * the <video> is rendered WITHOUT `loop` (so `ended` actually fires) — used
    * by the homepage's project carousel to advance to the next project only
@@ -237,12 +248,21 @@ function useFrozenViewportHeight(active: boolean) {
   return height
 }
 
-const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children, publicId: controlledPublicId, onEnded, onProgress }) => {
+const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children, publicId: controlledPublicId, mobilePublicId: controlledMobilePublicId, onEnded, onProgress }) => {
   useEffect(() => { injectControlHideStyle() }, [])
-  const isControlled = controlledPublicId != null && controlledPublicId !== ''
 
   const isMobile = useIsMobileViewport()
   const frozenHeight = useFrozenViewportHeight(isMobile)
+
+  // Pick the desktop/horizontal id unless a mobile/vertical variant was
+  // given AND the viewport is currently mobile — this is the ONLY place
+  // that decides which orientation plays, so both the controlled
+  // (project-carousel) videoSrc below and any future consumer stay in
+  // sync with the same `isMobile` flag the layout itself uses.
+  const effectiveControlledPublicId =
+    isMobile && controlledMobilePublicId ? controlledMobilePublicId : controlledPublicId
+
+  const isControlled = effectiveControlledPublicId != null && effectiveControlledPublicId !== ''
 
   // The engine's WeakMap key is the {videoRef, sectionRef} object itself, so
   // for the NavBar (which lives outside this component, as a sibling above
@@ -273,7 +293,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   onProgressRef.current = onProgress
 
   const [videoReady,     setVideoReady]     = useState(false)
-  const [publicId,       setPublicId]       = useState(() => controlledPublicId || getHeroVideo().public_id)
+  const [publicId,       setPublicId]       = useState(() => effectiveControlledPublicId || getHeroVideo().public_id)
   const [posterStamp,    setPosterStamp]    = useState(() => getHeroVideo().posterStamp)
   const [videoKey,       setVideoKey]       = useState(0)
   const [showPlayButton, setShowPlayButton] = useState(false)
@@ -338,12 +358,17 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   useEffect(() => {
     if (!isControlled) return
-    const next = controlledPublicId as string
+    const next = effectiveControlledPublicId as string
     setVideoReady(false)
     setShowPlayButton(false)
     if (next !== publicIdRef.current) setPublicId(next)
     else                               setVideoKey((k) => k + 1)
-  }, [controlledPublicId, isControlled])
+    // Depends on `isMobile` too (not just the desktop/mobile ids
+    // themselves) so crossing the breakpoint — e.g. rotating a phone or
+    // resizing across 768px — re-evaluates which of the two ids is
+    // "current" and swaps the playing video accordingly, even if neither
+    // controlledPublicId nor controlledMobilePublicId changed.
+  }, [effectiveControlledPublicId, isControlled, isMobile])
 
   // CMS replacement listener — only relevant in uncontrolled (singleton)
   // mode. In controlled mode the parent owns publicId entirely, so this
