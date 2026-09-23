@@ -1,36 +1,22 @@
 /**
- * HeroVideoSection — v14
+ * HeroVideoSection — v15
  *
- * Changes from v13:
+ * Changes from v14:
  *
- * 1. INSTANT poster→video cut (no fade).
- *    The `transition` on the poster layer is unconditionally `'none'`.
- *    When videoReady flips true the poster disappears in the same paint frame.
+ * 1. ORIENTATION-BASED VIDEO SELECTION.
+ *    On mobile the vertical (`mobilePublicId`) video now plays only while the
+ *    phone is in PORTRAIT; in LANDSCAPE the horizontal (`publicId`) video plays.
+ *    Implemented with `useIsPortraitMobile` (matchMedia orientation + small
+ *    screen check) instead of the plain <768px width check.
  *
- * 2. Removed the `autoplay` HTML attribute from the <video> element.
- *    Per Mux / Chrome guidance the attribute gives you no error signal and
- *    behaves inconsistently. We already call el.play() imperatively in the
- *    ref callback and in attemptPlay(), which returns a catchable Promise.
+ * 2. NO REPLAY WHEN ONLY ONE VIDEO VERSION EXISTS.
+ *    Resizing / rotating / crossing a breakpoint used to reload the video even
+ *    when the resolved id was identical. The swap effect now only reacts when
+ *    the RESOLVED public id actually changes, and never bumps `videoKey`
+ *    (replay) on a mere layout change. Replay/swap therefore only happens for
+ *    videos that genuinely have different desktop/mobile versions.
  *
- * 3. `getAutoplayState` default changed 'allowed-muted' → 'unknown'.
- *    The old default silently skipped the play attempt on iOS Low Power Mode
- *    and WeChat WebView where even muted autoplay is blocked. Defaulting to
- *    'unknown' means we always try video.play() and handle rejection properly.
- *
- * 4. Slow-connection preload changed 'metadata' → 'none'.
- *    The src is assigned imperatively; letting the browser pre-fetch metadata
- *    on a slow connection wastes bytes before the IntersectionObserver fires.
- *
- * 5. visibilitychange re-play wrapped in a clearTimeout guard so the attempt
- *    can't fire after the effect has been torn down.
- *
- * Unchanged / confirmed correct by research:
- * - poster fetchpriority="high" + decoding="sync" (LCP best practice)
- * - requestVideoFrameCallback used for markReady (now baseline across all
- *   evergreen browsers: Chrome 83+, Safari 15.4+, Firefox 132+)
- * - IntersectionObserver threshold:0 (fire on first visible pixel)
- * - muted + playsinline + loop combo (only reliable autoplay setup)
- * - video.play() Promise catch + manual play button fallback
+ * Everything else is unchanged from v14.
  */
 
 import React, {
@@ -63,14 +49,11 @@ export interface HeroVideoSectionProps {
    */
   publicId?: string
   /**
-   * Optional controlled Cloudinary public_id for the MOBILE (portrait/small
-   * screen) viewport. When provided, this video plays instead of `publicId`
-   * whenever the viewport is currently classified as mobile (same
-   * `useIsMobileViewport` check — <768px — that already drives the layout's
-   * mobile/desktop split). Falls back to `publicId` on mobile if this is
-   * omitted, so callers that don't have a vertical cut simply keep seeing
-   * the desktop/horizontal video on every screen size, unchanged from
-   * before this prop existed.
+   * Optional controlled Cloudinary public_id for the MOBILE PORTRAIT
+   * (vertical) viewport. When provided, this video plays instead of
+   * `publicId` whenever the device is a phone held in portrait. In landscape
+   * (or on desktop) `publicId` (the horizontal cut) plays. If omitted, the
+   * horizontal video plays in every orientation, unchanged from before.
    */
   mobilePublicId?: string
   /**
@@ -160,6 +143,12 @@ const FILL_STYLE: React.CSSProperties = {
 // ends up hidden behind the address bar/bottom nav, on any mobile browser.
 const MOBILE_BREAKPOINT_PX = 768 // matches Tailwind's `md` breakpoint
 
+// Max SHORT-side (in px) for a device to still count as a phone when held in
+// landscape. A phone in landscape can easily be wider than 768px (e.g.
+// 844×390), so width alone can't identify it — but its short side (height)
+// stays small. Tablets/desktops have a much larger short side.
+const PHONE_LANDSCAPE_MAX_HEIGHT_PX = 500
+
 function useIsMobileViewport() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -176,6 +165,35 @@ function useIsMobileViewport() {
   }, [])
 
   return isMobile
+}
+
+// True ONLY when the device is a phone held in PORTRAIT (narrow AND taller
+// than wide). This is the single signal that selects the vertical video:
+//   - phone portrait   → true  → vertical video
+//   - phone landscape  → false → horizontal video
+//   - tablet / desktop → false → horizontal video
+//
+// Uses matchMedia (orientation: portrait) + the same <768px width test the
+// layout uses, so a phone rotating to landscape (which usually exceeds the
+// width breakpoint or is short-sided) always resolves to the horizontal cut.
+function useIsPortraitMobile() {
+  const query = `(max-width: ${MOBILE_BREAKPOINT_PX - 1}px) and (orientation: portrait)`
+
+  const [isPortraitMobile, setIsPortraitMobile] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia(query).matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(query)
+    const handler = () => setIsPortraitMobile(mq.matches)
+    handler()
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [query])
+
+  return isPortraitMobile
 }
 
 // Measures viewport height ONCE (on mount) and freezes it permanently for
@@ -252,15 +270,17 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   useEffect(() => { injectControlHideStyle() }, [])
 
   const isMobile = useIsMobileViewport()
+  const isPortraitMobile = useIsPortraitMobile()
   const frozenHeight = useFrozenViewportHeight(isMobile)
 
-  // Pick the desktop/horizontal id unless a mobile/vertical variant was
-  // given AND the viewport is currently mobile — this is the ONLY place
-  // that decides which orientation plays, so both the controlled
-  // (project-carousel) videoSrc below and any future consumer stay in
-  // sync with the same `isMobile` flag the layout itself uses.
+  // Pick the vertical id ONLY when a mobile/vertical variant was given AND
+  // the phone is currently held in portrait. In landscape (or on any larger
+  // screen) the horizontal `publicId` plays. If no mobile variant exists,
+  // this always resolves to the horizontal id, so the id never changes on
+  // rotate/resize — which is what prevents needless reloads (see the swap
+  // effect below).
   const effectiveControlledPublicId =
-    isMobile && controlledMobilePublicId ? controlledMobilePublicId : controlledPublicId
+    isPortraitMobile && controlledMobilePublicId ? controlledMobilePublicId : controlledPublicId
 
   const isControlled = effectiveControlledPublicId != null && effectiveControlledPublicId !== ''
 
@@ -331,44 +351,35 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     el.play().catch(() => {})
   }, [])
 
-  // Controlled mode: react to the parent swapping `publicId` (e.g. the user
-  // clicking a different project tab in the carousel, or the carousel
-  // auto-advancing after a video's `ended` event). Goes through the exact
-  // same "ready" reset the CMS listener below uses, so playback engages
-  // identically either way.
+  // Controlled mode: react to the RESOLVED public id changing (e.g. the user
+  // clicking a different project tab, the carousel auto-advancing after an
+  // `ended` event, or — for projects that have BOTH a horizontal and a
+  // vertical cut — the phone rotating between landscape and portrait).
   //
-  // IMPORTANT: this compares against `publicIdRef` (a ref kept in sync with
-  // the `publicId` state on every render — see below), not the `publicId`
-  // state variable itself. Comparing against the state directly here was
-  // the source of the "video replays instead of advancing" bug: this effect
-  // intentionally omits `publicId` from its dependency array (so it only
-  // reacts to the PARENT's index change, not to its own resulting state
-  // update), but that meant the comparison could run against a `publicId`
-  // value from a stale closure — e.g. when `ended` fires and the parent
-  // advances the index in the same tick that a previous state update from
-  // this exact effect is still being committed, the effect could re-fire
-  // while still "seeing" the OLD publicId, decide `next === publicId`, and
-  // take the `else` branch (just bump `videoKey`) instead of switching to
-  // the new project — which replays the current project's video instead of
-  // advancing to the next one. Reading from a ref sidesteps this: the ref
-  // is always up to date the instant `publicId` state changes, regardless
-  // of which render's closure this effect happens to be running in.
+  // KEY BEHAVIOUR: this only swaps/reloads the video when the resolved id
+  // actually DIFFERS from what's currently loaded. When it's the same id
+  // (a project with only one video version, where rotate/resize resolves to
+  // the identical id), nothing happens — no state reset, no `videoKey` bump,
+  // no reload/replay. The old `else setVideoKey(k => k + 1)` branch used to
+  // force a replay on every layout change; it's removed here.
+  //
+  // Comparison is against `publicIdRef` (kept in sync every render), not the
+  // `publicId` state, to avoid stale-closure decisions — see the earlier
+  // "video replays instead of advancing" fix rationale.
   const publicIdRef = useRef(publicId)
   publicIdRef.current = publicId
 
   useEffect(() => {
     if (!isControlled) return
     const next = effectiveControlledPublicId as string
+    if (next === publicIdRef.current) return // same video → leave playback untouched
     setVideoReady(false)
     setShowPlayButton(false)
-    if (next !== publicIdRef.current) setPublicId(next)
-    else                               setVideoKey((k) => k + 1)
-    // Depends on `isMobile` too (not just the desktop/mobile ids
-    // themselves) so crossing the breakpoint — e.g. rotating a phone or
-    // resizing across 768px — re-evaluates which of the two ids is
-    // "current" and swaps the playing video accordingly, even if neither
-    // controlledPublicId nor controlledMobilePublicId changed.
-  }, [effectiveControlledPublicId, isControlled, isMobile])
+    setPublicId(next)
+    // Depends ONLY on the resolved id (+ isControlled). Crossing a
+    // breakpoint or rotating re-runs this only when it actually changes
+    // which id is resolved, i.e. only for videos with different versions.
+  }, [effectiveControlledPublicId, isControlled])
 
   // CMS replacement listener — only relevant in uncontrolled (singleton)
   // mode. In controlled mode the parent owns publicId entirely, so this
