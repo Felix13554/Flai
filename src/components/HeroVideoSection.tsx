@@ -143,6 +143,17 @@ const FILL_STYLE: React.CSSProperties = {
 // ends up hidden behind the address bar/bottom nav, on any mobile browser.
 const MOBILE_BREAKPOINT_PX = 768 // matches Tailwind's `md` breakpoint
 
+// ── Reconnection tuning ─────────────────────────────────────────────────────
+// A long-backgrounded (or briefly network-dropped) tab can leave the video's
+// underlying fetch dead: `play()` resolves and `video.paused` stays `false`,
+// but no further frames ever arrive — a plain play() retry can't fix that,
+// only a full reload (new network request) resumed at the same currentTime
+// can. These control when we treat playback as "disconnected".
+const RECONNECT_STALL_GRACE_MS      = 4000  // wait this long after stalled/waiting before reloading
+const RECONNECT_WATCHDOG_TICK_MS    = 4000  // how often we check that currentTime is actually advancing
+const RECONNECT_MAX_ATTEMPTS        = 5     // give up (show tap-to-play) after this many failed reloads in a row
+const HIDDEN_FORCE_RECONNECT_MS     = 15000 // tab hidden at least this long → assume the connection died, reload proactively on return
+
 // Max SHORT-side (in px) for a device to still count as a phone when held in
 // landscape. A phone in landscape can easily be wider than 768px (e.g.
 // 844×390), so width alone can't identify it — but its short side (height)
@@ -311,6 +322,11 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // below without retriggering it on every parent render.
   const onProgressRef = useRef<((fraction: number) => void) | undefined>(onProgress)
   onProgressRef.current = onProgress
+
+  // When the tab was last hidden — used by the visibilitychange effect to
+  // decide whether a returning tab needs a cheap play() retry or a full
+  // reconnect (see HIDDEN_FORCE_RECONNECT_MS).
+  const hiddenAtRef = useRef<number | null>(null)
 
   const [videoReady,     setVideoReady]     = useState(false)
   const [publicId,       setPublicId]       = useState(() => effectiveControlledPublicId || getHeroVideo().public_id)
@@ -509,19 +525,101 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       })
     }
 
-    // Stash on the element so the visibilitychange effect — which mounts as a
-    // separate useEffect and has no closure access to markReady/attemptPlay —
-    // can resume playback through the same ready-state path instead of
-    // calling video.play() directly and leaving videoReady permanently false.
-    ;(video as any).__heroMarkReady  = markReady
-    ;(video as any).__heroAttemptPlay = attemptPlay
+    // ── Reconnection / stall recovery ─────────────────────────────────────
+    // Covers two failure modes a plain play()-retry can't fix:
+    //  1. `error` — the browser gave up on the network resource outright.
+    //  2. A silent stall — `paused` is false and no `error` fired, but no
+    //     new frames are arriving (dead connection after a long background
+    //     period, or a flaky network mid-playback). Caught by listening for
+    //     `stalled`/`waiting` (with a grace period, since both fire
+    //     transiently during normal buffering) AND by a watchdog that
+    //     simply checks whether `currentTime` is still advancing.
+    // Recovery is always the same: drop the current src, reload it fresh,
+    // seek back to roughly where we were, and attempt play() again — with
+    // capped exponential backoff so a truly dead network doesn't spin
+    // forever (we fall back to the tap-to-play button after enough tries).
+    let reconnectAttempts = 0
+    let reconnecting = false
+    let reconnectTimer: number | undefined
+    let stalledGraceTimer: number | undefined
+    let watchdogInterval: number | undefined
+    let lastWatchdogTime = -1
 
-    const onPlaying    = () => markReady()
+    const clearReconnectTimers = () => {
+      window.clearTimeout(reconnectTimer)
+      window.clearTimeout(stalledGraceTimer)
+      reconnectTimer = undefined
+      stalledGraceTimer = undefined
+    }
+
+    const reconnect = (reason: string) => {
+      if (destroyed || reconnecting) return
+      if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+        console.warn('[HeroVideo] reconnect: giving up after', reconnectAttempts, 'attempts')
+        setShowPlayButton(true)
+        return
+      }
+      reconnecting = true
+      reconnectAttempts += 1
+      const attempt = reconnectAttempts
+      const delay = Math.min(500 * 2 ** (attempt - 1), 8000)
+      console.warn(`[HeroVideo] reconnecting (${reason}) — attempt ${attempt}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms`)
+      window.clearTimeout(reconnectTimer)
+      reconnectTimer = window.setTimeout(() => {
+        if (destroyed) { reconnecting = false; return }
+        const resumeAt = isFinite(video.currentTime) ? video.currentTime : 0
+        const onReloaded = () => {
+          video.removeEventListener('loadeddata', onReloaded)
+          if (destroyed) { reconnecting = false; return }
+          const dur = video.duration
+          if (resumeAt > 0.25 && (!isFinite(dur) || resumeAt < dur - 0.25)) {
+            try { video.currentTime = resumeAt } catch {}
+          }
+          reconnecting = false
+          attemptPlay()
+        }
+        video.addEventListener('loadeddata', onReloaded, { once: true })
+        video.pause()
+        video.src = videoSrcRef.current
+        video.load()
+      }, delay)
+    }
+
+    // A successful, actually-progressing play means the connection is good
+    // again — clear the failure count so a later, unrelated hiccup starts
+    // its backoff from zero instead of picking up where an old one left off.
+    const resetReconnect = () => { reconnectAttempts = 0 }
+
+    const armStallGrace = (reason: string) => {
+      if (destroyed || reconnecting) return
+      window.clearTimeout(stalledGraceTimer)
+      stalledGraceTimer = window.setTimeout(() => {
+        if (destroyed || video.paused || video.ended) return
+        reconnect(reason)
+      }, RECONNECT_STALL_GRACE_MS)
+    }
+
+    // Stash on the element so the visibilitychange effect — which mounts as a
+    // separate useEffect and has no closure access to these — can trigger
+    // the same recovery paths instead of calling video.play() directly and
+    // leaving videoReady permanently false, or silently doing nothing when
+    // the connection is actually dead.
+    ;(video as any).__heroMarkReady   = markReady
+    ;(video as any).__heroAttemptPlay = attemptPlay
+    ;(video as any).__heroReconnect   = reconnect
+
+    const onPlaying    = () => { markReady(); resetReconnect(); window.clearTimeout(stalledGraceTimer) }
     const onLoadedData = () => { if (!destroyed && video.paused) attemptPlay() }
     const onError      = () => {
       if (destroyed || !video.error) return
       console.warn('[HeroVideo] error', video.error.code, video.error.message)
+      reconnect('error')
     }
+    const onStalled = () => armStallGrace('stalled')
+    const onWaiting = () => armStallGrace('waiting')
+    // 'progress' (new bytes arriving) and 'playing' both mean data is
+    // actually flowing again — cancel any pending stall→reconnect timer.
+    const onProgressEvent = () => window.clearTimeout(stalledGraceTimer)
     // Only relevant when `loop` is off (i.e. an onEnded callback was passed
     // in) — fires once the current video has played all the way through.
     // Guarded with `firedEnded` so a duplicate/late `ended` dispatch on this
@@ -554,6 +652,23 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     video.addEventListener('error',      onError)
     video.addEventListener('ended',      onEnded)
     video.addEventListener('timeupdate', onTimeUpdate)
+    video.addEventListener('stalled',    onStalled)
+    video.addEventListener('waiting',    onWaiting)
+    video.addEventListener('progress',   onProgressEvent)
+
+    // Watchdog: belt-and-braces check for the case none of the above events
+    // fire but the video is simply frozen (paused === false, no error, no
+    // stalled/waiting) — currentTime just never advances. Only meaningful
+    // while the tab is actually visible; a hidden tab is expected to make no
+    // progress and is handled separately by the visibilitychange effect.
+    watchdogInterval = window.setInterval(() => {
+      if (destroyed || document.visibilityState !== 'visible') return
+      if (video.paused || video.ended) return
+      if (lastWatchdogTime >= 0 && video.currentTime === lastWatchdogTime) {
+        reconnect('watchdog-frozen')
+      }
+      lastWatchdogTime = video.currentTime
+    }, RECONNECT_WATCHDOG_TICK_MS)
 
     if (
       video.networkState === HTMLMediaElement.NETWORK_EMPTY ||
@@ -582,14 +697,20 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     return () => {
       destroyed = true
       window.clearTimeout(revealTimer)
+      clearReconnectTimers()
+      window.clearInterval(watchdogInterval)
       observer?.disconnect()
       video.removeEventListener('playing',    onPlaying)
       video.removeEventListener('error',      onError)
       video.removeEventListener('loadeddata', onLoadedData)
       video.removeEventListener('ended',      onEnded)
       video.removeEventListener('timeupdate', onTimeUpdate)
+      video.removeEventListener('stalled',    onStalled)
+      video.removeEventListener('waiting',    onWaiting)
+      video.removeEventListener('progress',   onProgressEvent)
       delete (video as any).__heroMarkReady
       delete (video as any).__heroAttemptPlay
+      delete (video as any).__heroReconnect
       video.pause()
       video.removeAttribute('src')
       video.load()
@@ -600,13 +721,35 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   useEffect(() => {
     if (skipVideo) return
     let retryTimer: number | undefined
+    let watchTimer: number | undefined
     const handle = () => {
       const video = videoRef.current
       if (!video) return
       if (document.visibilityState === 'hidden') {
         window.clearTimeout(retryTimer)
+        window.clearTimeout(watchTimer)
+        hiddenAtRef.current = Date.now()
       } else {
         video.muted = true
+        const hiddenFor = hiddenAtRef.current != null ? Date.now() - hiddenAtRef.current : 0
+        hiddenAtRef.current = null
+
+        const reconnect = (video as any).__heroReconnect as ((reason: string) => void) | undefined
+
+        // A resource error, or a tab hidden long enough that the browser
+        // likely dropped the video's network connection in the background,
+        // needs a full reload — a plain play() retry won't bring frames
+        // back. Otherwise (a quick tab switch) a cheap play() retry is
+        // enough, same as before.
+        if (video.error && reconnect) {
+          reconnect('visibility-resume-error')
+          return
+        }
+        if (hiddenFor >= HIDDEN_FORCE_RECONNECT_MS && reconnect) {
+          reconnect('visibility-resume-long-hidden')
+          return
+        }
+
         retryTimer = window.setTimeout(() => {
           const el = videoRef.current
           if (!el) return
@@ -631,12 +774,30 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
               })
               .catch(() => {})
           }
+
+          // Belt-and-braces: even a "successful" play() can leave the
+          // video frozen (connection dead but no error/stalled event ever
+          // fired). Check shortly after whether currentTime actually moved;
+          // if not, escalate to a full reconnect. The main effect's own
+          // watchdog interval also covers this ongoing, but this check
+          // reacts immediately on resume instead of waiting for the first
+          // watchdog tick.
+          const startTime = el.currentTime
+          watchTimer = window.setTimeout(() => {
+            const el2 = videoRef.current
+            if (!el2 || el2.paused || el2.ended) return
+            if (el2.currentTime === startTime) {
+              const rc = (el2 as any).__heroReconnect as ((reason: string) => void) | undefined
+              rc?.('visibility-resume-frozen')
+            }
+          }, RECONNECT_STALL_GRACE_MS)
         }, 0)
       }
     }
     document.addEventListener('visibilitychange', handle)
     return () => {
       window.clearTimeout(retryTimer)
+      window.clearTimeout(watchTimer)
       document.removeEventListener('visibilitychange', handle)
     }
   }, [skipVideo])
