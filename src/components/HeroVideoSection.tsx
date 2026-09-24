@@ -568,17 +568,32 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       reconnectTimer = window.setTimeout(() => {
         if (destroyed) { reconnecting = false; return }
         const resumeAt = isFinite(video.currentTime) ? video.currentTime : 0
-        const onReloaded = () => {
-          video.removeEventListener('loadeddata', onReloaded)
-          if (destroyed) { reconnecting = false; return }
+
+        // Seek BEFORE any frame is decoded/painted, so a mid-playback
+        // reload never visibly flashes frame 1 (which is what the poster
+        // image itself is generated from, so it reads as "the poster
+        // popping up mid-video"). `loadedmetadata` fires as soon as
+        // duration/dimensions are known — before the browser has decoded
+        // a single frame — so seeking there means the FIRST frame this
+        // reload ever paints is already the resumed one. Seeking later,
+        // on `loadeddata`, is too late: that event means a frame (frame 0)
+        // has already been decoded and shown.
+        const onReloadMetadata = () => {
+          video.removeEventListener('loadedmetadata', onReloadMetadata)
+          if (destroyed) return
           const dur = video.duration
           if (resumeAt > 0.25 && (!isFinite(dur) || resumeAt < dur - 0.25)) {
             try { video.currentTime = resumeAt } catch {}
           }
+        }
+        const onReloadedData = () => {
+          video.removeEventListener('loadeddata', onReloadedData)
+          if (destroyed) { reconnecting = false; return }
           reconnecting = false
           attemptPlay()
         }
-        video.addEventListener('loadeddata', onReloaded, { once: true })
+        video.addEventListener('loadedmetadata', onReloadMetadata, { once: true })
+        video.addEventListener('loadeddata',      onReloadedData,  { once: true })
         video.pause()
         video.src = videoSrcRef.current
         video.load()
