@@ -328,6 +328,14 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // reconnect (see HIDDEN_FORCE_RECONNECT_MS).
   const hiddenAtRef = useRef<number | null>(null)
 
+  // A snapshot (data URL) of the last frame actually shown before a
+  // disconnect was detected. While set, it's painted over the <video>
+  // element so the user sees a frozen still of where playback left off,
+  // instead of the video's own reload flashing back to its first frame (or
+  // the poster/thumbnail) while the reconnect is in flight. Cleared once a
+  // genuinely new post-resume frame has been composited.
+  const [reconnectFrame, setReconnectFrame] = useState<string | null>(null)
+
   const [videoReady,     setVideoReady]     = useState(false)
   const [publicId,       setPublicId]       = useState(() => effectiveControlledPublicId || getHeroVideo().public_id)
   const [posterStamp,    setPosterStamp]    = useState(() => getHeroVideo().posterStamp)
@@ -441,6 +449,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     video.muted = true
     video.setAttribute('muted', '')
+    setReconnectFrame(null)
 
     let destroyed = false
     let revealTimer: number | undefined
@@ -468,6 +477,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
             if (!destroyed) {
               setVideoReady(true)
               setShowPlayButton(false)
+              setReconnectFrame(null)
             }
           })
         })
@@ -478,6 +488,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
             if (!destroyed) {
               setVideoReady(true)
               setShowPlayButton(false)
+              setReconnectFrame(null)
             }
           })
         })
@@ -552,13 +563,47 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       stalledGraceTimer = undefined
     }
 
+    // Grabs whatever the video is currently displaying and stashes it as a
+    // data URL so it can be painted over the video while we reload/reseek.
+    // Downscaled a bit since it's just a placeholder still, not something
+    // anyone examines closely. Silently no-ops (leaves reconnectFrame
+    // untouched) on any failure — e.g. a tainted canvas — since the
+    // reconnect itself must never be blocked by this being best-effort.
+    const captureReconnectFrame = () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) return
+        const MAX_W = 1280
+        const scale = Math.min(1, MAX_W / video.videoWidth)
+        const w = Math.max(1, Math.round(video.videoWidth * scale))
+        const h = Math.max(1, Math.round(video.videoHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(video, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+        if (!destroyed) setReconnectFrame(dataUrl)
+      } catch {
+        // e.g. SecurityError on a tainted canvas — fall back to whatever
+        // the video element itself renders during reload, same as before
+        // this feature existed.
+      }
+    }
+
     const reconnect = (reason: string) => {
       if (destroyed || reconnecting) return
       if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
         console.warn('[HeroVideo] reconnect: giving up after', reconnectAttempts, 'attempts')
+        setReconnectFrame(null)
         setShowPlayButton(true)
         return
       }
+      // Only snapshot on the FIRST attempt of a reconnect sequence — a
+      // retry's video element may already be showing a black/half-loaded
+      // frame from the previous failed attempt, which would overwrite the
+      // good snapshot from before anything went wrong.
+      if (!reconnecting) captureReconnectFrame()
       reconnecting = true
       reconnectAttempts += 1
       const attempt = reconnectAttempts
@@ -828,8 +873,10 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
   // Poster is ALWAYS rendered and ALWAYS mounted — opacity snaps to 0 instantly
   // (no transition) when the video is ready. This keeps a pixel-perfect cover
-  // over the video at all times with zero fade delay.
-  const posterOpaque = !videoReady || skipVideo
+  // over the video at all times with zero fade delay. Suppressed while a
+  // reconnect snapshot is showing (z=2, above this) so the two never both
+  // try to be the visible cover at once.
+  const posterOpaque = (!videoReady || skipVideo) && !reconnectFrame
 
   return (
     <section
@@ -935,6 +982,20 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
           </div>
         )}
       </div>
+
+      {/* z=2 — reconnect snapshot: the last real frame shown before a
+          disconnect was detected, painted over the (currently reloading)
+          video so its own first-frame flash never shows. posterOpaque is
+          forced false while this is set, so only one of the two overlays
+          is ever visible at a time. */}
+      {reconnectFrame && (
+        <img
+          src={reconnectFrame}
+          alt=""
+          aria-hidden="true"
+          style={{ ...FILL_STYLE, zIndex: 2 }}
+        />
+      )}
 
       {/* z=3 — content */}
       {/* No local HeroFrameContext.Provider here: the ambient one from
