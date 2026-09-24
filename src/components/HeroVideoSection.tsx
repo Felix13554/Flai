@@ -1,22 +1,19 @@
 /**
- * HeroVideoSection — v15
+ * HeroVideoSection — v17
  *
- * Changes from v14:
+ * Changes from v16:
  *
- * 1. ORIENTATION-BASED VIDEO SELECTION.
- *    On mobile the vertical (`mobilePublicId`) video now plays only while the
- *    phone is in PORTRAIT; in LANDSCAPE the horizontal (`publicId`) video plays.
- *    Implemented with `useIsPortraitMobile` (matchMedia orientation + small
- *    screen check) instead of the plain <768px width check.
+ * 1. THREE INDEPENDENT PAUSE REASONS (tab hidden, window unfocused, section
+ *    scrolled fully out of view). The video plays only when NONE apply.
+ *    - blur/focus + pagehide/pageshow cover covered/unfocused windows, where
+ *      visibilitychange can lag many seconds or never fire.
+ *    - An IntersectionObserver (threshold 0) pauses only once the hero has
+ *      ZERO pixels in the viewport, and resumes as soon as any part returns.
+ *    Reconnects, stall timers, the watchdog and play() attempts all respect
+ *    the combined state, so nothing plays or reloads while intentionally
+ *    paused, and a scroll/blur pause never triggers the tap-to-play button.
  *
- * 2. NO REPLAY WHEN ONLY ONE VIDEO VERSION EXISTS.
- *    Resizing / rotating / crossing a breakpoint used to reload the video even
- *    when the resolved id was identical. The swap effect now only reacts when
- *    the RESOLVED public id actually changes, and never bumps `videoKey`
- *    (replay) on a mere layout change. Replay/swap therefore only happens for
- *    videos that genuinely have different desktop/mobile versions.
- *
- * Everything else is unchanged from v14.
+ * Everything else is unchanged from v16.
  */
 
 import React, {
@@ -152,13 +149,24 @@ const MOBILE_BREAKPOINT_PX = 768 // matches Tailwind's `md` breakpoint
 const RECONNECT_STALL_GRACE_MS      = 4000  // wait this long after stalled/waiting before reloading
 const RECONNECT_WATCHDOG_TICK_MS    = 4000  // how often we check that currentTime is actually advancing
 const RECONNECT_MAX_ATTEMPTS        = 5     // give up (show tap-to-play) after this many failed reloads in a row
-const HIDDEN_FORCE_RECONNECT_MS     = 15000 // tab hidden at least this long → assume the connection died, reload proactively on return
 
 // Max SHORT-side (in px) for a device to still count as a phone when held in
 // landscape. A phone in landscape can easily be wider than 768px (e.g.
 // 844×390), so width alone can't identify it — but its short side (height)
 // stays small. Tablets/desktops have a much larger short side.
 const PHONE_LANDSCAPE_MAX_HEIGHT_PX = 500
+
+// ▶ v17: single source of truth for "should the video be paused right now?"
+// Three independent reasons, tracked in a module-level object so every code
+// path (attemptPlay, reconnect, stall timers, watchdog) sees the same truth:
+//   - tab hidden        (visibilitychange)
+//   - window unfocused  (blur/focus — covers covered/unfocused windows where
+//                        visibilitychange is late or never fires)
+//   - scrolled out      (IntersectionObserver — section has 0px visible)
+const pauseReasons = { hidden: false, blurred: false, offscreen: false }
+const shouldBePaused = () =>
+  pauseReasons.hidden || pauseReasons.blurred || pauseReasons.offscreen
+const isTabHidden = shouldBePaused // ▶ v17: name kept so existing guards keep working
 
 function useIsMobileViewport() {
   const [isMobile, setIsMobile] = useState(() => {
@@ -323,11 +331,6 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const onProgressRef = useRef<((fraction: number) => void) | undefined>(onProgress)
   onProgressRef.current = onProgress
 
-  // When the tab was last hidden — used by the visibilitychange effect to
-  // decide whether a returning tab needs a cheap play() retry or a full
-  // reconnect (see HIDDEN_FORCE_RECONNECT_MS).
-  const hiddenAtRef = useRef<number | null>(null)
-
   // A persistent canvas that's kept continuously redrawn with the video's
   // current frame during normal playback (see captureFrameToCanvas in the
   // main effect). Because it's always fresh, a disconnect never has to
@@ -374,7 +377,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     el.muted  = true
     el.volume = 0
     el.src    = videoSrcRef.current
-    el.play().catch(() => {})
+    // ▶ v16: don't start playback in a tab the user can't see. The
+    // visibility handler resumes it as soon as the tab becomes visible.
+    if (!isTabHidden()) el.play().catch(() => {})
   }, [])
 
   // Controlled mode: react to the RESOLVED public id changing (e.g. the user
@@ -505,6 +510,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     // other path's play() was about to legitimately succeed).
     const attemptPlay = () => {
       if (destroyed || attemptInFlight) return
+      // ▶ v16: never start playback while the tab is hidden. The visibility
+      // handler calls this again the moment the tab becomes visible.
+      if (isTabHidden()) return
       attemptInFlight = true
       window.clearTimeout(revealTimer)
       video.muted = true
@@ -524,7 +532,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         // event may still fire quickly on fast connections, or a queued
         // retry (e.g. from tab-visibility recovery) may succeed first.
         revealTimer = window.setTimeout(() => {
-          if (destroyed || !video.paused) return
+          // ▶ v16: a pause caused by the tab being hidden is not an
+          // autoplay failure — don't surface the play button for it.
+          if (destroyed || !video.paused || isTabHidden()) return
           setShowPlayButton(true)
           const gesturePlay = () => {
             video.muted = true
@@ -589,6 +599,10 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     const reconnect = (reason: string) => {
       if (destroyed || reconnecting) return
+      // ▶ v16: a hidden tab is not a failure — never reload in the
+      // background. The visibility handler triggers a reconnect on return
+      // if one is genuinely needed.
+      if (isTabHidden()) return
       if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
         console.warn('[HeroVideo] reconnect: giving up after', reconnectAttempts, 'attempts')
         setShowReconnectFrame(false)
@@ -649,7 +663,8 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       if (destroyed || reconnecting) return
       window.clearTimeout(stalledGraceTimer)
       stalledGraceTimer = window.setTimeout(() => {
-        if (destroyed || video.paused || video.ended) return
+        // ▶ v16: also skip while hidden (a hidden/paused tab isn't stalled).
+        if (destroyed || video.paused || video.ended || isTabHidden()) return
         reconnect(reason)
       }, RECONNECT_STALL_GRACE_MS)
     }
@@ -718,7 +733,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     // while the tab is actually visible; a hidden tab is expected to make no
     // progress and is handled separately by the visibilitychange effect.
     watchdogInterval = window.setInterval(() => {
-      if (destroyed || document.visibilityState !== 'visible') return
+      if (destroyed || shouldBePaused()) return
       if (video.paused || video.ended) return
       if (lastWatchdogTime >= 0 && video.currentTime === lastWatchdogTime) {
         reconnect('watchdog-frozen')
@@ -773,88 +788,130 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     }
   }, [skipVideo, autoplayState, publicId, videoKey])
 
-  // ── Tab visibility ───────────────────────────────────────────────────────────
+  // ── Tab visibility / focus / scroll-out-of-view ──────────────────────────────
+  // ▶ v17: three pause reasons (see pauseReasons). The video plays only when
+  // NONE apply. Any change re-evaluates through applyPlayState().
   useEffect(() => {
     if (skipVideo) return
     let retryTimer: number | undefined
     let watchTimer: number | undefined
-    const handle = () => {
+
+    const resume = () => {
       const video = videoRef.current
       if (!video) return
-      if (document.visibilityState === 'hidden') {
+      video.muted = true
+
+      const reconnect = (video as any).__heroReconnect as ((reason: string) => void) | undefined
+
+      // A resource error means a plain play() retry won't bring frames
+      // back — full reload.
+      if (video.error && reconnect) {
+        reconnect('resume-error')
+        return
+      }
+
+      window.clearTimeout(retryTimer)
+      retryTimer = window.setTimeout(() => {
+        const el = videoRef.current
+        if (!el || shouldBePaused()) return
+        // Route through the SAME ready-state machinery the main effect
+        // uses, so videoReady never gets stuck at false behind the poster.
+        const attempt = (el as any).__heroAttemptPlay as (() => void) | undefined
+        if (attempt) {
+          attempt()
+        } else {
+          el.play()
+            .then(() => {
+              const ready = (el as any).__heroMarkReady as (() => void) | undefined
+              if (ready) ready()
+              else setVideoReady(true)
+            })
+            .catch(() => {})
+        }
+
+        // Belt-and-braces: a "successful" play() can still leave a dead
+        // connection frozen. If currentTime hasn't moved shortly after,
+        // escalate to a full reconnect.
+        const startTime = el.currentTime
+        window.clearTimeout(watchTimer)
+        watchTimer = window.setTimeout(() => {
+          const el2 = videoRef.current
+          if (!el2 || el2.paused || el2.ended || shouldBePaused()) return
+          if (el2.currentTime === startTime) {
+            const rc = (el2 as any).__heroReconnect as ((reason: string) => void) | undefined
+            rc?.('resume-frozen')
+          }
+        }, RECONNECT_STALL_GRACE_MS)
+      }, 0)
+    }
+
+    // Single decision point: pause if any reason applies, otherwise resume.
+    const applyPlayState = () => {
+      const video = videoRef.current
+      if (!video) return
+      if (shouldBePaused()) {
         window.clearTimeout(retryTimer)
         window.clearTimeout(watchTimer)
-        hiddenAtRef.current = Date.now()
-      } else {
-        video.muted = true
-        const hiddenFor = hiddenAtRef.current != null ? Date.now() - hiddenAtRef.current : 0
-        hiddenAtRef.current = null
-
-        const reconnect = (video as any).__heroReconnect as ((reason: string) => void) | undefined
-
-        // A resource error, or a tab hidden long enough that the browser
-        // likely dropped the video's network connection in the background,
-        // needs a full reload — a plain play() retry won't bring frames
-        // back. Otherwise (a quick tab switch) a cheap play() retry is
-        // enough, same as before.
-        if (video.error && reconnect) {
-          reconnect('visibility-resume-error')
-          return
-        }
-        if (hiddenFor >= HIDDEN_FORCE_RECONNECT_MS && reconnect) {
-          reconnect('visibility-resume-long-hidden')
-          return
-        }
-
-        retryTimer = window.setTimeout(() => {
-          const el = videoRef.current
-          if (!el) return
-          // Route through the SAME ready-state machinery the main effect
-          // uses, via the functions it stashed on the element. Calling
-          // el.play() directly here (the old behaviour) could genuinely
-          // resume playback while videoReady stayed stuck at false — the
-          // old code also force-set that to false on hide — leaving the
-          // poster frozen on top of an actually-playing video after a
-          // long backgrounded tab.
-          const attempt = (el as any).__heroAttemptPlay as (() => void) | undefined
-          if (attempt) {
-            attempt()
-          } else {
-            // Effect hasn't (re)mounted its listeners yet — fall back, but
-            // still resolve to the ready state once playback confirms.
-            el.play()
-              .then(() => {
-                const ready = (el as any).__heroMarkReady as (() => void) | undefined
-                if (ready) ready()
-                else setVideoReady(true)
-              })
-              .catch(() => {})
-          }
-
-          // Belt-and-braces: even a "successful" play() can leave the
-          // video frozen (connection dead but no error/stalled event ever
-          // fired). Check shortly after whether currentTime actually moved;
-          // if not, escalate to a full reconnect. The main effect's own
-          // watchdog interval also covers this ongoing, but this check
-          // reacts immediately on resume instead of waiting for the first
-          // watchdog tick.
-          const startTime = el.currentTime
-          watchTimer = window.setTimeout(() => {
-            const el2 = videoRef.current
-            if (!el2 || el2.paused || el2.ended) return
-            if (el2.currentTime === startTime) {
-              const rc = (el2 as any).__heroReconnect as ((reason: string) => void) | undefined
-              rc?.('visibility-resume-frozen')
-            }
-          }, RECONNECT_STALL_GRACE_MS)
-        }, 0)
+        video.pause()
+      } else if (video.paused) {
+        resume()
       }
     }
-    document.addEventListener('visibilitychange', handle)
+
+    // 1) Tab visibility
+    pauseReasons.hidden = document.visibilityState === 'hidden'
+    const onVisibility = () => {
+      pauseReasons.hidden = document.visibilityState === 'hidden'
+      applyPlayState()
+    }
+
+    // 2) Window focus — pauses when the window is covered by another window
+    //    or loses focus, where visibilitychange can lag by many seconds.
+    pauseReasons.blurred = typeof document.hasFocus === 'function' ? !document.hasFocus() : false
+    const onBlur  = () => { pauseReasons.blurred = true;  applyPlayState() }
+    const onFocus = () => { pauseReasons.blurred = false; applyPlayState() }
+
+    // 3) Scroll: pause only once the hero section has NO pixels in view
+    //    (threshold 0 → isIntersecting flips to false exactly when the last
+    //    pixel leaves the viewport), resume as soon as any part returns.
+    pauseReasons.offscreen = false
+    let scrollObserver: IntersectionObserver | null = null
+    const section = sectionRef.current
+    if (section && 'IntersectionObserver' in window) {
+      scrollObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1]
+          if (!entry) return
+          pauseReasons.offscreen = !entry.isIntersecting
+          applyPlayState()
+        },
+        { threshold: 0 }
+      )
+      scrollObserver.observe(section)
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur',  onBlur)
+    window.addEventListener('focus', onFocus)
+    // pagehide/pageshow cover bfcache and some mobile browsers
+    window.addEventListener('pagehide', onBlur)
+    window.addEventListener('pageshow', onFocus)
+
+    // Apply the initial state (e.g. tab opened in the background)
+    applyPlayState()
+
     return () => {
       window.clearTimeout(retryTimer)
       window.clearTimeout(watchTimer)
-      document.removeEventListener('visibilitychange', handle)
+      scrollObserver?.disconnect()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur',  onBlur)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pagehide', onBlur)
+      window.removeEventListener('pageshow', onFocus)
+      pauseReasons.hidden = false
+      pauseReasons.blurred = false
+      pauseReasons.offscreen = false
     }
   }, [skipVideo])
 
