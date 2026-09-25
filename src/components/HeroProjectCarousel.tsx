@@ -172,7 +172,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           ? { href: active.website, target: '_blank', rel: 'noopener noreferrer' }
           : {})}
         aria-label={active.website ? `Besøg ${active.industry}s hjemmeside (åbner i ny fane)` : undefined}
-        className={`mb-3 inline-block max-w-full ${
+        className={`mb-3 inline-block ${
           active.website ? 'cursor-pointer transition-opacity duration-200 hover:opacity-80' : ''
         }`}
       >
@@ -180,8 +180,18 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           <img
             src={active.clientLogoUrl}
             alt=""
+            // maxWidth is intentionally against the VIEWPORT (94vw), not the
+            // hero content column's own (narrow, padded) width: the <a> is
+            // inline-block inside a `max-w-screen-xl px-6` column, which on
+            // a phone is only a few hundred px wide. Capping width to 100%
+            // of THAT column was silently shrinking a wide/landscape logo
+            // back down on mobile even though its computed height (from
+            // logoSize below) was correctly the same proportion as on
+            // desktop — the width cap, not the height calc, was the actual
+            // bottleneck. 94vw leaves a small margin so the logo never
+            // touches the screen edges on very wide logos at small viewports.
             className={measuredLogoHeight == null ? 'h-12 md:h-16 w-auto object-contain' : 'w-auto object-contain'}
-            style={measuredLogoHeight != null ? { height: `${measuredLogoHeight}px`, maxWidth: '100%' } : undefined}
+            style={measuredLogoHeight != null ? { height: `${measuredLogoHeight}px`, maxWidth: '94vw' } : { maxWidth: '94vw' }}
           />
         </AdaptiveShadowBox>
       </a>
