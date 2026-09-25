@@ -47,6 +47,13 @@ export interface HeroProjectItem {
    *  the hero becomes a link that opens this in a new tab. When absent
    *  (older CMS entries), the logo just renders as before, unlinked. */
   website?: string
+  /** Optional — logo size as a percentage (0–100) between two references
+   *  measured live in the hero: 0 = the same height as the "Udvalgt
+   *  projekt" label above it (the logo's original/default size), 100 =
+   *  the same height as the industry heading text below it. Values are
+   *  clamped to 0–100. Omitted or invalid → treated as 0 (original size),
+   *  so older CMS entries without this field render exactly as before. */
+  logoSize?: number
 }
 
 export interface HeroProjectsContent {
@@ -62,7 +69,8 @@ function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
     typeof p.clientLogoUrl === 'string' &&
     typeof p.cloudinaryVideoUrl === 'string' &&
     (p.cloudinaryVideoUrlMobile === undefined || typeof p.cloudinaryVideoUrlMobile === 'string') &&
-    (p.website === undefined || typeof p.website === 'string')
+    (p.website === undefined || typeof p.website === 'string') &&
+    (p.logoSize === undefined || typeof p.logoSize === 'number')
   )
 }
 
