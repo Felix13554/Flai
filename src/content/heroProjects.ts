@@ -47,12 +47,14 @@ export interface HeroProjectItem {
    *  the hero becomes a link that opens this in a new tab. When absent
    *  (older CMS entries), the logo just renders as before, unlinked. */
   website?: string
-  /** Optional — logo size as a percentage (0–100) between two references
-   *  measured live in the hero: 0 = the same height as the "Udvalgt
-   *  projekt" label above it (the logo's original/default size), 100 =
-   *  the same height as the industry heading text below it. Values are
-   *  clamped to 0–100. Omitted or invalid → treated as 0 (original size),
-   *  so older CMS entries without this field render exactly as before. */
+  /** Optional — logo size as a percentage against two references measured
+   *  live in the hero: 0 = the same height as the "Udvalgt projekt" label
+   *  above it (the logo's original/default size), 100 = the same height as
+   *  the industry heading text below it. Not capped at 100 — e.g. 200 =
+   *  double the height of the 100 value, 300 = triple, etc. Only clamped
+   *  at 0 (can't go negative). Omitted or invalid → treated as 0 (original
+   *  size), so older CMS entries without this field render exactly as
+   *  before. */
   logoSize?: number
 }
 
