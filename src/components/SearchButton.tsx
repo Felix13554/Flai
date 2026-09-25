@@ -86,7 +86,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ isMobile = false, atHero = 
       <>
         {quickProducts.length > 0 && (
           <div className="px-2 pt-2 pb-1">
-            <p className="text-xs text-neutral-500 px-2 mb-1 uppercase tracking-wide font-medium"><EditableContent contentKey="search-button-produkter" fallback="Produkter" /></p>
+            <p className="text-xs text-neutral-500 px-2 mb-1 uppercase tracking-wide font-medium"><EditableContent contentKey="search-button-produkter" fallback="Tjenester" /></p>
             {quickProducts.map(p => (
               <button
                 key={p.id}

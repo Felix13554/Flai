@@ -126,7 +126,7 @@ const MeilisearchManager: React.FC = () => {
               <Database size={16} className="text-primary" />
               <EditableContent contentKey="meilisearch-manager-fuld-genindeksering" fallback="Fuld Genindeksering" /></h3>
             <p className="text-sm text-neutral-400">
-              <EditableContent contentKey="meilisearch-manager-synkroniserer-alle-produkter-portfolio-sider" fallback="Synkroniserer alle produkter, portfolio, sider og sideindhold fra Supabase til Meilisearch.
+              <EditableContent contentKey="meilisearch-manager-synkroniserer-alle-produkter-portfolio-sider" fallback="Synkroniserer alle tjenester, projekter, sider og sideindhold fra Supabase til Meilisearch.
               Kør dette efter større dataopdateringer." /></p>
           </div>
           <button
@@ -190,7 +190,7 @@ const MeilisearchManager: React.FC = () => {
       <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700/50 text-sm text-neutral-400">
         <p className="font-medium text-neutral-300 mb-1"><EditableContent contentKey="meilisearch-manager-automatisk-synkronisering" fallback="💡 Automatisk synkronisering" /></p>
         <p>
-          <EditableContent contentKey="meilisearch-manager-produkter-og-portfolio-opdateres-automatisk" fallback="Produkter og portfolio opdateres automatisk i Meilisearch via" />{' '}
+          <EditableContent contentKey="meilisearch-manager-produkter-og-portfolio-opdateres-automatisk" fallback="Tjenester og projekter opdateres automatisk i Meilisearch via" />{' '}
           <code className="text-primary bg-primary/10 px-1 rounded"><EditableContent contentKey="meilisearch-manager-syncproducttomeilisearch" fallback="syncProductToMeilisearch()" /></code> <EditableContent contentKey="meilisearch-manager-og" fallback="og" />{' '}
           <code className="text-primary bg-primary/10 px-1 rounded"><EditableContent contentKey="meilisearch-manager-syncportfolioitemtomeilisearch" fallback="syncPortfolioItemToMeilisearch()" /></code>{' '}
           <EditableContent contentKey="meilisearch-manager-fra" fallback="fra" /><code className="text-primary bg-primary/10 px-1 rounded"><EditableContent contentKey="meilisearch-manager-meilisearchsync-ts" fallback="meilisearchSync.ts" /></code><EditableContent contentKey="meilisearch-manager-brug-fuld-genindeksering-kun-ved" fallback=".

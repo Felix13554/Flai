@@ -522,7 +522,7 @@ const BookingPage: React.FC = () => {
         <div className="text-center py-12 text-error">
           <EditableContent contentKey="booking-product-not-found" as="p" fallback="Produktet blev ikke fundet. Gå tilbage til produktsiden og prøv igen." />
           <button onClick={() => navigate('/products')} className="btn-primary mt-4">
-            <EditableContent contentKey="booking-back-to-products-button" fallback="Tilbage til Produkter" />
+            <EditableContent contentKey="booking-back-to-products-button" fallback="Tilbage til tjenester" />
           </button>
         </div>
       </div>

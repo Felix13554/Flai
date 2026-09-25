@@ -1163,7 +1163,7 @@ const BookingsManager: React.FC = () => {
                   {loadingProducts ? (
                     <div className="flex items-center justify-center p-3 bg-neutral-700 rounded">
                       <Loader size={20} className="animate-spin text-primary mr-2" />
-                      <span className="text-sm text-neutral-400"><EditableContent contentKey="bookings-manager-indlaeser-produkter" fallback="Indlæser produkter..." /></span>
+                      <span className="text-sm text-neutral-400"><EditableContent contentKey="bookings-manager-indlaeser-produkter" fallback="Indlæser tjenester..." /></span>
                     </div>
                   ) : (
                     <select
@@ -1196,7 +1196,7 @@ const BookingsManager: React.FC = () => {
                     </select>
                   )}
                   {products.length === 0 && !loadingProducts && (
-                    <p className="text-xs text-warning mt-1"><EditableContent contentKey="bookings-manager-ingen-produkter-fundet" fallback="Ingen produkter fundet" /></p>
+                    <p className="text-xs text-warning mt-1"><EditableContent contentKey="bookings-manager-ingen-produkter-fundet" fallback="Ingen tjenester fundet" /></p>
                   )}
                 </div>
 

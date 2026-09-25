@@ -735,7 +735,7 @@ const ProductsManager: React.FC = () => {
       {products.length === 0 && (
         <div className="text-center py-12 text-neutral-400">
           <Package size={48} className="mx-auto mb-4 opacity-50" />
-          <EditableContent contentKey="admin-products-no-products" as="p" fallback="Ingen produkter fundet. Tilføj det første produkt for at komme i gang." />
+          <EditableContent contentKey="admin-products-no-products" as="p" fallback="Ingen tjenester fundet. Tilføj det første produkt for at komme i gang." />
         </div>
       )}
 

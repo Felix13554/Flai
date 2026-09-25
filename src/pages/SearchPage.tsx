@@ -306,7 +306,7 @@ const SearchPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <Package size={18} className="text-primary" />
                       <h2 className="text-lg font-semibold">
-                        <EditableContent contentKey="search-page-produkter" fallback="Produkter" /><span className="text-neutral-500 text-sm font-normal">({products.length})</span>
+                        <EditableContent contentKey="search-page-produkter" fallback="Tjenester" /><span className="text-neutral-500 text-sm font-normal">({products.length})</span>
                       </h2>
                     </div>
                     {tab === 'all' && products.length > 3 && (
