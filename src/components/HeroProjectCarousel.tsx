@@ -69,19 +69,18 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   const [headingLineHeight, setHeadingLineHeight] = useState(0)
 
   useEffect(() => {
-    const labelEl = labelRef.current
-    const headingEl = headingRef.current
-    if (!labelEl || !headingEl) return
+    const labelWrapper = labelRef.current
+    const headingWrapper = headingRef.current
+    if (!labelWrapper || !headingWrapper) return
+
+    // Read (and observe) the element that actually carries the Tailwind
+    // text classes (the AdaptiveShadowBox div, the wrapper's only child) —
+    // the plain wrapper div itself has no font-size/line-height of its own.
+    const labelEl = (labelWrapper.firstElementChild as HTMLElement | null) ?? labelWrapper
+    const headingEl = (headingWrapper.firstElementChild as HTMLElement | null) ?? headingWrapper
 
     const readLineHeight = (el: HTMLElement) => {
-      // Read computed style off the element that actually carries the
-      // Tailwind text classes (the AdaptiveShadowBox div, el's only child)
-      // rather than off the plain wrapper div itself — the wrapper has no
-      // font-size/line-height of its own, so reading it directly was
-      // returning the browser default (~16px 'normal') for every project,
-      // which is why every logoSize value produced the same tiny result.
-      const target = (el.firstElementChild as HTMLElement | null) ?? el
-      const computed = window.getComputedStyle(target)
+      const computed = window.getComputedStyle(el)
       const parsed = parseFloat(computed.lineHeight)
       // 'normal' (unparseable) falls back to the element's own font-size ×
       // 1.2, the browser default ratio for 'normal' line-height.
@@ -96,10 +95,13 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
     }
     measure()
 
-    // Font-size (hence line-height) only changes on breakpoint changes, not
-    // on content changes — but ResizeObserver on these text nodes fires
-    // whenever their box resizes, which covers breakpoint/zoom changes
-    // without depending on window resize events.
+    // Observing the TEXT elements themselves (not the outer wrapper) is
+    // what makes this correctly re-measure across the md: breakpoint: the
+    // wrapper's own box doesn't necessarily change size when only the
+    // child's font-size changes (e.g. text-sm→text-base keeps the same
+    // single-line box height in some cases), so a ResizeObserver on the
+    // wrapper could miss a breakpoint change entirely — which was why the
+    // logo matched the desktop size but never updated on mobile/resize.
     const ro = new ResizeObserver(measure)
     ro.observe(labelEl)
     ro.observe(headingEl)
