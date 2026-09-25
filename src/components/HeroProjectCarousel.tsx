@@ -46,6 +46,45 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   const items = data.content
   const active = items[activeIndex]
 
+  // ── Logo size (content-key driven) ────────────────────────────────────
+  // `active.logoSize` (0–100) interpolates the logo's height between two
+  // *live-measured* references so it always tracks the current responsive
+  // breakpoint instead of a hardcoded px value:
+  //   0   → the "Udvalgt projekt" label's own height (logo's original size)
+  //   100 → the industry heading's own height (its current text size)
+  // Measuring both refs (rather than hardcoding e.g. text-sm/text-5xl line
+  // heights) keeps this correct automatically if either element's classes
+  // ever change.
+  const labelRef = useRef<HTMLDivElement>(null)
+  const headingRef = useRef<HTMLDivElement>(null)
+  const [labelHeight, setLabelHeight] = useState(0)
+  const [headingHeight, setHeadingHeight] = useState(0)
+
+  useEffect(() => {
+    const labelEl = labelRef.current
+    const headingEl = headingRef.current
+    if (!labelEl || !headingEl) return
+
+    const measure = () => {
+      setLabelHeight(labelEl.getBoundingClientRect().height)
+      setHeadingHeight(headingEl.getBoundingClientRect().height)
+    }
+    measure()
+
+    const ro = new ResizeObserver(measure)
+    ro.observe(labelEl)
+    ro.observe(headingEl)
+    return () => ro.disconnect()
+  }, [active.industry])
+
+  const rawLogoSize = active.logoSize
+  const logoSizePct = Math.min(Math.max(typeof rawLogoSize === 'number' && !Number.isNaN(rawLogoSize) ? rawLogoSize : 0, 0), 100)
+  const logoSizeFraction = logoSizePct / 100
+  const measuredLogoHeight =
+    labelHeight > 0 && headingHeight > 0
+      ? labelHeight + (headingHeight - labelHeight) * logoSizeFraction
+      : null
+
   // ── Auto-advance ────────────────────────────────────────────────────────
   // Runs alongside manual tab clicks (both are supported, per the task's
   // open question) — a click just jumps the index and the timer below
@@ -74,23 +113,35 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
 
   return (
     <div className="flex flex-col items-start w-full max-w-screen-xl mx-auto px-6 pb-8 md:pb-12">
-      {/* small category-style label */}
-      <AdaptiveShadowBox kind="text" className="text-sm md:text-base font-medium tracking-wide uppercase text-neutral-200 mb-3">
-        Udvalgt projekt
-      </AdaptiveShadowBox>
+      {/* small category-style label — also the "0%" size reference for the
+          logo below. AdaptiveShadowBox doesn't forward refs (it uses its
+          own internal ref for shadow sampling), so it's wrapped in a plain
+          div that owns labelRef purely for measuring height — doesn't
+          affect layout or the shadow effect. */}
+      <div ref={labelRef}>
+        <AdaptiveShadowBox
+          kind="text"
+          className="text-sm md:text-base font-medium tracking-wide uppercase text-neutral-200 mb-3"
+        >
+          Udvalgt projekt
+        </AdaptiveShadowBox>
+      </div>
 
-      {/* client logo, replacing a client-name heading — sized a bit larger
-          than the industry heading below it (h-12/16 vs the heading's
-          text-3xl/5xl) so it reads as the visually dominant element. Wrapped
-          in a plain <a> only when the project has a "website" in its CMS
-          entry: no href means no pointer cursor / no link semantics, so
-          older entries without a website keep behaving exactly as before. */}
+      {/* client logo, replacing a client-name heading. Height is driven by
+          the CMS "logoSize" field (0–100), interpolated live between the
+          label above (0%) and the industry heading below (100%) — see the
+          measuredLogoHeight calculation above. Until both are measured
+          (first paint) it falls back to the original fixed h-12/h-16 sizing
+          so there's no flash of an unsized logo. Wrapped in a plain <a>
+          only when the project has a "website" in its CMS entry: no href
+          means no pointer cursor / no link semantics, so older entries
+          without a website keep behaving exactly as before. */}
       <a
         {...(active.website
           ? { href: active.website, target: '_blank', rel: 'noopener noreferrer' }
           : {})}
         aria-label={active.website ? `Besøg ${active.industry}s hjemmeside (åbner i ny fane)` : undefined}
-        className={`mb-3 inline-block max-w-[240px] md:max-w-[320px] ${
+        className={`mb-3 inline-block max-w-full ${
           active.website ? 'cursor-pointer transition-opacity duration-200 hover:opacity-80' : ''
         }`}
       >
@@ -98,19 +149,24 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           <img
             src={active.clientLogoUrl}
             alt=""
-            className="h-12 md:h-16 w-auto object-contain"
+            className={measuredLogoHeight == null ? 'h-12 md:h-16 w-auto object-contain' : 'w-auto object-contain'}
+            style={measuredLogoHeight != null ? { height: `${measuredLogoHeight}px`, maxWidth: '100%' } : undefined}
           />
         </AdaptiveShadowBox>
       </a>
 
-      {/* big heading — the client's industry */}
-      <AdaptiveShadowBox
-        kind="text"
-        as="div"
-        className="text-3xl md:text-5xl font-bold text-white mb-8 md:mb-10 leading-tight"
-      >
-        {active.industry}
-      </AdaptiveShadowBox>
+      {/* big heading — the client's industry — also the "100%" size
+          reference for the logo above (see labelRef note on why this is a
+          plain wrapping div rather than a ref on AdaptiveShadowBox itself) */}
+      <div ref={headingRef}>
+        <AdaptiveShadowBox
+          kind="text"
+          as="div"
+          className="text-3xl md:text-5xl font-bold text-white mb-8 md:mb-10 leading-tight"
+        >
+          {active.industry}
+        </AdaptiveShadowBox>
+      </div>
 
       {/* numbered project tabs — every number stays fully white/opaque
           regardless of active state (no grey/dim treatment for the
