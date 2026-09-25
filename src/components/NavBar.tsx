@@ -341,23 +341,23 @@ const NavBar: React.FC = () => {
                 {isAdmin && (
                   <Link to="/admin" className="flex items-center text-white hover:text-neutral-300 transition-colors py-2" onClick={() => setIsMenuOpen(false)}>
                     <User size={18} className="mr-3 text-neutral-400" />
-                    <span className="font-medium"><EditableContent contentKey="nav-bar-admin-panel" fallback="Admin Panel" /></span>
+                    <span className="font-medium"><EditableContent contentKey="nav-bar-admin-panel-2" fallback="Admin Panel" /></span>
                   </Link>
                 )}
                 {isAdmin && (
                   <Link to="/finance" className="flex items-center text-white hover:text-neutral-300 transition-colors py-2" onClick={() => setIsMenuOpen(false)}>
                     <TrendingUp size={18} className="mr-3 text-neutral-400" />
-                    <span className="font-medium"><EditableContent contentKey="nav-bar-oekonomi" fallback="Økonomi" /></span>
+                    <span className="font-medium"><EditableContent contentKey="nav-bar-oekonomi-2" fallback="Økonomi" /></span>
                   </Link>
                 )}
                 <Link to="/profile" className="flex items-center text-white hover:text-neutral-300 transition-colors py-2" onClick={() => setIsMenuOpen(false)}>
                   <User size={18} className="mr-3 text-neutral-400" />
-                  <span className="font-medium"><EditableContent contentKey="nav-bar-min-profil" fallback="Min Profil" /></span>
+                  <span className="font-medium"><EditableContent contentKey="nav-bar-min-profil-2" fallback="Min Profil" /></span>
                 </Link>
                 <Link to="/buy-credits" className="flex items-center justify-between text-white hover:text-neutral-300 transition-colors py-2" onClick={() => setIsMenuOpen(false)}>
                   <div className="flex items-center">
                     <Coins size={18} className="mr-3 text-neutral-400" />
-                    <span className="font-medium"><EditableContent contentKey="nav-bar-koeb-credits" fallback="Køb Credits" /></span>
+                    <span className="font-medium"><EditableContent contentKey="nav-bar-koeb-credits-2" fallback="Køb Credits" /></span>
                   </div>
                   {credits > 0 && (
                     <div className="flex items-center bg-primary/20 px-2.5 py-1 rounded-full">
@@ -378,7 +378,7 @@ const NavBar: React.FC = () => {
                   className="flex items-center text-red-400 hover:text-red-300 transition-colors w-full"
                 >
                   <LogOut size={18} className="mr-3" />
-                  <span className="font-medium"><EditableContent contentKey="nav-bar-log-ud" fallback="Log ud" /></span>
+                  <span className="font-medium"><EditableContent contentKey="nav-bar-log-ud-2" fallback="Log ud" /></span>
                 </button>
               </div>
             </div>
@@ -386,17 +386,17 @@ const NavBar: React.FC = () => {
           
           {/* Navigation Links */}
           <div className="flex flex-col space-y-4">
-            <Link to="/" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-hjem" fallback="Hjem" /></Link>
-            <Link to="/products" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-tjenester" fallback="Vores tjenester" /></Link>
-            <Link to="/portfolio" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-arbejde" fallback="Vores arbejde" /></Link>
-            <Link to="/coverage" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vi-daekker" fallback="Vi dækker" /></Link>
+            <Link to="/" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-hjem-2" fallback="Hjem" /></Link>
+            <Link to="/products" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-tjenester-2" fallback="Tjenester" /></Link>
+            <Link to="/portfolio" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vores-arbejde-2" fallback="Projekter" /></Link>
+            <Link to="/coverage" className="text-lg font-medium text-white py-2" onClick={() => setIsMenuOpen(false)}><EditableContent contentKey="nav-bar-vi-daekker-2" fallback="Dækningsområder" /></Link>
             
             {/* Contact button for mobile */}
             <button 
               onClick={scrollToFooter}
               className="text-lg font-medium text-white flex items-center py-2"
             >
-              <EditableContent contentKey="nav-bar-kontakt" fallback="Kontakt" />
+              <EditableContent contentKey="nav-bar-kontakt-2" fallback="Kontakt" />
               <ArrowDown size={18} className="ml-2" />
             </button>
             
@@ -410,7 +410,7 @@ const NavBar: React.FC = () => {
                   className="text-lg font-medium text-white py-3 px-4 border border-white rounded-lg hover:bg-white hover:text-neutral-900 transition-colors text-center"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  <EditableContent contentKey="nav-bar-log-ind" fallback="Log ind" />
+                  <EditableContent contentKey="nav-bar-log-ind-2" fallback="Log ind" />
                 </Link>
               </>
             )}
