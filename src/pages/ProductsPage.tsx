@@ -93,7 +93,7 @@ const ProductsPage: React.FC = () => {
             <Camera size={48} className="text-primary mx-auto mb-4" />
             <h2 className="text-2xl font-semibold mb-2"><EditableContent contentKey="products-page-ingen-produkter-fundet" fallback="Ingen produkter fundet" /></h2>
             <p className="text-neutral-300 mb-6">
-              <EditableContent contentKey="products-page-der-er-i-oejeblikket-ingen" fallback="Der er i øjeblikket ingen produkter tilgængelige i denne kategori." />
+              <EditableContent contentKey="products-page-der-er-i-oejeblikket-ingen" fallback="Der er i øjeblikket ingen tjenester tilgængelige i denne kategori." />
             </p>
             <button
               onClick={() => setActiveCategory('all')}

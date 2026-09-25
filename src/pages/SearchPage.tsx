@@ -252,7 +252,7 @@ const SearchPage: React.FC = () => {
                 <Search size={28} className="text-neutral-500" />
               </div>
               <h2 className="text-xl font-semibold mb-2"><EditableContent contentKey="search-page-soeg-efter-indhold" fallback="Søg efter indhold" /></h2>
-              <p className="text-neutral-400 max-w-sm mx-auto"><EditableContent contentKey="search-page-find-produkter-og-portfolio-forstaar" fallback="Find produkter og portfolio — forstår synonymer og stavefejl." /></p>
+              <p className="text-neutral-400 max-w-sm mx-auto"><EditableContent contentKey="search-page-find-produkter-og-portfolio-forstaar" fallback="Find tjenester og projekter — forstår synonymer og stavefejl." /></p>
             </div>
           )}
 
