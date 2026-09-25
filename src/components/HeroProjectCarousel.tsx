@@ -74,7 +74,14 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
     if (!labelEl || !headingEl) return
 
     const readLineHeight = (el: HTMLElement) => {
-      const computed = window.getComputedStyle(el)
+      // Read computed style off the element that actually carries the
+      // Tailwind text classes (the AdaptiveShadowBox div, el's only child)
+      // rather than off the plain wrapper div itself — the wrapper has no
+      // font-size/line-height of its own, so reading it directly was
+      // returning the browser default (~16px 'normal') for every project,
+      // which is why every logoSize value produced the same tiny result.
+      const target = (el.firstElementChild as HTMLElement | null) ?? el
+      const computed = window.getComputedStyle(target)
       const parsed = parseFloat(computed.lineHeight)
       // 'normal' (unparseable) falls back to the element's own font-size ×
       // 1.2, the browser default ratio for 'normal' line-height.
