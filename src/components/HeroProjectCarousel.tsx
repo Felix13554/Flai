@@ -47,42 +47,64 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   const active = items[activeIndex]
 
   // ── Logo size (content-key driven) ────────────────────────────────────
-  // `active.logoSize` (0–100) interpolates the logo's height between two
-  // *live-measured* references so it always tracks the current responsive
-  // breakpoint instead of a hardcoded px value:
-  //   0   → the "Udvalgt projekt" label's own height (logo's original size)
-  //   100 → the industry heading's own height (its current text size)
-  // Measuring both refs (rather than hardcoding e.g. text-sm/text-5xl line
-  // heights) keeps this correct automatically if either element's classes
-  // ever change.
+  // `active.logoSize` interpolates (and extrapolates past 100) the logo's
+  // height against two *live-measured* references so it always tracks the
+  // current responsive breakpoint instead of a hardcoded px value:
+  //   0   → the "Udvalgt projekt" label's own single-line text height
+  //   100 → the industry heading's own single-line text height
+  //   200 → double the 100-value's height, 300 → triple, etc. — values
+  //         above 100 are NOT capped, so the logo can be made larger than
+  //         the heading (only clamped at 0 so it can't go negative/invert).
+  // Both references are read via getComputedStyle(...).lineHeight rather
+  // than getBoundingClientRect().height: the heading wraps to 2 lines for
+  // longer industry names (e.g. "Safari og rundrejser"), which would
+  // roughly double its *box* height and make the same logoSize value
+  // render a much bigger logo on that project than on a one-line one.
+  // lineHeight is the per-line text height regardless of how many lines
+  // the box actually wraps to, so the 100% reference stays consistent
+  // across every project at a given breakpoint.
   const labelRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLDivElement>(null)
-  const [labelHeight, setLabelHeight] = useState(0)
-  const [headingHeight, setHeadingHeight] = useState(0)
+  const [labelLineHeight, setLabelLineHeight] = useState(0)
+  const [headingLineHeight, setHeadingLineHeight] = useState(0)
 
   useEffect(() => {
     const labelEl = labelRef.current
     const headingEl = headingRef.current
     if (!labelEl || !headingEl) return
 
+    const readLineHeight = (el: HTMLElement) => {
+      const computed = window.getComputedStyle(el)
+      const parsed = parseFloat(computed.lineHeight)
+      // 'normal' (unparseable) falls back to the element's own font-size ×
+      // 1.2, the browser default ratio for 'normal' line-height.
+      if (!Number.isNaN(parsed)) return parsed
+      const fontSize = parseFloat(computed.fontSize)
+      return Number.isNaN(fontSize) ? 0 : fontSize * 1.2
+    }
+
     const measure = () => {
-      setLabelHeight(labelEl.getBoundingClientRect().height)
-      setHeadingHeight(headingEl.getBoundingClientRect().height)
+      setLabelLineHeight(readLineHeight(labelEl))
+      setHeadingLineHeight(readLineHeight(headingEl))
     }
     measure()
 
+    // Font-size (hence line-height) only changes on breakpoint changes, not
+    // on content changes — but ResizeObserver on these text nodes fires
+    // whenever their box resizes, which covers breakpoint/zoom changes
+    // without depending on window resize events.
     const ro = new ResizeObserver(measure)
     ro.observe(labelEl)
     ro.observe(headingEl)
     return () => ro.disconnect()
-  }, [active.industry])
+  }, [])
 
   const rawLogoSize = active.logoSize
-  const logoSizePct = Math.min(Math.max(typeof rawLogoSize === 'number' && !Number.isNaN(rawLogoSize) ? rawLogoSize : 0, 0), 100)
+  const logoSizePct = Math.max(typeof rawLogoSize === 'number' && !Number.isNaN(rawLogoSize) ? rawLogoSize : 0, 0)
   const logoSizeFraction = logoSizePct / 100
   const measuredLogoHeight =
-    labelHeight > 0 && headingHeight > 0
-      ? labelHeight + (headingHeight - labelHeight) * logoSizeFraction
+    labelLineHeight > 0 && headingLineHeight > 0
+      ? labelLineHeight + (headingLineHeight - labelLineHeight) * logoSizeFraction
       : null
 
   // ── Auto-advance ────────────────────────────────────────────────────────
