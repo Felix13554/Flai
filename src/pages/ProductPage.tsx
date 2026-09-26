@@ -402,49 +402,6 @@ const ProductPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Features */}
-              <div>
-                <EditableContent
-                  contentKey="product-page-features-title"
-                  as="h2"
-                  className="text-xl font-semibold mb-3"
-                  fallback="Hvad får du"
-                />
-                <ul className="space-y-2 text-neutral-300">
-                  {product.category === 'video' ? (
-                    <>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-video-feature-1" fallback="4K videooptagelse" />
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-video-feature-2" fallback="Stabiliseret optagelse med gimbal" />
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-video-feature-3" fallback="Levering inden for 5-7 dage" />
-                      </li>
-                    </>
-                  ) : (
-                    <>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-photo-feature-1" fallback="Højopløselige 12MP billeder" />
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-photo-feature-2" fallback="Valgfrit antal billeder" />
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-primary rounded-full mr-3"></span>
-                        <EditableContent contentKey="product-page-photo-feature-3" fallback="Farvekorrigering" />
-                      </li>
-                    </>
-                  )}
-                </ul>
-              </div>
-
               {/* Editing — informational only; there is no extra-cost editing option to choose */}
               {product.category === 'video' && product.is_editing_included && (
                 <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
