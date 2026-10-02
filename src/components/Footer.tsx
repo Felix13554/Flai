@@ -126,9 +126,9 @@ const Footer: React.FC = () => {
               <EditableContent contentKey="footer-links-heading" as="h4" className="text-sm font-semibold mb-2" fallback="Hurtige links" />
               <ul className="space-y-1 text-white/90 text-sm">
                 <li><Link to="/" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-home" fallback="Hjem" /></Link></li>
-                <li><Link to="/products" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-products" fallback="Vores tjenester" /></Link></li>
-                <li><Link to="/portfolio" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-portfolio" fallback="Vores arbejde" /></Link></li>
-                <li><Link to="/coverage" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-coverage" fallback="Vi dækker" /></Link></li>
+                <li><Link to="/products" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-products" fallback="Tjenester" /></Link></li>
+                <li><Link to="/portfolio" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-portfolio" fallback="Projekter" /></Link></li>
+                <li><Link to="/coverage" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-coverage" fallback="Dækningsområder" /></Link></li>
                 <li><Link to="/merch" className="hover:text-white transition-colors"><EditableContent contentKey="footer-link-merch" fallback="Merchandise" /></Link></li>
 
               </ul>
