@@ -461,7 +461,7 @@ const CoverageAreasPage: React.FC = () => {
                   contentKey="coverage-cities-title"
                   as="h3"
                   className="text-sm uppercase tracking-wider text-neutral-500 font-semibold"
-                  fallback="Vi dækker"
+                  fallback="Jeg dækker"
                 />
               </div>
               <div className="bg-neutral-800 border border-neutral-700 p-6 rounded-xl">

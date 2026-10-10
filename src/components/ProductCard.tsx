@@ -250,7 +250,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             <span className="text-xs opacity-80 font-normal">
               <EditableContent
                 contentKey="product-card-vi-vaelger-dato-og-tid"
-                fallback="Vi vælger dato og tid efter lysforholdende"
+                fallback="Jeg vælger dato og tid efter lysforholdende"
               />
             </span>
           </button>
