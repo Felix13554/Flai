@@ -27,7 +27,7 @@ const ProductsPage: React.FC = () => {
   return (
     <div className="pt-20 pb-16">
       <SEO
-        title={getContent('services-title', "Vores Tjenester")}
+        title={getContent('services-title', "Tjenester")}
         description="Se alle vores dronepakker – luftfoto, dronefilmning og redigering. Bestil dronefotografering til ejendomme, events og erhverv i hele Danmark."
         canonical="/products"
       />
