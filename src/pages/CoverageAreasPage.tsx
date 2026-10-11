@@ -524,7 +524,7 @@ const CoverageAreasPage: React.FC = () => {
               contentKey="coverage-zones-title"
               as="h2"
               className="text-xl font-semibold mb-4"
-              fallback="Aktive Dækningsområder"
+              fallback="Dækningsområder"
             />
             {addressZones.length === 0 ? (
               <EditableContent
