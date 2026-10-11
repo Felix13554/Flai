@@ -331,7 +331,7 @@ const PortfolioPage: React.FC = () => {
             contentKey="portfolio-page-subtitle"
             as="p"
             className="text-center text-lg text-neutral-300 max-w-2xl mx-auto"
-            fallback="Udforsk mine seneste projekter."
+            fallback="Udforsk mine projekter."
           />
         </div>
       </div>
