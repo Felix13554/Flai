@@ -315,7 +315,7 @@ const PortfolioPage: React.FC = () => {
   return (
     <div className="pt-20 pb-16">
       <SEO
-        title={getContent('portfolio-page-title', "Vores arbejde")}
+        title={getContent('portfolio-page-title', "Projekter")}
         description="Se eksempler på vores dronefotografering og dronefilmning. Flai leverer professionelle luftoptagelser i hele Danmark."
         canonical="/portfolio"
       />
