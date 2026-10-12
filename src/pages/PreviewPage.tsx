@@ -16,6 +16,13 @@
  * exactly this (robust across desktop, mobile, and in-app browsers) and
  * needs no backend involvement at all — it's a plain iframe.
  *
+ * CLOUDINARY ALTERNATIVE: when the link's `youtube_id` column holds a
+ * `cloudinary:PUBLIC_ID` value (set from Admin → Preview Links by pasting a
+ * Cloudinary link), the video plays through <CloudinaryVideoPlayer> instead —
+ * the exact same MP4/poster delivery as the homepage hero, but without
+ * autoplay. No schema change: the existing nullable `youtube_id` column is
+ * reused, and a bare YouTube ID continues to render the YouTube iframe.
+ *
  * The video is sized dynamically (in JS, not pure CSS) so it always fits
  * the viewport that's actually left over below the fixed NavBar: it scales
  * to the available width, unless that would make it taller than the
@@ -39,6 +46,8 @@ import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
 import SEO from '../components/SEO';
 import NavBar from '../components/NavBar';
+import CloudinaryVideoPlayer from '../components/CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 import {
   Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
@@ -334,13 +343,23 @@ const PreviewPage: React.FC = () => {
               maxHeight: `calc(100vh - ${TOP_OFFSET + BOTTOM_OFFSET}px)`,
             }}
           >
-            <iframe
-              src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
-              className="w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              title={link.title}
-            />
+            {isCloudinaryMedia(link.youtube_id) ? (
+              <CloudinaryVideoPlayer
+                publicId={getCloudinaryMediaId(link.youtube_id)}
+                title={link.title}
+                fill
+                objectFit="contain"
+                rounded={false}
+              />
+            ) : (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${link.youtube_id}`}
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                title={link.title}
+              />
+            )}
           </div>
         </div>
       )}
