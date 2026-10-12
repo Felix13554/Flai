@@ -1,3 +1,5 @@
+import CloudinaryVideoPlayer from '../components/CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { Search, Package, Image, FileText, ArrowRight, Filter, X, ChevronDown, SortAsc } from 'lucide-react';
@@ -87,6 +89,9 @@ const SearchPage: React.FC = () => {
   ];
 
   const renderMedia = (url: string, title: string) => {
+    if (isCloudinaryMedia(url)) {
+      return <CloudinaryVideoPlayer publicId={getCloudinaryMediaId(url)} title={title} className="!rounded-b-none !rounded-t-xl" />;
+    }
     if (url?.startsWith('youtube:')) {
       return (
         <div className="relative w-full aspect-video">
