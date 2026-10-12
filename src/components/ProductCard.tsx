@@ -5,6 +5,8 @@ import { Product } from '../types';
 import { SkeletonLoader, SkeletonText, SkeletonButton } from './SkeletonLoader';
 import EditableContent from './EditableContent';
 import PanoramaViewer from './PanoramaViewer';
+import CloudinaryVideoPlayer from './CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 
 interface ProductCardSkeletonProps {
   className?: string;
@@ -67,11 +69,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const currentImage       = product.images[currentImageIndex];
   const isCurrentYoutube   = currentImage?.startsWith('youtube:');
   const isCurrentPanorama  = currentImage?.startsWith('panorama:');
+  const isCurrentCloudinary = isCloudinaryMedia(currentImage);
   const hasMultipleImages  = product.images.length > 1;
 
   // Touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isCurrentYoutube || isCurrentPanorama) return;
+    if (isCurrentYoutube || isCurrentCloudinary || isCurrentPanorama) return;
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     isSwiping.current = false;
@@ -79,7 +82,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null) return;
-    if (isCurrentYoutube || isCurrentPanorama || !hasMultipleImages) return;
+    if (isCurrentYoutube || isCurrentCloudinary || isCurrentPanorama || !hasMultipleImages) return;
     const deltaX = e.touches[0].clientX - touchStartX.current;
     const deltaY = e.touches[0].clientY - touchStartY.current;
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
@@ -89,7 +92,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null) return;
-    if (isCurrentYoutube || isCurrentPanorama || !hasMultipleImages) return;
+    if (isCurrentYoutube || isCurrentCloudinary || isCurrentPanorama || !hasMultipleImages) return;
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) >= SWIPE_THRESHOLD) {
@@ -146,6 +149,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     }
 
     // ── Regular image ──────────────────────────────────────────────────────────
+    // Cloudinary video (same delivery method as the hero, no autoplay)
+    if (isCurrentCloudinary) {
+      return (
+        <CloudinaryVideoPlayer
+          publicId={getCloudinaryMediaId(currentImage)}
+          title={product.name}
+        />
+      );
+    }
+
     return (
       <div className="w-full aspect-video overflow-hidden">
         <img
