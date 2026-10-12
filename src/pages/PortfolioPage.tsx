@@ -6,6 +6,8 @@ import { useData } from '../contexts/DataContext';
 import { SkeletonLoader } from '../components/SkeletonLoader';
 import { supabase } from '../utils/supabase';
 import PanoramaViewer from '../components/PanoramaViewer';
+import CloudinaryVideoPlayer, { CloudinaryVideoThumb } from '../components/CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 
 // Portfolio-specific skeleton that matches actual portfolio card dimensions
 const PortfolioCardSkeleton: React.FC = () => (
@@ -80,9 +82,10 @@ const PortfolioPage: React.FC = () => {
 
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
-  const getMediaType = (url: string): 'panorama' | 'youtube' | 'image' => {
+  const getMediaType = (url: string): 'panorama' | 'youtube' | 'cloudinary' | 'image' => {
     if (url.startsWith('panorama:')) return 'panorama';
     if (url.startsWith('youtube:'))  return 'youtube';
+    if (isCloudinaryMedia(url))      return 'cloudinary';
     return 'image';
   };
 
@@ -125,6 +128,15 @@ const PortfolioPage: React.FC = () => {
             allowFullScreen
           />
         </div>
+      );
+    }
+
+    if (mediaType === 'cloudinary') {
+      return (
+        <CloudinaryVideoPlayer
+          publicId={getCloudinaryMediaId(image.image_url)}
+          title={image.title}
+        />
       );
     }
 
@@ -190,6 +202,9 @@ const PortfolioPage: React.FC = () => {
           </svg>
         </div>
       );
+    }
+    if (isCloudinaryMedia(imageUrl)) {
+      return <CloudinaryVideoThumb publicId={getCloudinaryMediaId(imageUrl)} className={className} iconSize={28} />;
     }
     return <img src={imageUrl} alt="" className={`w-full h-full object-cover ${className}`} />;
   };
