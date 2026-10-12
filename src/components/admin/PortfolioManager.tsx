@@ -5,6 +5,8 @@ import { useData } from '../../contexts/DataContext';
 import ImageUpload from '../ImageUpload';
 import EditableContent from '../EditableContent';
 import PanoramaViewer from '../PanoramaViewer';
+import CloudinaryVideoPlayer, { CloudinaryVideoThumb } from '../CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../../utils/cloudinaryMedia';
 import toast from 'react-hot-toast';
 
 const PortfolioManager: React.FC = () => {
@@ -341,7 +343,7 @@ const PortfolioManager: React.FC = () => {
 
   /**
    * Renders the correct media for a portfolio image.
-   * Handles panorama:, youtube:, and regular image URLs.
+   * Handles panorama:, youtube:, cloudinary:, and regular image URLs.
    * For panoramas in the admin grid we show a compact static thumbnail
    * (not the full interactive viewer) to keep the list performant.
    * Pass `interactive=true` when you want the full Pannellum viewer.
@@ -406,6 +408,16 @@ const PortfolioManager: React.FC = () => {
       );
     }
 
+    // ── Cloudinary video ──────────────────────────────────────────────────────
+    if (isCloudinaryMedia(url)) {
+      return (
+        <CloudinaryVideoPlayer
+          publicId={getCloudinaryMediaId(url)}
+          title={image.title}
+        />
+      );
+    }
+
     // ── Regular image ─────────────────────────────────────────────────────────
     return (
       <img
@@ -431,6 +443,10 @@ const PortfolioManager: React.FC = () => {
                 <svg className="w-6 h-6 text-primary/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <circle cx="12" cy="12" r="10" /><ellipse cx="12" cy="12" rx="5" ry="10" /><path d="M2 12h20" />
                 </svg>
+              </div>
+            ) : isCloudinaryMedia(img.image_url) ? (
+              <div className="w-16 h-16 rounded flex-shrink-0 overflow-hidden">
+                <CloudinaryVideoThumb publicId={getCloudinaryMediaId(img.image_url)} iconSize={14} />
               </div>
             ) : (
               <img src={img.image_url} alt="" className="w-16 h-16 object-cover rounded flex-shrink-0" />
@@ -518,6 +534,7 @@ const PortfolioManager: React.FC = () => {
               bucket="portfolio"
               allowMultiple
               allow360
+              allowCloudinaryVideo
             />
           </div>
           {renderBundleImageList(newBundle.images, 'new')}
@@ -566,6 +583,10 @@ const PortfolioManager: React.FC = () => {
                         <circle cx="12" cy="12" r="10" /><ellipse cx="12" cy="12" rx="5" ry="10" /><path d="M2 12h20" />
                       </svg>
                     </div>
+                  ) : isCloudinaryMedia(image.image_url) ? (
+                    <div className="w-full h-32">
+                      <CloudinaryVideoThumb publicId={getCloudinaryMediaId(image.image_url)} />
+                    </div>
                   ) : (
                     <img src={image.image_url} alt={image.title} className="w-full h-32 object-cover" />
                   )}
@@ -608,6 +629,7 @@ const PortfolioManager: React.FC = () => {
               bucket="portfolio"
               allowMultiple
               allow360
+              allowCloudinaryVideo
             />
           </div>
           {renderBundleImageList(addToBundle.images, 'addTo')}
@@ -646,6 +668,7 @@ const PortfolioManager: React.FC = () => {
               currentImageUrl={newImage.image_url || null}
               bucket="portfolio"
               allow360
+              allowCloudinaryVideo
             />
           </div>
           <div>
@@ -725,6 +748,8 @@ const PortfolioManager: React.FC = () => {
                               <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
                                 <svg className="w-8 h-8 text-primary/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><ellipse cx="12" cy="12" rx="5" ry="10" /><path d="M2 12h20" /></svg>
                               </div>
+                            ) : isCloudinaryMedia(bundleImages[2].image_url) ? (
+                              <CloudinaryVideoThumb publicId={getCloudinaryMediaId(bundleImages[2].image_url)} />
                             ) : (
                               <img src={bundleImages[2].image_url} alt="" className="w-full h-full object-cover" />
                             )}
@@ -737,6 +762,8 @@ const PortfolioManager: React.FC = () => {
                               <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
                                 <svg className="w-8 h-8 text-primary/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><ellipse cx="12" cy="12" rx="5" ry="10" /><path d="M2 12h20" /></svg>
                               </div>
+                            ) : isCloudinaryMedia(bundleImages[1].image_url) ? (
+                              <CloudinaryVideoThumb publicId={getCloudinaryMediaId(bundleImages[1].image_url)} />
                             ) : (
                               <img src={bundleImages[1].image_url} alt="" className="w-full h-full object-cover" />
                             )}
@@ -863,6 +890,7 @@ const PortfolioManager: React.FC = () => {
                                     currentImageUrl={editingImage.image_url}
                                     bucket="portfolio"
                                     allow360
+                                    allowCloudinaryVideo
                                   />
                                 </div>
                                 <div className="border-t border-neutral-700 pt-3">
@@ -1012,6 +1040,7 @@ const PortfolioManager: React.FC = () => {
                           currentImageUrl={editingImage.image_url}
                           bucket="portfolio"
                           allow360
+                          allowCloudinaryVideo
                         />
                       </div>
                       <div className="border-t border-neutral-700 pt-4">
