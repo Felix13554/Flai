@@ -5,6 +5,8 @@ import { Product } from '../../types';
 import ImageUpload from '../ImageUpload';
 import EditableContent from '../EditableContent';
 import PanoramaViewer from '../PanoramaViewer';
+import CloudinaryVideoPlayer, { CloudinaryVideoThumb } from '../CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../../utils/cloudinaryMedia';
 import toast from 'react-hot-toast';
 
 // ─── Normalise whatever Supabase returns for a text[] column ──────────────────
@@ -145,6 +147,25 @@ const MediaTile: React.FC<MediaTileProps> = ({ url, label, index, name, interact
     );
   }
 
+  // ── Cloudinary video ───────────────────────────────────────────────────────
+  if (isCloudinaryMedia(url)) {
+    return (
+      <div className="relative aspect-video bg-neutral-800 rounded overflow-hidden">
+        {label && (
+          <span className="absolute top-1 left-1 z-10 bg-primary text-white text-[10px] font-bold px-1 py-0.5 rounded pointer-events-none">
+            {label}
+          </span>
+        )}
+        <CloudinaryVideoPlayer
+          publicId={getCloudinaryMediaId(url)}
+          title={`${name} video ${index + 1}`}
+          fill
+          rounded={false}
+        />
+      </div>
+    );
+  }
+
   // ── Regular image ──────────────────────────────────────────────────────────
   return (
     <div className="relative aspect-video bg-neutral-800 rounded overflow-hidden">
@@ -249,6 +270,10 @@ const ReorderableImages: React.FC<ReorderableImagesProps> = ({ images, onChange,
                 frameBorder="0"
                 tabIndex={-1}
               />
+            </div>
+          ) : isCloudinaryMedia(url) ? (
+            <div className="w-full h-24 rounded-lg overflow-hidden pointer-events-none">
+              <CloudinaryVideoThumb publicId={getCloudinaryMediaId(url)} />
             </div>
           ) : (
             <img
@@ -515,6 +540,7 @@ const ProductsManager: React.FC = () => {
                 onImageUploaded={(url) => handleImageUpload(url)}
                 bucket="product-images"
                 allow360
+                allowCloudinaryVideo
               />
               <ReorderableImages images={newProduct.images} onChange={reorderNewImages} onRemove={(i) => removeImage(i)} />
             </div>
@@ -606,6 +632,7 @@ const ProductsManager: React.FC = () => {
                       onImageUploaded={(url) => handleImageUpload(url, true)}
                       bucket="product-images"
                       allow360
+                      allowCloudinaryVideo
                     />
                     <ReorderableImages images={editingProduct.images} onChange={reorderEditImages} onRemove={(i) => removeImage(i, true)} />
                   </div>
