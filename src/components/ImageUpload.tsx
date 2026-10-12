@@ -17,7 +17,9 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { Upload, X, Youtube, Images, Crop, Globe } from 'lucide-react';
+import { Upload, X, Youtube, Images, Crop, Globe, Film } from 'lucide-react';
+import CloudinaryVideoPlayer from './CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId, parseCloudinaryMediaValue } from '../utils/cloudinaryMedia';
 import { supabase } from '../utils/supabase';
 import toast from 'react-hot-toast';
 import EditableContent from './EditableContent';
@@ -232,6 +234,13 @@ interface ImageUploadProps {
   bucket?:            string;
   allowMultiple?:     boolean;
   allow360?:          boolean;
+  /**
+   * Shows "Tilføj Cloudinary video": the admin pastes a Cloudinary link (copied
+   * from Admin → Video) and the value is stored as `cloudinary:PUBLIC_ID` —
+   * the alternative to a YouTube video. Uploading itself stays in the Video
+   * section; nothing is uploaded here.
+   */
+  allowCloudinaryVideo?: boolean;
   defaultCustomName?: string;
 }
 
@@ -244,6 +253,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   bucket            = 'product-images',
   allowMultiple     = false,
   allow360          = false,
+  allowCloudinaryVideo = false,
   defaultCustomName = '',
 }) => {
   const [uploading,       setUploading]       = useState(false);
@@ -260,6 +270,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [is360,            setIs360]            = useState(false);
   const [showYoutubeInput, setShowYoutubeInput] = useState(false);
   const [youtubeUrl,       setYoutubeUrl]       = useState('');
+  const [showCloudinaryInput, setShowCloudinaryInput] = useState(false);
+  const [cloudinaryUrl,       setCloudinaryUrl]       = useState('');
 
   // Mini-preview URL for panorama (raw, without the "panorama:" prefix)
   const [panoramaPreviewUrl, setPanoramaPreviewUrl] = useState<string | null>(null);
@@ -406,6 +418,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     toast.success('YouTube video tilføjet');
   };
 
+  // ─── Cloudinary video (link only — upload lives in Admin → Video) ──────────
+
+  const handleCloudinarySubmit = () => {
+    const value = parseCloudinaryMediaValue(cloudinaryUrl);
+    if (!value) {
+      toast.error('Ugyldigt Cloudinary-link. Kopiér linket fra Video-sektionen.');
+      return;
+    }
+    onImageUploaded(value, true);
+    setCloudinaryUrl(''); setShowCloudinaryInput(false);
+    toast.success('Cloudinary video tilføjet');
+  };
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   // Determine if the current preview is a panorama URL
@@ -420,7 +445,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     <div className="space-y-3">
 
       {/* Current image preview */}
-      {currentImageUrl && !currentImageUrl.startsWith('youtube:') && !currentImageUrl.startsWith('panorama:') && (
+      {currentImageUrl && !currentImageUrl.startsWith('youtube:') && !isCloudinaryMedia(currentImageUrl) && !currentImageUrl.startsWith('panorama:') && (
         <div className="relative">
           <img src={currentImageUrl} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
           <button onClick={() => { onImageUploaded(''); setPanoramaPreviewUrl(null); }}
@@ -451,6 +476,17 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </div>
           <button onClick={() => onImageUploaded('')}
             className="absolute top-2 right-2 p-1 bg-neutral-900/80 text-white rounded hover:bg-red-600 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Cloudinary video preview */}
+      {isCloudinaryMedia(currentImageUrl) && (
+        <div className="relative">
+          <CloudinaryVideoPlayer publicId={getCloudinaryMediaId(currentImageUrl)} title="Cloudinary video" />
+          <button onClick={() => onImageUploaded('')}
+            className="absolute top-2 right-2 z-20 p-1 bg-neutral-900/80 text-white rounded hover:bg-red-600 transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -733,6 +769,41 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 className="p-2 text-neutral-400 hover:text-white transition-colors">
                 <X size={16} />
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cloudinary video — paste a link copied from Admin → Video */}
+      {allowCloudinaryVideo && !is360 && (
+        <div>
+          {!showCloudinaryInput ? (
+            <button type="button" onClick={() => setShowCloudinaryInput(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-lg transition-colors">
+              <Film size={16} />
+              <span>
+                <EditableContent contentKey="image-upload-tilfoej-cloudinary" fallback="Tilføj Cloudinary video i stedet" />
+              </span>
+            </button>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex gap-2">
+                <input type="text" value={cloudinaryUrl} onChange={e => setCloudinaryUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleCloudinarySubmit()}
+                  placeholder="https://res.cloudinary.com/.../video/upload/..."
+                  className="form-input flex-1 text-sm" autoFocus />
+                <button type="button" onClick={handleCloudinarySubmit}
+                  className="px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm">
+                  <EditableContent contentKey="image-upload-tilfoej-cloudinary-knap" fallback="Tilføj" />
+                </button>
+                <button type="button" onClick={() => { setShowCloudinaryInput(false); setCloudinaryUrl(''); }}
+                  className="p-2 text-neutral-400 hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500">
+                <EditableContent contentKey="image-upload-cloudinary-hint" fallback="Upload videoen under Video i admin-panelet, og kopiér linket derfra." />
+              </p>
             </div>
           )}
         </div>
