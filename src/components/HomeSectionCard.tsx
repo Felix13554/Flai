@@ -16,6 +16,8 @@
 
 import React from 'react';
 import PanoramaViewer from './PanoramaViewer';
+import CloudinaryVideoPlayer from './CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 
 export interface StandardSection {
   id: string;
@@ -52,6 +54,7 @@ export const descriptionClasses = `
  * Renders a single media value stored on a home section.
  * Values are stored with a prefix to indicate special media types:
  *   "youtube:VIDEO_ID"   → YouTube embed
+ *   "cloudinary:PUBLIC_ID" → Cloudinary video (same delivery as the hero, no autoplay)
  *   "panorama:https://…" → 360° panorama viewer
  *   anything else        → plain <img>
  */
@@ -69,6 +72,14 @@ const MediaSlot: React.FC<{ url: string; alt: string; className: string }> = ({ 
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
         />
+      </div>
+    );
+  }
+
+  if (isCloudinaryMedia(url)) {
+    return (
+      <div className={`relative w-full aspect-video ${className}`}>
+        <CloudinaryVideoPlayer publicId={getCloudinaryMediaId(url)} title={alt} fill />
       </div>
     );
   }
