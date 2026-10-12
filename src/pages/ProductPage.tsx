@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
 import PanoramaViewer from '../components/PanoramaViewer';
+import CloudinaryVideoPlayer, { CloudinaryVideoThumb } from '../components/CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 import { Product } from '../types';
 
 
@@ -73,9 +75,10 @@ const ProductPage: React.FC = () => {
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
-  const getMediaType = (url: string): 'panorama' | 'youtube' | 'image' => {
+  const getMediaType = (url: string): 'panorama' | 'youtube' | 'cloudinary' | 'image' => {
     if (url.startsWith('panorama:')) return 'panorama';
     if (url.startsWith('youtube:'))  return 'youtube';
+    if (isCloudinaryMedia(url))      return 'cloudinary';
     return 'image';
   };
 
@@ -119,6 +122,16 @@ const ProductPage: React.FC = () => {
     }
 
     // ── Regular image ────────────────────────────────────────────────────────
+    // Cloudinary video (same delivery method as the hero, no autoplay)
+    if (mediaType === 'cloudinary') {
+      return (
+        <CloudinaryVideoPlayer
+          publicId={getCloudinaryMediaId(currentImage)}
+          title={product.name}
+        />
+      );
+    }
+
     return (
       <img
         src={currentImage}
@@ -164,6 +177,10 @@ const ProductPage: React.FC = () => {
           </svg>
         </div>
       );
+    }
+
+    if (mediaType === 'cloudinary') {
+      return <CloudinaryVideoThumb publicId={getCloudinaryMediaId(url)} iconSize={14} />;
     }
 
     return (
@@ -227,6 +244,7 @@ const ProductPage: React.FC = () => {
   // Determine if the current slide is a panorama — hides nav arrows since
   // Pannellum handles its own drag interaction
   const currentIsPanorama = getMediaType(product.images[currentImageIndex] ?? '') === 'panorama';
+  const currentIsCloudinary = getMediaType(product.images[currentImageIndex] ?? '') === 'cloudinary';
 
   return (
     <div className="pt-24 pb-16">
@@ -323,7 +341,7 @@ const ProductPage: React.FC = () => {
                 )}
 
                 {/* Image counter (non-panorama slides only) */}
-                {product.images.length > 1 && !currentIsPanorama && (
+                {product.images.length > 1 && !currentIsPanorama && !currentIsCloudinary && (
                   <div className="absolute bottom-4 right-4 px-3 py-1 bg-black/50 text-white text-sm rounded-full z-10">
                     {currentImageIndex + 1} / {product.images.length}
                   </div>
