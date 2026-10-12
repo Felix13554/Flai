@@ -9,6 +9,9 @@
  *        YouTube by hand beforehand — the Drive iframe player this used to
  *        rely on was unreliable-to-broken on mobile, so video now always
  *        goes through YouTube's own embed instead).
+ *        Alternatively paste a Cloudinary link (copied from Admin → Video);
+ *        it is stored as `cloudinary:PUBLIC_ID` in the same `youtube_id`
+ *        column and plays via the hero's Cloudinary delivery, no autoplay.
  *      - Photos: paste a Google Drive link to a single photo or a folder of
  *        photos, same as before.
  *   2. For photos, /api/drive-preview?mode=meta resolves and validates the
@@ -27,6 +30,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../utils/supabase';
 import { extractGoogleDriveIdOrFolder } from '../../utils/google-drive-utils';
 import { extractYouTubeId } from '../../utils/youtube-utils';
+import { parseCloudinaryMediaValue, looksLikeCloudinaryUrl } from '../../utils/cloudinaryMedia';
 import { PreviewLink } from '../../types/index';
 import toast from 'react-hot-toast';
 import {
@@ -74,8 +78,17 @@ const PreviewLinksManager: React.FC = () => {
       let insertRow: Record<string, unknown>;
 
       if (type === 'video') {
-        const youtubeId = extractYouTubeId(sourceUrl);
-        if (!youtubeId) { throw new Error('Kunne ikke genkende YouTube-linket'); }
+        // Cloudinary link (or cloudinary:ID) takes the Cloudinary path; anything
+        // else is parsed as a YouTube link exactly as before.
+        const wantsCloudinary = looksLikeCloudinaryUrl(sourceUrl) || sourceUrl.trim().startsWith('cloudinary:');
+        const youtubeId = wantsCloudinary
+          ? parseCloudinaryMediaValue(sourceUrl)
+          : extractYouTubeId(sourceUrl);
+        if (!youtubeId) {
+          throw new Error(wantsCloudinary
+            ? 'Kunne ikke genkende Cloudinary-linket'
+            : 'Kunne ikke genkende YouTube- eller Cloudinary-linket');
+        }
         insertRow = {
           type,
           drive_id: null,
@@ -177,7 +190,7 @@ const PreviewLinksManager: React.FC = () => {
         <p className="text-neutral-400 text-sm">
           <EditableContent
             contentKey="previewlinksmanager-subtitle"
-            fallback="Til video: indsæt et YouTube-link (unlisted). Til billeder: indsæt et Google Drive-link til et enkelt billede eller en mappe med billeder. Kunden får et flai.dk/preview-link, der åbner direkte i browseren."
+            fallback="Til video: indsæt et YouTube-link (unlisted) eller et Cloudinary-link (kopieret fra Video-sektionen). Til billeder: indsæt et Google Drive-link til et enkelt billede eller en mappe med billeder. Kunden får et flai.dk/preview-link, der åbner direkte i browseren."
           />
         </p>
       </div>
@@ -222,19 +235,19 @@ const PreviewLinksManager: React.FC = () => {
         <div>
           <label className="block text-sm text-neutral-300 mb-1.5">
             {type === 'video'
-              ? 'YouTube-link til videoen (unlisted)'
+              ? 'YouTube-link (unlisted) eller Cloudinary-link til videoen'
               : 'Google Drive-link til billedet eller mappen med billeder'}
           </label>
           <input
             className="w-full bg-neutral-800 border border-neutral-600 rounded-lg px-4 py-2.5 text-white placeholder-neutral-500 focus:outline-none focus:border-primary transition-colors"
-            placeholder={type === 'video' ? 'https://youtu.be/...' : 'https://drive.google.com/...'}
+            placeholder={type === 'video' ? 'https://youtu.be/... eller https://res.cloudinary.com/...' : 'https://drive.google.com/...'}
             value={sourceUrl}
             onChange={e => setSourceUrl(e.target.value)}
           />
           <p className="text-xs text-neutral-500 mt-1.5 flex items-start gap-1.5">
             <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
             {type === 'video'
-              ? 'Upload videoen til YouTube som "Unlisted" og indsæt linket her.'
+              ? 'Upload videoen til YouTube som "Unlisted", eller upload den under Video i admin-panelet og kopiér Cloudinary-linket (kopiér-knappen) hertil.'
               : 'Filen/mappen skal være delt som "Alle med linket" eller delt direkte med service-kontoen.'}
           </p>
         </div>
