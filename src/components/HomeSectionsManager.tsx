@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Edit, Trash2, Save, X, ArrowUp, ArrowDown, Code, FileCode, List, ListOrdered, Bold, Italic, Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import ImageUpload from './ImageUpload';
+import { CloudinaryVideoThumb } from './CloudinaryVideoPlayer';
+import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
 import toast from 'react-hot-toast';
 import EditableContent from './EditableContent';
 import { DEPLOYED_HOME_SECTIONS } from '../pages/HomePage';
@@ -195,10 +197,14 @@ const SectionForm: React.FC<SectionFormProps> = ({ section, onChange, formId }) 
             <label className="form-label">
               <EditableContent contentKey="home-sections-manager-billede" fallback="Billede 1 (primært, påkrævet)" />
             </label>
-            <ImageUpload onImageUploaded={(url) => onChange({ image_url: url })} bucket="home-sections" />
+            <ImageUpload onImageUploaded={(url) => onChange({ image_url: url })} bucket="home-sections" allowCloudinaryVideo />
             {section.image_url && (
               <div className="mt-2 flex items-start gap-2">
-                <img src={section.image_url} alt="Preview 1" className="w-full h-32 object-cover rounded-lg" />
+                {isCloudinaryMedia(section.image_url) ? (
+                  <div className="w-full h-32 rounded-lg overflow-hidden"><CloudinaryVideoThumb publicId={getCloudinaryMediaId(section.image_url)} /></div>
+                ) : (
+                  <img src={section.image_url} alt="Preview 1" className="w-full h-32 object-cover rounded-lg" />
+                )}
                 <button type="button" onClick={() => onChange({ image_url: '' })} className="p-1.5 text-neutral-400 hover:text-error transition-colors flex-shrink-0"><X size={16} /></button>
               </div>
             )}
@@ -207,10 +213,14 @@ const SectionForm: React.FC<SectionFormProps> = ({ section, onChange, formId }) 
           {/* Image 2 */}
           <div>
             <label className="form-label"><EditableContent contentKey="home-sections-manager-billede-2" fallback="Billede 2" /> <span className="text-neutral-500 font-normal"><EditableContent contentKey="home-sections-manager-valgfrit-2" fallback="(valgfrit)" /></span></label>
-            <ImageUpload onImageUploaded={(url) => onChange({ image_url_2: url })} bucket="home-sections" />
+            <ImageUpload onImageUploaded={(url) => onChange({ image_url_2: url })} bucket="home-sections" allowCloudinaryVideo />
             {section.image_url_2 && (
               <div className="mt-2 flex items-start gap-2">
-                <img src={section.image_url_2} alt="Preview 2" className="h-24 object-cover rounded-lg" />
+                {isCloudinaryMedia(section.image_url_2) ? (
+                  <div className="w-40 h-24 rounded-lg overflow-hidden"><CloudinaryVideoThumb publicId={getCloudinaryMediaId(section.image_url_2)} /></div>
+                ) : (
+                  <img src={section.image_url_2} alt="Preview 2" className="h-24 object-cover rounded-lg" />
+                )}
                 <button type="button" onClick={() => onChange({ image_url_2: '' })} className="p-1.5 text-neutral-400 hover:text-error transition-colors flex-shrink-0"><X size={16} /></button>
               </div>
             )}
@@ -219,10 +229,14 @@ const SectionForm: React.FC<SectionFormProps> = ({ section, onChange, formId }) 
           {/* Image 3 */}
           <div>
             <label className="form-label"><EditableContent contentKey="home-sections-manager-billede-3" fallback="Billede 3" /> <span className="text-neutral-500 font-normal"><EditableContent contentKey="home-sections-manager-valgfrit" fallback="(valgfrit)" /></span></label>
-            <ImageUpload onImageUploaded={(url) => onChange({ image_url_3: url })} bucket="home-sections" />
+            <ImageUpload onImageUploaded={(url) => onChange({ image_url_3: url })} bucket="home-sections" allowCloudinaryVideo />
             {section.image_url_3 && (
               <div className="mt-2 flex items-start gap-2">
-                <img src={section.image_url_3} alt="Preview 3" className="h-24 object-cover rounded-lg" />
+                {isCloudinaryMedia(section.image_url_3) ? (
+                  <div className="w-40 h-24 rounded-lg overflow-hidden"><CloudinaryVideoThumb publicId={getCloudinaryMediaId(section.image_url_3)} /></div>
+                ) : (
+                  <img src={section.image_url_3} alt="Preview 3" className="h-24 object-cover rounded-lg" />
+                )}
                 <button type="button" onClick={() => onChange({ image_url_3: '' })} className="p-1.5 text-neutral-400 hover:text-error transition-colors flex-shrink-0"><X size={16} /></button>
               </div>
             )}
