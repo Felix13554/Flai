@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MapPin, Search, CheckCircle, XCircle, Building2 } from 'lucide-react';
+import { MapPin, Search, CheckCircle, XCircle } from 'lucide-react';
 import { isAddressWithinRange, getFormattedDistance } from '../utils/location';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
@@ -454,35 +454,30 @@ const CoverageAreasPage: React.FC = () => {
 
           {/* Cities Section */}
           {addressZones.length > 0 && (
-            <div className="mb-8">
-              <div className="flex items-center gap-2 mb-3 ml-1">
-                <Building2 size={16} className="text-neutral-500" />
-                <EditableContent
-                  contentKey="coverage-cities-title"
-                  as="h3"
-                  className="text-sm uppercase tracking-wider text-neutral-500 font-semibold"
-                  fallback="Jeg dækker"
-                />
-              </div>
-              <div className="bg-neutral-800 border border-neutral-700 p-6 rounded-xl">
-                {allCities.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {allCities.map((city, index) => (
-                      <span
-                        key={index}
-                        className="bg-neutral-700/50 text-neutral-300 px-3 py-1.5 rounded-md text-sm border border-neutral-600 hover:border-neutral-500 hover:text-white transition-colors cursor-default"
-                      >
-                        {city}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 text-neutral-500">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-neutral-500"></div>
-                    <p className="italic text-sm"><EditableContent contentKey="coverage-areas-page-henter-omraadedata" fallback="Henter områdedata..." /></p>
-                  </div>
-                )}
-              </div>
+            <div className="bg-neutral-800 rounded-xl p-6 mb-8 border border-neutral-700">
+              <EditableContent
+                contentKey="coverage-cities-title"
+                as="h2"
+                className="text-xl font-semibold mb-4"
+                fallback="Jeg dækker"
+              />
+              {allCities.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {allCities.map((city, index) => (
+                    <span
+                      key={index}
+                      className="bg-neutral-700/50 text-neutral-300 px-3 py-1.5 rounded-md text-sm border border-neutral-600 hover:border-neutral-500 hover:text-white transition-colors cursor-default"
+                    >
+                      {city}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-neutral-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-neutral-500"></div>
+                  <p className="italic text-sm"><EditableContent contentKey="coverage-areas-page-henter-omraadedata" fallback="Henter områdedata..." /></p>
+                </div>
+              )}
             </div>
           )}
 
@@ -515,40 +510,6 @@ const CoverageAreasPage: React.FC = () => {
               <p className="text-center text-neutral-500 text-sm mt-3 italic">
                 <EditableContent contentKey="coverage-areas-page-ingen-aktive-daekningszoner-endnu" fallback="Ingen aktive dækningszoner endnu" />
               </p>
-            )}
-          </div>
-
-          {/* Zone List Section */}
-          <div className="bg-neutral-800 rounded-xl p-6 border border-neutral-700">
-            <EditableContent
-              contentKey="coverage-zones-title"
-              as="h2"
-              className="text-xl font-semibold mb-4"
-              fallback="Dækningsområder"
-            />
-            {addressZones.length === 0 ? (
-              <EditableContent
-                contentKey="coverage-no-zones"
-                as="p"
-                className="text-center text-neutral-400 py-8"
-                fallback="Ingen aktive dækningsområder fundet"
-              />
-            ) : (
-              <div className="space-y-4">
-                {addressZones.map(zone => (
-                  <div
-                    key={zone.id}
-                    className="flex items-start space-x-3 p-4 rounded-lg bg-neutral-700/20 border border-transparent"
-                  >
-                    <MapPin className="text-primary mt-1" size={20} />
-                    <div className="flex-1">
-                      <h3 className="font-medium">{zone.name}</h3>
-                      <p className="text-neutral-400 mt-1"><EditableContent contentKey="coverage-areas-page-centrum" fallback="Centrum:" /> {zone.center_address}</p>
-                      <p className="text-neutral-400"><EditableContent contentKey="coverage-areas-page-radius" fallback="Radius:" /> {zone.radius_km} <EditableContent contentKey="coverage-areas-page-km" fallback="km" /></p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
         </div>
