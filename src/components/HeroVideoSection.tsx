@@ -1,5 +1,30 @@
 /**
- * HeroVideoSection — v17
+ * HeroVideoSection — v18
+ *
+ * v18 — FIX: hero video sometimes did not start until the visitor clicked
+ * the screen. Root causes + fixes:
+ *   1. The "window unfocused" pause reason was initialised from
+ *      document.hasFocus() at mount. If the page loaded without window focus
+ *      (URL bar focused, opened from another app/tab, devtools, iframe focus)
+ *      the video was treated as "paused on purpose" and never started — and
+ *      the first click fired `focus`, which is why a click "fixed" it. The
+ *      blurred state now starts false, only flips on a REAL blur (ignoring
+ *      focus moving into an iframe) and is cleared by any user interaction.
+ *   2. A rejected play() (NotAllowedError / AbortError from a racing load())
+ *      only armed a one-shot touchstart/click listener after an 800ms delay,
+ *      and touchstart is not a valid activation gesture on iOS. A fallback
+ *      for pointerdown/touchend/click/keydown is now armed from the start and
+ *      stays armed, AbortError is retried automatically, and a 1s keep-alive
+ *      restarts the video whenever it is paused for no valid reason.
+ *   3. attemptInFlight could stay stuck on a never-settling play() promise,
+ *      blocking every later attempt — it now self-releases after 3s.
+ *   4. getAutoplayPolicy() === 'disallowed' used to skip autoplay entirely;
+ *      it now still attempts play() (policy is only a hint and is often
+ *      wrong before interaction) and merely shows the play affordance.
+ *   5. `canplay` now also triggers a play attempt; src is restored if a
+ *      previous effect cleanup (StrictMode / key change) had removed it.
+ *
+ * Previously — v17
  *
  * Changes from v16:
  *
@@ -28,7 +53,6 @@ import {
   getHeroVideo,
   cloudinaryMp4Url,
   cloudinaryPosterUrl,
-  getConnectionInfo,
 } from '../utils/heroPreload'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
 
@@ -163,6 +187,8 @@ const PHONE_LANDSCAPE_MAX_HEIGHT_PX = 500
 //   - window unfocused  (blur/focus — covers covered/unfocused windows where
 //                        visibilitychange is late or never fires)
 //   - scrolled out      (IntersectionObserver — section has 0px visible)
+// ▶ v18: `blurred` always starts FALSE (never derived from document.hasFocus()
+// at mount — a page that merely loads unfocused must still autoplay).
 const pauseReasons = { hidden: false, blurred: false, offscreen: false }
 const shouldBePaused = () =>
   pauseReasons.hidden || pauseReasons.blurred || pauseReasons.offscreen
@@ -347,11 +373,12 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const [videoKey,       setVideoKey]       = useState(0)
   const [showPlayButton, setShowPlayButton] = useState(false)
 
-  const { isSlow, saveData } = useMemo(getConnectionInfo, [])
-  const skipVideo  = isSlow || saveData
-  // On slow connections avoid even metadata pre-fetch — src is assigned imperatively
-  // so there's nothing to gain and it wastes bandwidth before the video is in view.
-  const preloadVal = isSlow ? 'none' : 'auto'
+  // ▶ v18: the hero video ALWAYS plays — on 2G, slow connections and with
+  // data-saver on. (Previously `skipVideo = isSlow || saveData` replaced the
+  // video with the poster on those connections.)
+  const skipVideo  = false
+  // ▶ v18: always 'auto' so the video starts as soon as possible, even on slow links.
+  const preloadVal = 'auto'
   const autoplayState = useMemo(getAutoplayState, [])
 
   const videoSrc = useMemo(() => cloudinaryMp4Url(publicId), [publicId])
@@ -446,13 +473,18 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // ── Main playback effect ─────────────────────────────────────────────────────
   useEffect(() => {
     if (skipVideo) return
-    if (autoplayState === 'disallowed') {
-      setShowPlayButton(true)
-      return
-    }
-
     const video = videoRef.current
     if (!video) return
+
+    // ▶ v18: a 'disallowed' policy is only a hint (often stale before any user
+    // interaction). Show the play affordance but STILL attempt playback.
+    if (autoplayState === 'disallowed') setShowPlayButton(true)
+
+    // ▶ v18: restore src if an earlier cleanup (StrictMode double-run, key
+    // change) stripped it, so we never try to play a source-less element.
+    if (!video.getAttribute('src')) {
+      video.src = videoSrcRef.current
+    }
 
     video.muted = true
     video.setAttribute('muted', '')
@@ -461,6 +493,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     let destroyed = false
     let revealTimer: number | undefined
     let attemptInFlight = false
+    let inFlightTimer: number | undefined
+    let abortRetryTimer: number | undefined
+    let keepAliveInterval: number | undefined
 
     // Single code path to "ready". We wait for requestVideoFrameCallback so the
     // poster is only removed once a real decoded frame has been composited —
@@ -515,19 +550,33 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       if (isTabHidden()) return
       attemptInFlight = true
       window.clearTimeout(revealTimer)
+      // ▶ v18: safety valve — a play() promise that never settles must not
+      // block every later attempt forever.
+      window.clearTimeout(inFlightTimer)
+      inFlightTimer = window.setTimeout(() => { attemptInFlight = false }, 3000)
       video.muted = true
       const p = video.play()
       if (!p) {
         attemptInFlight = false
+        window.clearTimeout(inFlightTimer)
         return
       }
       p.then(() => {
         attemptInFlight = false
+        window.clearTimeout(inFlightTimer)
         window.clearTimeout(revealTimer)
         setShowPlayButton(false)
-      }).catch(() => {
+      }).catch((err: any) => {
         attemptInFlight = false
+        window.clearTimeout(inFlightTimer)
         if (destroyed) return
+        // ▶ v18: AbortError = play() was interrupted by a (re)load/pause, not
+        // refused by the browser — simply try again shortly.
+        if (err && err.name === 'AbortError') {
+          window.clearTimeout(abortRetryTimer)
+          abortRetryTimer = window.setTimeout(attemptPlay, 250)
+          return
+        }
         // Brief grace period before showing the play button — the 'playing'
         // event may still fire quickly on fast connections, or a queued
         // retry (e.g. from tab-visibility recovery) may succeed first.
@@ -536,17 +585,35 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
           // autoplay failure — don't surface the play button for it.
           if (destroyed || !video.paused || isTabHidden()) return
           setShowPlayButton(true)
-          const gesturePlay = () => {
-            video.muted = true
-            video.play().then(markReady).catch(() => {})
-            document.removeEventListener('touchstart', gesturePlay)
-            document.removeEventListener('click',      gesturePlay)
-          }
-          document.addEventListener('touchstart', gesturePlay, { once: true })
-          document.addEventListener('click',      gesturePlay, { once: true })
+          // (the persistent gesture fallback below starts it on first touch)
         }, 800)
       })
     }
+
+    // ▶ v18: persistent user-gesture fallback, armed from the start (not after
+    // a delay) and kept for the lifetime of the effect. Any real interaction
+    // counts — pointerdown/touchend/click/keydown (touchend, unlike
+    // touchstart, is a valid activation gesture on iOS). It also clears a
+    // stale "blurred" flag, since an interaction proves the window is focused.
+    const onGesture = () => {
+      if (destroyed) return
+      pauseReasons.blurred = false
+      if (shouldBePaused()) return
+      if (video.paused && !video.ended) {
+        video.muted = true
+        video.play().then(markReady).catch(() => {})
+      }
+    }
+    const gestureEvents = ['pointerdown', 'touchend', 'click', 'keydown'] as const
+    gestureEvents.forEach((ev) => document.addEventListener(ev, onGesture, { passive: true, capture: true }))
+
+    // ▶ v18: keep-alive. If the video is paused although nothing intentional
+    // pauses it (no hidden/blurred/offscreen, not ended), start it again.
+    keepAliveInterval = window.setInterval(() => {
+      if (destroyed || reconnecting || shouldBePaused()) return
+      if (!video.paused || video.ended) return
+      attemptPlay()
+    }, 1000)
 
     // ── Reconnection / stall recovery ─────────────────────────────────────
     // Covers two failure modes a plain play()-retry can't fix:
@@ -680,6 +747,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     const onPlaying    = () => { captureFrameToCanvas(); markReady(); resetReconnect(); window.clearTimeout(stalledGraceTimer) }
     const onLoadedData = () => { if (!destroyed && video.paused) attemptPlay() }
+    const onCanPlay    = () => { if (!destroyed && video.paused && !video.ended) attemptPlay() }
     const onError      = () => {
       if (destroyed || !video.error) return
       console.warn('[HeroVideo] error', video.error.code, video.error.message)
@@ -720,6 +788,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     // cycle), and we need markReady to run every time, not just the first.
     video.addEventListener('playing',    onPlaying)
     video.addEventListener('loadeddata', onLoadedData, { once: true })
+    video.addEventListener('canplay',    onCanPlay)
     video.addEventListener('error',      onError)
     video.addEventListener('ended',      onEnded)
     video.addEventListener('timeupdate', onTimeUpdate)
@@ -768,12 +837,17 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     return () => {
       destroyed = true
       window.clearTimeout(revealTimer)
+      window.clearTimeout(inFlightTimer)
+      window.clearTimeout(abortRetryTimer)
+      window.clearInterval(keepAliveInterval)
+      gestureEvents.forEach((ev) => document.removeEventListener(ev, onGesture, { capture: true } as any))
       clearReconnectTimers()
       window.clearInterval(watchdogInterval)
       observer?.disconnect()
       video.removeEventListener('playing',    onPlaying)
       video.removeEventListener('error',      onError)
       video.removeEventListener('loadeddata', onLoadedData)
+      video.removeEventListener('canplay',    onCanPlay)
       video.removeEventListener('ended',      onEnded)
       video.removeEventListener('timeupdate', onTimeUpdate)
       video.removeEventListener('stalled',    onStalled)
@@ -867,9 +941,27 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
 
     // 2) Window focus — pauses when the window is covered by another window
     //    or loses focus, where visibilitychange can lag by many seconds.
-    pauseReasons.blurred = typeof document.hasFocus === 'function' ? !document.hasFocus() : false
-    const onBlur  = () => { pauseReasons.blurred = true;  applyPlayState() }
-    const onFocus = () => { pauseReasons.blurred = false; applyPlayState() }
+    //    ▶ v18: starts FALSE — a page that merely loads without window focus
+    //    must still autoplay. Only a genuine blur pauses, and focus moving
+    //    into an iframe (Google One Tap, Stripe…) is not a real blur.
+    pauseReasons.blurred = false
+    let blurTimer: number | undefined
+    const onBlur = () => {
+      window.clearTimeout(blurTimer)
+      blurTimer = window.setTimeout(() => {
+        if (typeof document.hasFocus === 'function' && document.hasFocus()) return
+        const ae = document.activeElement
+        if (ae && ae.tagName === 'IFRAME') return
+        pauseReasons.blurred = true
+        applyPlayState()
+      }, 0)
+    }
+    const onFocus = () => {
+      window.clearTimeout(blurTimer)
+      pauseReasons.blurred = false
+      applyPlayState()
+    }
+    const onPageHide = () => { pauseReasons.blurred = true; applyPlayState() }
 
     // 3) Scroll: pause only once the hero section has NO pixels in view
     //    (threshold 0 → isIntersecting flips to false exactly when the last
@@ -894,7 +986,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     window.addEventListener('blur',  onBlur)
     window.addEventListener('focus', onFocus)
     // pagehide/pageshow cover bfcache and some mobile browsers
-    window.addEventListener('pagehide', onBlur)
+    window.addEventListener('pagehide', onPageHide)
     window.addEventListener('pageshow', onFocus)
 
     // Apply the initial state (e.g. tab opened in the background)
@@ -903,11 +995,12 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     return () => {
       window.clearTimeout(retryTimer)
       window.clearTimeout(watchTimer)
+      window.clearTimeout(blurTimer)
       scrollObserver?.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur',  onBlur)
       window.removeEventListener('focus', onFocus)
-      window.removeEventListener('pagehide', onBlur)
+      window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('pageshow', onFocus)
       pauseReasons.hidden = false
       pauseReasons.blurred = false
