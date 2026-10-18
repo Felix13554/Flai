@@ -332,6 +332,7 @@ const ProductsManager: React.FC = () => {
     images: [] as string[],
     links: [] as { title: string; url: string }[],
     is_editing_included: false,
+    booking_block_days: null as number | null,
     array: arrayBounds.max,
   });
 
@@ -369,6 +370,7 @@ const ProductsManager: React.FC = () => {
         images:              toStringArray(editingProduct.images),
         links:               editingProduct.links,
         is_editing_included: editingProduct.is_editing_included,
+        booking_block_days:  editingProduct.booking_block_days ?? null,
       });
       setEditingProduct(null);
       toast.success('Produkt opdateret');
@@ -497,6 +499,25 @@ const ProductsManager: React.FC = () => {
             </div>
 
             <div>
+              <label htmlFor="booking-block-days" className="form-label">Blokeringsdage efter booking</label>
+              <input
+                id="booking-block-days"
+                type="number"
+                min={1}
+                max={365}
+                step={1}
+                placeholder="7 (standard)"
+                value={newProduct.booking_block_days ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNewProduct(p => ({ ...p, booking_block_days: v === '' ? null : Math.min(365, Math.max(1, parseInt(v, 10) || 1)) }));
+                }}
+                className="form-input"
+              />
+              <p className="text-sm text-neutral-400 mt-1">Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage).</p>
+            </div>
+
+            <div>
               <EditableContent contentKey="admin-products-description-label" as="label" className="form-label" fallback="Beskrivelse" />
               <textarea value={newProduct.description} onChange={(e) => setNewProduct(p => ({ ...p, description: e.target.value }))} className="form-input resize-none" rows={4} placeholder="Indtast produktbeskrivelse" />
             </div>
@@ -611,6 +632,25 @@ const ProductsManager: React.FC = () => {
                       <EditableContent contentKey="admin-products-edit-editing-included-label" as="label" htmlFor="editing-included-edit" className="form-label cursor-pointer" fallback="Redigering inkluderet" />
                       <EditableContent contentKey="admin-products-edit-editing-included-description" as="p" className="text-sm text-neutral-400" fallback="Dette produkt inkluderer professionel redigering som standard" />
                     </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="booking-block-days-edit" className="form-label">Blokeringsdage efter booking</label>
+                    <input
+                      id="booking-block-days-edit"
+                      type="number"
+                      min={1}
+                      max={365}
+                      step={1}
+                      placeholder="7 (standard)"
+                      value={editingProduct.booking_block_days ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setEditingProduct({ ...editingProduct, booking_block_days: v === '' ? null : Math.min(365, Math.max(1, parseInt(v, 10) || 1)) });
+                      }}
+                      className="form-input"
+                    />
+                    <p className="text-sm text-neutral-400 mt-1">Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage).</p>
                   </div>
 
                   <div>
