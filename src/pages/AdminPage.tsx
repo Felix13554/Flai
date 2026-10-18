@@ -7,7 +7,6 @@ import {
   MapPin,
   Home,
   Clock,
-  Mail,
   FileImage,
   Wallet,
   Video,
@@ -30,7 +29,6 @@ import PortfolioManager from '../components/admin/PortfolioManager';
 import ClientLogosManager from '../components/admin/ClientLogosManager';
 import AddressZonesManager from '../components/admin/AddressZonesManager';
 import BookingsManager from '../components/admin/BookingsManager';
-import NewsletterManager from '../components/admin/NewsletterManager';
 import BookingConfigManager from '../components/admin/BookingConfigManager';
 import ExternalImagesManager from '../components/admin/ExternalImagesManager';
 import DonationsManager from '../components/admin/DonationsManager';
@@ -51,7 +49,6 @@ type TabId =
   | 'client-logos'
   | 'zones'
   | 'home-sections'
-  | 'newsletter'
   | 'external-images'
   | 'donations'
   | 'video'
@@ -65,7 +62,7 @@ type TabId =
 
 const VALID_SECTIONS = new Set<TabId>([
   'bookings', 'booking-config', 'products', 'portfolio', 'client-logos',
-  'zones', 'home-sections', 'newsletter',
+  'zones', 'home-sections',
   'external-images', 'donations', 'video', 'meilisearch', 'users', 'deploy',
   'seo-documents', 'shop', 'preview-360', 'preview-links',
 ]);
@@ -80,10 +77,8 @@ const AdminPage: React.FC = () => {
   const {
     products, portfolioImages, addressZones, bookings,
     refreshProducts, refreshPortfolio, refreshBundles, refreshBookings,
-    refreshNewsletters, refreshNewsletterSubscribers, refreshNewsletterTemplates,
     refreshAddressZones, refreshClientLogos,
     isProductsLoaded, isPortfolioLoaded, isBookingsLoaded,
-    isNewslettersLoaded, isNewsletterSubscribersLoaded, isNewsletterTemplatesLoaded,
     isAddressZonesLoaded, isClientLogosLoaded,
   } = useData();
 
@@ -110,9 +105,6 @@ const AdminPage: React.FC = () => {
     if (!isProductsLoaded) refreshProducts();
     if (!isPortfolioLoaded) { refreshPortfolio(); refreshBundles(); }
     if (!isBookingsLoaded) refreshBookings();
-    if (!isNewslettersLoaded) refreshNewsletters();
-    if (!isNewsletterSubscribersLoaded) refreshNewsletterSubscribers();
-    if (!isNewsletterTemplatesLoaded) refreshNewsletterTemplates();
     if (!isAddressZonesLoaded) refreshAddressZones();
     if (!isClientLogosLoaded) refreshClientLogos();
   }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -161,7 +153,6 @@ const AdminPage: React.FC = () => {
     { id: 'external-images', label: 'Eksterne Billeder',      icon: FileImage },
     { id: 'zones',           label: 'Adressezoner',           icon: MapPin    },
     { id: 'donations',       label: 'Betalinger',             icon: Wallet    },
-    { id: 'newsletter',      label: 'Nyhedsbreve',            icon: Mail      },
     { id: 'video',           label: 'Videoer',                icon: Video     },
     { id: 'home-sections',   label: 'Forside Sektioner',      icon: Home      },
     { id: 'seo-documents',   label: 'SEO Dokumenter',         icon: Globe     },
@@ -180,7 +171,6 @@ const AdminPage: React.FC = () => {
       case 'portfolio':       return <ErrorBoundary><PortfolioManager /></ErrorBoundary>;
       case 'client-logos':    return <ErrorBoundary><ClientLogosManager /></ErrorBoundary>;
       case 'zones':           return <ErrorBoundary><AddressZonesManager /></ErrorBoundary>;
-      case 'newsletter':      return <ErrorBoundary><NewsletterManager /></ErrorBoundary>;
       case 'external-images': return <ErrorBoundary><ExternalImagesManager /></ErrorBoundary>;
       case 'home-sections':   return <ErrorBoundary><HomeSectionsManager /></ErrorBoundary>;
       case 'donations':       return <ErrorBoundary><DonationsManager /></ErrorBoundary>;

@@ -31,9 +31,6 @@ import {
   AddressZone,
   PortfolioImage,
   DiscountCode,
-  NewsletterSubscriber,
-  Newsletter,
-  NewsletterTemplate,
   BookingWithProduct,
   ClientLogo,
 } from '../types';
@@ -94,10 +91,6 @@ interface DataContextType {
   bookingsError: string | null;
   // Discount Codes
   discountCodes: DiscountCode[];
-  // Newsletter
-  newsletterSubscribers: NewsletterSubscriber[];
-  newsletters: Newsletter[];
-  newsletterTemplates: NewsletterTemplate[];
   // Loading states
   isDataLoaded: boolean;
   dataError: string | null;
@@ -108,9 +101,6 @@ interface DataContextType {
   isHomeSectionsLoaded: boolean;
   isBookingsLoaded: boolean;
   isDiscountCodesLoaded: boolean;
-  isNewslettersLoaded: boolean;
-  isNewsletterSubscribersLoaded: boolean;
-  isNewsletterTemplatesLoaded: boolean;
   isAddressZonesLoaded: boolean;
   // Shop / Merchandise
   shopProducts: ShopProduct[];
@@ -136,9 +126,6 @@ interface DataContextType {
   refreshBundles: () => Promise<void>;
   refreshBookings: () => Promise<void>;
   refreshDiscountCodes: () => Promise<void>;
-  refreshNewsletterSubscribers: () => Promise<void>;
-  refreshNewsletters: () => Promise<void>;
-  refreshNewsletterTemplates: () => Promise<void>;
   refreshAddressZones: () => Promise<void>;
 }
 
@@ -161,9 +148,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [addressZones, setAddressZones]                 = useState<AddressZone[]>([]);
   const [bookings, setBookings]                         = useState<BookingWithProduct[]>([]);
   const [discountCodes, setDiscountCodes]               = useState<DiscountCode[]>([]);
-  const [newsletterSubscribers, setNewsletterSubscribers] = useState<NewsletterSubscriber[]>([]);
-  const [newsletters, setNewsletters]                   = useState<Newsletter[]>([]);
-  const [newsletterTemplates, setNewsletterTemplates]   = useState<NewsletterTemplate[]>([]);
 
   // ─── Loading flags ────────────────────────────────────────────────────────
   const [isDataLoaded, setIsDataLoaded]                             = useState(false);
@@ -177,9 +161,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isHomeSectionsLoaded, setIsHomeSectionsLoaded]             = useState(false);
   const [isBookingsLoaded, setIsBookingsLoaded]                     = useState(false);
   const [isDiscountCodesLoaded, setIsDiscountCodesLoaded]           = useState(false);
-  const [isNewslettersLoaded, setIsNewslettersLoaded]               = useState(false);
-  const [isNewsletterSubscribersLoaded, setIsNewsletterSubscribersLoaded] = useState(false);
-  const [isNewsletterTemplatesLoaded, setIsNewsletterTemplatesLoaded]     = useState(false);
   const [isAddressZonesLoaded, setIsAddressZonesLoaded]             = useState(false);
   const [isShopProductsLoaded, setIsShopProductsLoaded]             = useState(false);
 
@@ -204,8 +185,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ─── Auth-gated cache invalidation ────────────────────────────────────────
   type PageDataKey = 'products' | 'homeSections' | 'portfolio' | 'bundles'
-    | 'bookings' | 'discountCodes' | 'newsletters' | 'newsletterSubscribers'
-    | 'newsletterTemplates' | 'addressZones' | 'shopProducts' | 'clientLogos';
+    | 'bookings' | 'discountCodes'
+    | 'addressZones' | 'shopProducts' | 'clientLogos';
 
   const loadedCache = useRef<Set<PageDataKey>>(new Set());
   const prevUserId  = useRef<string | undefined>(user?.id);
@@ -450,64 +431,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [isAdmin, setLoadingMessage]);
 
-  const refreshNewsletters = useCallback(async () => {
-    if (!isAdmin) {
-      setIsNewslettersLoaded(true);
-      return;
-    }
-    try {
-      setLoadingMessage('Henter nyhedsbreve...');
-      const { data, error } = await supabase
-        .from('newsletters')
-        .select('*')
-        .order('sent_at', { ascending: false });
-      if (error) throw error;
-      setNewsletters(data || []);
-    } catch (err: any) {
-      console.error('Error fetching newsletters:', err);
-    } finally {
-      setIsNewslettersLoaded(true);
-    }
-  }, [isAdmin, setLoadingMessage]);
-
-  const refreshNewsletterSubscribers = useCallback(async () => {
-    if (!isAdmin) {
-      setIsNewsletterSubscribersLoaded(true);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('newsletter_subscribers')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setNewsletterSubscribers(data || []);
-    } catch (err: any) {
-      console.error('Error fetching newsletter subscribers:', err);
-    } finally {
-      setIsNewsletterSubscribersLoaded(true);
-    }
-  }, [isAdmin]);
-
-  const refreshNewsletterTemplates = useCallback(async () => {
-    if (!isAdmin) {
-      setIsNewsletterTemplatesLoaded(true);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('newsletter_templates')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setNewsletterTemplates(data || []);
-    } catch (err: any) {
-      console.error('Error fetching newsletter templates:', err);
-    } finally {
-      setIsNewsletterTemplatesLoaded(true);
-    }
-  }, [isAdmin]);
-
   const refreshAddressZones = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -599,7 +522,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (p === '/merch')                  return ['shopProducts'];
       if (p === '/admin')                  return [
         'products', 'portfolio', 'bundles', 'bookings',
-        'newsletters', 'newsletterSubscribers', 'newsletterTemplates',
         'discountCodes', 'addressZones', 'shopProducts', 'clientLogos',
       ];
       return [];
@@ -612,15 +534,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       bundles:               refreshBundles,
       bookings:              refreshBookings,
       discountCodes:         refreshDiscountCodes,
-      newsletters:           refreshNewsletters,
-      newsletterSubscribers: refreshNewsletterSubscribers,
-      newsletterTemplates:   refreshNewsletterTemplates,
       addressZones:          refreshAddressZones,
       shopProducts:          refreshShopProducts,
       clientLogos:           refreshClientLogos,
     };
 
-    const ADMIN_GATED_KEYS = new Set<PageDataKey>(['bookings', 'discountCodes', 'newsletters', 'newsletterSubscribers', 'newsletterTemplates']);
+    const ADMIN_GATED_KEYS = new Set<PageDataKey>(['bookings', 'discountCodes']);
 
     const allKeys      = getDataKeysForPath(path);
     // For admin-gated keys, skip the cache when isAdmin is false — they must be re-fetched once auth resolves.
@@ -653,7 +572,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error(`DataContext: auto-fetch error for "${key}":`, err);
       });
     });
-  }, [location.pathname, isDataLoaded, isAdminForEffect, refreshProducts, refreshHomeSections, refreshPortfolio, refreshBundles,  refreshBookings, refreshDiscountCodes, refreshNewsletters, refreshNewsletterSubscribers, refreshNewsletterTemplates, refreshAddressZones, refreshShopProducts, refreshClientLogos]);
+  }, [location.pathname, isDataLoaded, isAdminForEffect, refreshProducts, refreshHomeSections, refreshPortfolio, refreshBundles,  refreshBookings, refreshDiscountCodes, refreshAddressZones, refreshShopProducts, refreshClientLogos]);
 
   // ─── Tab-visibility → reconnect realtime + bust caches on reconnect ────────
   // When the browser kills the WS (tab hidden, throttled, or network cut),
@@ -736,23 +655,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setupSubscription('client_logos_changes',  'client_logos',      refreshClientLogos),
       setupSubscription('bundles_changes',       'portfolio_bundles', refreshBundles),
       setupSubscription('bookings_changes',      'bookings',          refreshBookings),
-      setupSubscription('newsletter_changes',    'newsletters',       refreshNewsletters),
       setupSubscription('address_zones_changes', 'address_zones',     refreshAddressZones),
     ].filter(Boolean);
-
-    if (isAdmin) {
-      subscriptions.push(
-        setupSubscription('newsletter_subscribers_changes', 'newsletter_subscribers', refreshNewsletterSubscribers),
-        setupSubscription('newsletter_templates_changes',   'newsletter_templates',   refreshNewsletterTemplates),
-      );
-    }
 
     return () => {
       subscriptions.forEach(sub => { if (sub) { try { supabase.removeChannel(sub); } catch {} } });
       subscriptionRefs.current.forEach(channel => { try { supabase.removeChannel(channel); } catch {} });
       subscriptionRefs.current.clear();
     };
-  }, [isDataLoaded, isAdmin, realtimeKey, refreshProducts, refreshSiteContent, refreshHomeSections, refreshPortfolio, refreshBundles, refreshBookings,  refreshNewsletters, refreshNewsletterSubscribers, refreshNewsletterTemplates, refreshAddressZones, refreshClientLogos]);
+  }, [isDataLoaded, isAdmin, realtimeKey, refreshProducts, refreshSiteContent, refreshHomeSections, refreshPortfolio, refreshBundles, refreshBookings,  refreshAddressZones, refreshClientLogos]);
 
   useEffect(() => {
     if (!user || !isDataLoaded) return;
@@ -787,9 +698,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     bookingsLoading,
     bookingsError,
     discountCodes,
-    newsletterSubscribers,
-    newsletters,
-    newsletterTemplates,
     isDataLoaded,
     dataError,
     isSiteContentLoaded,
@@ -799,9 +707,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isHomeSectionsLoaded,
     isBookingsLoaded,
     isDiscountCodesLoaded,
-    isNewslettersLoaded,
-    isNewsletterSubscribersLoaded,
-    isNewsletterTemplatesLoaded,
     isAddressZonesLoaded,
     refreshProducts,
     refreshSiteContent,
@@ -812,9 +717,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshBundles,
     refreshBookings,
     refreshDiscountCodes,
-    refreshNewsletterSubscribers,
-    refreshNewsletters,
-    refreshNewsletterTemplates,
     refreshAddressZones,
   };
 

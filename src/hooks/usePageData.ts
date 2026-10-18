@@ -8,9 +8,6 @@ export type PageDataKey =
   | 'portfolio'
   | 'bookings'
   | 'discountCodes'
-  | 'newsletters'
-  | 'newsletterSubscribers'
-  | 'newsletterTemplates'
   | 'addressZones';
 
 export function usePageData(keys: PageDataKey[]) {
@@ -20,9 +17,6 @@ export function usePageData(keys: PageDataKey[]) {
     refreshPortfolio,
     refreshBookings,
     refreshDiscountCodes,
-    refreshNewsletters,
-    refreshNewsletterSubscribers,
-    refreshNewsletterTemplates,
     refreshAddressZones,
   } = useData();
   const { user } = useAuth();
@@ -44,9 +38,6 @@ export function usePageData(keys: PageDataKey[]) {
       portfolio:             refreshPortfolio,
       bookings:              refreshBookings,
       discountCodes:         refreshDiscountCodes,
-      newsletters:           refreshNewsletters,
-      newsletterSubscribers: refreshNewsletterSubscribers,
-      newsletterTemplates:   refreshNewsletterTemplates,
       addressZones:          refreshAddressZones,
     };
 

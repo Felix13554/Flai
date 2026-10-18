@@ -9,13 +9,9 @@ const Footer: React.FC = () => {
   const { getContent } = useData();
   
   const [formData, setFormData] = useState({ name: '', email: '', message: '' });
-  const [newsletterEmail, setNewsletterEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isNewsletterSubmitting, setIsNewsletterSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isNewsletterSuccess, setIsNewsletterSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [newsletterError, setNewsletterError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,32 +36,6 @@ const Footer: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senere.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleNewsletterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setNewsletterError('');
-    setIsNewsletterSubmitting(true);
-    try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/subscribe-newsletter`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ email: newsletterEmail }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to subscribe');
-      setIsNewsletterSuccess(true);
-      setNewsletterEmail('');
-      setTimeout(() => setIsNewsletterSuccess(false), 5000);
-    } catch (err) {
-      console.error('Newsletter subscription error:', err);
-      setNewsletterError(err instanceof Error ? err.message : 'Der opstod en fejl. PrÃÂÃÂ¸v igen senare.');
-    } finally {
-      setIsNewsletterSubmitting(false);
     }
   };
 
@@ -166,30 +136,6 @@ const Footer: React.FC = () => {
                 {error && <p className="text-error text-sm">{error}</p>}
               </form>
             )}
-
-            <div className="pt-6 border-t border-white/20">
-              <EditableContent contentKey="footer-newsletter-heading" as="h3" className="text-lg font-semibold mb-3" fallback="Tilmeld Nyhedsbrev" />
-              {isNewsletterSuccess ? (
-                <div className="flex items-center space-x-2 bg-success/20 border border-success rounded-lg px-4 py-3">
-                  <CheckCircle size={18} className="text-success flex-shrink-0" />
-                  <EditableContent contentKey="footer-newsletter-success" as="span" className="text-sm text-white" fallback="Tak! Du er nu tilmeldt vores nyhedsbrev." />
-                </div>
-              ) : (
-                <form onSubmit={handleNewsletterSubmit} className="space-y-3">
-                  <div className="flex space-x-2">
-                    <input type="email" value={newsletterEmail}
-                      onChange={(e) => setNewsletterEmail(e.target.value)}
-                      placeholder={getContent('footer-newsletter-placeholder', 'Din email')} required disabled={isNewsletterSubmitting}
-                      className="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/60 focus:outline-none focus:border-white/40 focus:bg-white/15 transition-all disabled:opacity-50" />
-                    <button type="submit" disabled={isNewsletterSubmitting}
-                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center">
-                      {isNewsletterSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                    </button>
-                  </div>
-                  {newsletterError && <p className="text-error text-sm">{newsletterError}</p>}
-                </form>
-              )}
-            </div>
           </div>
         </div>
         

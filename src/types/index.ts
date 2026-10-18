@@ -132,27 +132,6 @@ export interface DiscountCode {
   updated_at: string;
 }
 
-export interface NewsletterSubscriber {
-  id: string;
-  email: string;
-  created_at: string;
-}
-
-export interface Newsletter {
-  id: string;
-  title: string;
-  content: string;
-  sent_at: string;
-}
-
-export interface NewsletterTemplate {
-  id: string;
-  name: string;
-  template_data: any;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface CreditPackage {
   credits: number;
   price: number;

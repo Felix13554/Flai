@@ -11,7 +11,6 @@ Disallow: /rate-booking/
 Disallow: /update-password
 Disallow: /reset-password
 Disallow: /email-confirmed
-Disallow: /unsubscribe
 Disallow: /review-4.html
 Disallow: https://video-storage.flai.dk/
 Disallow: https://timelapse.flai.dk/

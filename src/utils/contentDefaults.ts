@@ -29,7 +29,6 @@ export const inferCategoryFromKey = (key: string): string => {
     admin: 'admin',
     login: 'login',
     search: 'search',
-    newsletter: 'newsletter',
     faq: 'contact',
     services: 'services',
     primary: 'colors',

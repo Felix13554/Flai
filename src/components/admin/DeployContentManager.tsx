@@ -69,7 +69,6 @@ const ROUTES: Array<{ url: string; label: string; group: string }> = [
   { url: '/donate/',         label: 'Donation',             group: 'Sider' },
   { url: '/ratings',         label: 'Anmeldelser',          group: 'Sider' },
   { url: '/rate-booking/',   label: 'Bedøm booking',        group: 'Sider' },
-  { url: '/unsubscribe',     label: 'Afmeld nyhedsbrev',    group: 'Sider' },
   // Indhold
   { url: '/terms',           label: 'Vilkår',               group: 'Indhold' },
   { url: '/policies',        label: 'Privatpolitik',        group: 'Indhold' },
