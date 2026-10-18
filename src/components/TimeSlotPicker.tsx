@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TimeSlot } from '../types';
-import { formatDate, formatTime, generateTimeSlots } from '../utils/booking';
+import { formatDate, formatTime, generateTimeSlots, expandBlockedDates, ACTIVE_BOOKING_STATUSES } from '../utils/booking';
 import EditableContent from './EditableContent';
 import { supabase } from '../utils/supabase';
 
@@ -86,14 +86,15 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
           .from('bookings')
           .select('booking_date')
           .is('deleted_at', null)
-          .in('payment_status', ['pending', 'paid', 'completed']);
+          .in('payment_status', ACTIVE_BOOKING_STATUSES);
 
         if (error) {
           console.error('Error fetching bookings:', error);
           return;
         }
 
-        const bookedDatesSet = new Set(
+        // Hver booking blokerer sin dato + de følgende dage (7 dage i alt)
+        const bookedDatesSet = expandBlockedDates(
           bookings.map(booking => booking.booking_date)
         );
 
@@ -250,26 +251,39 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
         as="h3"
         className="text-lg font-medium mb-3"
       />
-      <div className="flex overflow-x-auto pb-4 -mx-4 px-4 space-x-2">
-        {availableDates.map(date => {
+      <div className="flex overflow-x-auto pb-4 -mx-4 px-4 items-stretch">
+        {availableDates.map((date, index) => {
           const dateObj = new Date(date);
           const danishDate = dateObj.toLocaleDateString('da-DK', {
             weekday: 'short',
             day: 'numeric',
             month: 'short'
           });
+          const monthKey = date.slice(0, 7);
+          const isNewMonth = index === 0 || availableDates[index - 1].slice(0, 7) !== monthKey;
+          const showYear = isNewMonth && dateObj.getFullYear() !== new Date().getFullYear();
+          const monthLabel = dateObj.toLocaleDateString('da-DK', { month: 'long' }) + (showYear ? ` ${dateObj.getFullYear()}` : '');
           return (
-            <button
-              key={date}
-              onClick={() => handleDateSelect(date)}
-              className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-                date === selectedDate
-                  ? 'bg-neutral-800 text-white'
-                  : 'bg-neutral-700 text-white hover:bg-neutral-600'
-              }`}
-            >
-              {danishDate}
-            </button>
+            <React.Fragment key={date}>
+              {isNewMonth && (
+                <div className="flex flex-col items-center flex-shrink-0 mx-3 first:ml-0 select-none">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400 whitespace-nowrap mb-1">
+                    {monthLabel}
+                  </span>
+                  <div className="w-px flex-1 bg-neutral-500 rounded-full" />
+                </div>
+              )}
+              <button
+                onClick={() => handleDateSelect(date)}
+                className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all flex-shrink-0 mr-2 self-end ${
+                  date === selectedDate
+                    ? 'bg-neutral-800 text-white'
+                    : 'bg-neutral-700 text-white hover:bg-neutral-600'
+                }`}
+              >
+                {danishDate}
+              </button>
+            </React.Fragment>
           );
         })}
       </div>
