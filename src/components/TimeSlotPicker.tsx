@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TimeSlot } from '../types';
-import { formatDate, formatTime, generateTimeSlots, expandBlockedDates, ACTIVE_BOOKING_STATUSES } from '../utils/booking';
+import { formatDate, formatTime, generateTimeSlots, expandBlockedDates, fetchBlockDaysByProduct, ACTIVE_BOOKING_STATUSES } from '../utils/booking';
 import EditableContent from './EditableContent';
 import { supabase } from '../utils/supabase';
 
@@ -84,7 +84,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
       try {
         const { data: bookings, error } = await supabase
           .from('bookings')
-          .select('booking_date')
+          .select('booking_date, product_id')
           .is('deleted_at', null)
           .in('payment_status', ACTIVE_BOOKING_STATUSES);
 
@@ -93,9 +93,13 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
           return;
         }
 
-        // Hver booking blokerer sin dato + de følgende dage (7 dage i alt)
+        // Hver booking blokerer sin dato + produktets antal blokeringsdage (standard 7)
+        const blockDaysByProduct = await fetchBlockDaysByProduct();
         const bookedDatesSet = expandBlockedDates(
-          bookings.map(booking => booking.booking_date)
+          bookings.map(booking => ({
+            date: booking.booking_date,
+            days: blockDaysByProduct.get(booking.product_id),
+          }))
         );
 
         setBookedDates(bookedDatesSet);
