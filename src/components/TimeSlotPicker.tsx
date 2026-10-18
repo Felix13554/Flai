@@ -231,6 +231,11 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
   const slotsForSelectedDate = selectedDate ? groupedSlots[selectedDate]?.filter(slot => slot.available) || [] : [];
   const categorizedSlots = groupSlotsByCategory(slotsForSelectedDate);
 
+  // Måned og år for den valgte dato, vises under datovælgeren
+  const selectedMonthLabel = selectedDate
+    ? new Date(selectedDate).toLocaleDateString('da-DK', { month: 'long', year: 'numeric' })
+    : '';
+
   // Only zones that actually have slots get rendered, and the grid
   // column count adapts to how many zones survive the filter.
   const visibleCategories = [
@@ -255,7 +260,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
         as="h3"
         className="text-lg font-medium mb-3"
       />
-      <div className="flex overflow-x-auto pb-4 -mx-4 px-4 items-stretch">
+      <div className="flex overflow-x-auto pb-2 -mx-4 px-4 items-stretch">
         {availableDates.map((date, index) => {
           const dateObj = new Date(date);
           const danishDate = dateObj.toLocaleDateString('da-DK', {
@@ -264,22 +269,17 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
             month: 'short'
           });
           const monthKey = date.slice(0, 7);
-          const isNewMonth = index === 0 || availableDates[index - 1].slice(0, 7) !== monthKey;
-          const showYear = isNewMonth && dateObj.getFullYear() !== new Date().getFullYear();
-          const monthLabel = dateObj.toLocaleDateString('da-DK', { month: 'long' }) + (showYear ? ` ${dateObj.getFullYear()}` : '');
+          const isNewMonth = index > 0 && availableDates[index - 1].slice(0, 7) !== monthKey;
           return (
             <React.Fragment key={date}>
               {isNewMonth && (
-                <div className="flex flex-col items-center flex-shrink-0 mx-3 first:ml-0 select-none">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400 whitespace-nowrap mb-1">
-                    {monthLabel}
-                  </span>
+                <div className="flex flex-col items-center flex-shrink-0 mx-3 select-none">
                   <div className="w-px flex-1 bg-neutral-500 rounded-full" />
                 </div>
               )}
               <button
                 onClick={() => handleDateSelect(date)}
-                className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all flex-shrink-0 mr-2 self-end ${
+                className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all flex-shrink-0 mr-2 ${
                   date === selectedDate
                     ? 'bg-neutral-800 text-white'
                     : 'bg-neutral-700 text-white hover:bg-neutral-600'
@@ -291,6 +291,12 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
           );
         })}
       </div>
+
+      {selectedDate && (
+        <p className="text-sm font-semibold uppercase tracking-wide text-neutral-400 mb-2">
+          {selectedMonthLabel}
+        </p>
+      )}
 
       {selectedDate && (
         <>
