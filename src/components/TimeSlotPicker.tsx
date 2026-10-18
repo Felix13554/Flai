@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TimeSlot } from '../types';
 import { formatDate, formatTime, generateTimeSlots, expandBlockedDates, fetchBlockDaysByProduct, ACTIVE_BOOKING_STATUSES } from '../utils/booking';
 import EditableContent from './EditableContent';
@@ -78,6 +78,8 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
   const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(new Set());
+  const dateScrollRef = useRef<HTMLDivElement>(null);
+  const [visibleDate, setVisibleDate] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchBookedDates = async () => {
@@ -153,6 +155,25 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
       fetchTimeSlots();
     }
   }, [bookedDates]);
+
+  // Finder den første dato, der er synlig i venstre side af tidslinjen,
+  // så måned og år følger med, når der scrolles.
+  const updateVisibleDate = () => {
+    const container = dateScrollRef.current;
+    if (!container) return;
+    const containerLeft = container.getBoundingClientRect().left;
+    const buttons = container.querySelectorAll<HTMLButtonElement>('button[data-date]');
+    for (const btn of Array.from(buttons)) {
+      if (btn.getBoundingClientRect().right > containerLeft + 24) {
+        setVisibleDate(btn.dataset.date || null);
+        return;
+      }
+    }
+  };
+
+  useEffect(() => {
+    updateVisibleDate();
+  }, [loading, groupedSlots]);
 
   const handleDateSelect = (date: string) => {
     setSelectedDate(date);
@@ -231,9 +252,10 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
   const slotsForSelectedDate = selectedDate ? groupedSlots[selectedDate]?.filter(slot => slot.available) || [] : [];
   const categorizedSlots = groupSlotsByCategory(slotsForSelectedDate);
 
-  // Måned og år for den valgte dato, vises under datovælgeren
-  const selectedMonthLabel = selectedDate
-    ? new Date(selectedDate).toLocaleDateString('da-DK', { month: 'long', year: 'numeric' })
+  // Måned og år for det sted, brugeren er ved i datotidslinjen
+  const monthLabelDate = visibleDate ?? selectedDate ?? availableDates[0];
+  const visibleMonthLabel = monthLabelDate
+    ? new Date(monthLabelDate).toLocaleDateString('da-DK', { month: 'long', year: 'numeric' })
     : '';
 
   // Only zones that actually have slots get rendered, and the grid
@@ -260,7 +282,11 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
         as="h3"
         className="text-lg font-medium mb-3"
       />
-      <div className="flex overflow-x-auto pb-2 -mx-4 px-4 items-stretch">
+      <div
+        ref={dateScrollRef}
+        onScroll={updateVisibleDate}
+        className="flex overflow-x-auto pb-2 -mx-4 px-4 items-stretch"
+      >
         {availableDates.map((date, index) => {
           const dateObj = new Date(date);
           const danishDate = dateObj.toLocaleDateString('da-DK', {
@@ -278,6 +304,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
                 </div>
               )}
               <button
+                data-date={date}
                 onClick={() => handleDateSelect(date)}
                 className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all flex-shrink-0 mr-2 ${
                   date === selectedDate
@@ -292,11 +319,9 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
         })}
       </div>
 
-      {selectedDate && (
-        <p className="text-sm font-semibold uppercase tracking-wide text-neutral-400 mb-2">
-          {selectedMonthLabel}
-        </p>
-      )}
+      <h3 className="text-lg font-medium mb-3 capitalize">
+        {visibleMonthLabel}
+      </h3>
 
       {selectedDate && (
         <>
