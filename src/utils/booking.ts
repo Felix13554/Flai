@@ -4,20 +4,42 @@ import { supabase } from './supabase';
 import { BookingTimeRange, TimeSlot, BookingDay, BookingConfig } from '../types';
 import { getSunTimesForDate, categorizTimeSlot } from './sunTimes';
 
-// En booking blokerer sin egen dato og de følgende dage, så i alt 7 dage er optaget.
+// En booking blokerer sin egen dato og de følgende dage. Standard er 7 dage i alt,
+// men hvert produkt kan have sit eget antal (products.booking_block_days).
 export const BOOKING_BLOCK_DAYS = 7;
+export const MAX_BOOKING_BLOCK_DAYS = 365;
 
 // Statuser der tæller som en aktiv booking (samme som datovælgeren bruger)
 export const ACTIVE_BOOKING_STATUSES = ['pending', 'paid', 'completed'];
 
-// Udvider en liste af booking-datoer (yyyy-MM-dd) til alle datoer der er optaget
-export const expandBlockedDates = (bookingDates: Array<string | null | undefined>): Set<string> => {
+export const resolveBlockDays = (days: number | null | undefined): number => {
+  if (typeof days !== 'number' || !Number.isFinite(days) || days < 1) return BOOKING_BLOCK_DAYS;
+  return Math.min(Math.floor(days), MAX_BOOKING_BLOCK_DAYS);
+};
+
+// Henter produkternes egne blokeringsdage (product_id -> dage)
+export const fetchBlockDaysByProduct = async (): Promise<Map<number, number | null>> => {
+  const map = new Map<number, number | null>();
+  const { data, error } = await supabase.from('products').select('id, booking_block_days');
+  if (error) {
+    console.error('Error fetching product block days:', error);
+    return map;
+  }
+  (data || []).forEach(p => map.set(p.id, p.booking_block_days ?? null));
+  return map;
+};
+
+// Udvider bookinger (yyyy-MM-dd + antal dage) til alle datoer der er optaget
+export const expandBlockedDates = (
+  entries: Array<{ date: string | null | undefined; days?: number | null }>
+): Set<string> => {
   const blocked = new Set<string>();
-  for (const bookingDate of bookingDates) {
-    if (!bookingDate) continue;
-    const start = parseISO(bookingDate);
+  for (const { date, days } of entries) {
+    if (!date) continue;
+    const start = parseISO(date);
     if (isNaN(start.getTime())) continue;
-    for (let i = 0; i < BOOKING_BLOCK_DAYS; i++) {
+    const count = resolveBlockDays(days);
+    for (let i = 0; i < count; i++) {
       blocked.add(format(addDays(start, i), 'yyyy-MM-dd'));
     }
   }
@@ -332,12 +354,12 @@ export const checkSlotAvailability = async (date: string, time: string): Promise
       return false;
     }
 
-    // Check for existing bookings: the exact slot, or a booking within the
-    // blocking window (the booking's own date + the following days)
-    const windowStart = format(addDays(targetDate, -(BOOKING_BLOCK_DAYS - 1)), 'yyyy-MM-dd');
+    // Check for existing bookings: the exact slot, or a booking whose blocking
+    // window (its date + the product's block days) covers the requested date
+    const windowStart = format(addDays(targetDate, -(MAX_BOOKING_BLOCK_DAYS - 1)), 'yyyy-MM-dd');
     const { data: nearbyBookings, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, booking_date, booking_time, payment_status')
+      .select('id, booking_date, booking_time, payment_status, product_id')
       .gte('booking_date', windowStart)
       .lte('booking_date', date)
       .is('deleted_at', null);
@@ -347,11 +369,13 @@ export const checkSlotAvailability = async (date: string, time: string): Promise
       return false;
     }
 
-    const conflicts = (nearbyBookings || []).some(
-      b =>
-        (b.booking_date === date && b.booking_time === time) ||
-        ACTIVE_BOOKING_STATUSES.includes(b.payment_status)
-    );
+    const blockDaysByProduct = await fetchBlockDaysByProduct();
+    const conflicts = (nearbyBookings || []).some(b => {
+      if (b.booking_date === date && b.booking_time === time) return true;
+      if (!ACTIVE_BOOKING_STATUSES.includes(b.payment_status)) return false;
+      const days = resolveBlockDays(blockDaysByProduct.get(b.product_id));
+      return expandBlockedDates([{ date: b.booking_date, days }]).has(date);
+    });
     if (conflicts) {
       return false;
     }
