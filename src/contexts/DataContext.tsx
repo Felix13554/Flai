@@ -597,7 +597,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (p === '/buy-credits')            return ['discountCodes'];
       if (p === '/coverage')               return ['addressZones'];
       if (p === '/merch')                  return ['shopProducts'];
-      if (p.startsWith('/simple-request')) return ['products'];
       if (p === '/admin')                  return [
         'products', 'portfolio', 'bundles', 'bookings',
         'newsletters', 'newsletterSubscribers', 'newsletterTemplates',
