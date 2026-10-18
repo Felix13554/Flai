@@ -443,7 +443,7 @@ const ProductPage: React.FC = () => {
               <div className="pt-4 flex flex-row space-x-3">
                 <button
                   onClick={handleBookNow}
-                  className="flex-1 btn-secondary py-3 px-2 border-2 border-primary/30 hover:border-primary/60 transition-colors flex flex-col items-center justify-center"
+                  className="flex-1 btn-primary py-3 px-2 flex flex-col items-center justify-center"
                 >
                   <span className="font-bold text-base block"><EditableContent contentKey="product-page-book-nu" fallback="Book Nu" /></span>
                 </button>
