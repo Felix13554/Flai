@@ -41,7 +41,6 @@ const RateBookingPage = lazy(() => import('./pages/RateBookingPage'));
 const UnsubscribePage = lazy(() => import('./pages/UnsubscribePage'));
 const BuyCreditsPage = lazy(() => import('./pages/BuyCreditsPage'));
 const DonationPage = lazy(() => import('./pages/DonationPage'));
-const SimpleRequestPage = lazy(() => import('./pages/SimpleRequestPage'));
 const MerchandisePage = lazy(() => import('./pages/MerchandisePage'));
 const FinancePage = lazy(() => import('./pages/FinancePage'));
 const DriveDownload = lazy(() => import('./components/DriveDownload'));
@@ -130,7 +129,6 @@ function SiteShell() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/coverage" element={<CoverageAreasPage />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
-          <Route path="/simple-request" element={<SimpleRequestPage />} />
 
           {/*
             Merchandise — ALL /merch/* routes go to MerchandisePage.
