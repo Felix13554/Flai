@@ -67,12 +67,6 @@ const ProductPage: React.FC = () => {
     navigate(`/booking/${product?.id}`);
   };
 
-  const handleSimpleRequest = () => {
-    if (product) {
-      navigate(`/simple-request?product_id=${product.id}&product_name=${encodeURIComponent(product.name)}`);
-    }
-  };
-
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   const getMediaType = (url: string): 'panorama' | 'youtube' | 'cloudinary' | 'image' => {
@@ -448,23 +442,10 @@ const ProductPage: React.FC = () => {
               {/* Book Now Buttons */}
               <div className="pt-4 flex flex-row space-x-3">
                 <button
-                  onClick={handleSimpleRequest}
-                  className="flex-1 btn-primary py-3 px-2 flex flex-col items-center justify-center min-h-[80px]"
-                >
-                  <span className="font-bold text-base block"><EditableContent contentKey="product-page-smart-booking" fallback="Smart Booking" /></span>
-                  <span className="text-[10px] sm:text-xs opacity-80 font-normal leading-tight mt-1">
-                    <EditableContent contentKey="product-page-vi-vaelger-dato-og-tid" fallback="Vi vælger dato og tid efter lysforholdene" />
-                  </span>
-                </button>
-
-                <button
                   onClick={handleBookNow}
-                  className="flex-1 btn-secondary py-3 px-2 border-2 border-primary/30 hover:border-primary/60 transition-colors flex flex-col items-center justify-center min-h-[80px]"
+                  className="flex-1 btn-secondary py-3 px-2 border-2 border-primary/30 hover:border-primary/60 transition-colors flex flex-col items-center justify-center"
                 >
                   <span className="font-bold text-base block"><EditableContent contentKey="product-page-book-nu" fallback="Book Nu" /></span>
-                  <span className="text-[10px] sm:text-xs opacity-80 font-normal leading-tight mt-1">
-                    <EditableContent contentKey="product-page-du-vaelger-selv-tid-og" fallback="Du vælger selv tid og dato efter dine behov" />
-                  </span>
                 </button>
               </div>
 
