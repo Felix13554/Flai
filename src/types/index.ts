@@ -11,6 +11,7 @@ export interface Product {
   }>;
   is_exclusive_to_business: boolean;
   is_editing_included: boolean;
+  booking_block_days?: number | null; // null/undefined = standard (7 dage)
   created_at: string;
   array: number; // New field for ordering products
 }
