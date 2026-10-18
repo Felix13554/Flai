@@ -39,7 +39,6 @@ const EmailConfirmedPage = lazy(() => import('./pages/EmailConfirmedPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const RateBookingPage = lazy(() => import('./pages/RateBookingPage'));
 const BuyCreditsPage = lazy(() => import('./pages/BuyCreditsPage'));
-const DonationPage = lazy(() => import('./pages/DonationPage'));
 const MerchandisePage = lazy(() => import('./pages/MerchandisePage'));
 const FinancePage = lazy(() => import('./pages/FinancePage'));
 const DriveDownload = lazy(() => import('./components/DriveDownload'));
@@ -138,7 +137,6 @@ function SiteShell() {
           <Route path="/merch" element={<MerchandisePage />} />
           <Route path="/merch/checkout" element={<MerchandisePage />} />
 
-          <Route path="/donate/:linkId" element={<DonationPage />} />
           <Route path="/rate-booking/:token" element={<RateBookingPage />} />
           <Route path="/booking/:productId" element={<BookingPage />} />
           <Route path="/booking-success" element={<BookingSuccessPage />} />

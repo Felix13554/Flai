@@ -8,7 +8,6 @@ import {
   Home,
   Clock,
   FileImage,
-  Wallet,
   Video,
   Search,
   Users,
@@ -31,7 +30,6 @@ import AddressZonesManager from '../components/admin/AddressZonesManager';
 import BookingsManager from '../components/admin/BookingsManager';
 import BookingConfigManager from '../components/admin/BookingConfigManager';
 import ExternalImagesManager from '../components/admin/ExternalImagesManager';
-import DonationsManager from '../components/admin/DonationsManager';
 import VideoManager from '../components/admin/VideoManager';
 import MeilisearchManager from '../components/admin/MeilisearchManager';
 import AdminUsersPanel from '../components/admin/AdminUsersPanel';
@@ -50,7 +48,6 @@ type TabId =
   | 'zones'
   | 'home-sections'
   | 'external-images'
-  | 'donations'
   | 'video'
   | 'meilisearch'
   | 'users'
@@ -63,7 +60,7 @@ type TabId =
 const VALID_SECTIONS = new Set<TabId>([
   'bookings', 'booking-config', 'products', 'portfolio', 'client-logos',
   'zones', 'home-sections',
-  'external-images', 'donations', 'video', 'meilisearch', 'users', 'deploy',
+  'external-images', 'video', 'meilisearch', 'users', 'deploy',
   'seo-documents', 'shop', 'preview-360', 'preview-links',
 ]);
 
@@ -152,7 +149,6 @@ const AdminPage: React.FC = () => {
     { id: 'client-logos',    label: 'Kunde Logoer',           icon: Building2 },
     { id: 'external-images', label: 'Eksterne Billeder',      icon: FileImage },
     { id: 'zones',           label: 'Adressezoner',           icon: MapPin    },
-    { id: 'donations',       label: 'Betalinger',             icon: Wallet    },
     { id: 'video',           label: 'Videoer',                icon: Video     },
     { id: 'home-sections',   label: 'Forside Sektioner',      icon: Home      },
     { id: 'seo-documents',   label: 'SEO Dokumenter',         icon: Globe     },
@@ -173,7 +169,6 @@ const AdminPage: React.FC = () => {
       case 'zones':           return <ErrorBoundary><AddressZonesManager /></ErrorBoundary>;
       case 'external-images': return <ErrorBoundary><ExternalImagesManager /></ErrorBoundary>;
       case 'home-sections':   return <ErrorBoundary><HomeSectionsManager /></ErrorBoundary>;
-      case 'donations':       return <ErrorBoundary><DonationsManager /></ErrorBoundary>;
       case 'video':           return <ErrorBoundary><VideoManager /></ErrorBoundary>;
       case 'users':           return <ErrorBoundary><AdminUsersPanel /></ErrorBoundary>;
       case 'deploy':          return <ErrorBoundary><DeployContentManager /></ErrorBoundary>;

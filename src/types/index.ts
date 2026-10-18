@@ -139,25 +139,6 @@ export interface CreditPackage {
   popular?: boolean;
 }
 
-export interface DonationLink {
-  id: string;
-  slug: string;
-  title: string;
-  description: string;
-  is_active: boolean;
-  min_amount: number;
-  max_amount?: number;
-  goal_amount?: number;
-  total_collected: number;
-  donation_count: number;
-  currency: string;
-  end_date?: string;
-  thank_you_message?: string;
-  created_by?: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface PreviewLink {
   id: string;
   type: 'video' | 'photos';
@@ -169,15 +150,6 @@ export interface PreviewLink {
   view_count: number;
   last_viewed_at?: string;
   created_by?: string;
-  created_at: string;
-}
-
-export interface Donation {
-  id: string;
-  donation_link_id: string;
-  amount: number;
-  payment_status: string;
-  payment_intent_id?: string;
   created_at: string;
 }
 
