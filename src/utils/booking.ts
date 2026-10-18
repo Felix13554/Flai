@@ -1,9 +1,28 @@
-
 import { format, addDays, getDay, isBefore, startOfToday, addMinutes, parseISO } from 'date-fns';
 import { da } from 'date-fns/locale';
 import { supabase } from './supabase';
 import { BookingTimeRange, TimeSlot, BookingDay, BookingConfig } from '../types';
 import { getSunTimesForDate, categorizTimeSlot } from './sunTimes';
+
+// En booking blokerer sin egen dato og de følgende dage, så i alt 7 dage er optaget.
+export const BOOKING_BLOCK_DAYS = 7;
+
+// Statuser der tæller som en aktiv booking (samme som datovælgeren bruger)
+export const ACTIVE_BOOKING_STATUSES = ['pending', 'paid', 'completed'];
+
+// Udvider en liste af booking-datoer (yyyy-MM-dd) til alle datoer der er optaget
+export const expandBlockedDates = (bookingDates: Array<string | null | undefined>): Set<string> => {
+  const blocked = new Set<string>();
+  for (const bookingDate of bookingDates) {
+    if (!bookingDate) continue;
+    const start = parseISO(bookingDate);
+    if (isNaN(start.getTime())) continue;
+    for (let i = 0; i < BOOKING_BLOCK_DAYS; i++) {
+      blocked.add(format(addDays(start, i), 'yyyy-MM-dd'));
+    }
+  }
+  return blocked;
+};
 
 // Helper functions for formatting dates and times
 export const formatDate = (date: string): string => {
@@ -83,7 +102,8 @@ export const generateTimeSlots = async (): Promise<TimeSlot[]> => {
   const today = startOfToday();
   
   // Get all booking schedules (both weekly and specific date overrides)
-  const endDate = format(addDays(today, 28), 'yyyy-MM-dd');
+  const BOOKING_HORIZON_DAYS = 365;
+  const endDate = format(addDays(today, BOOKING_HORIZON_DAYS), 'yyyy-MM-dd');
   const { data: allSchedules, error } = await supabase
     .from('booking_schedules')
     .select('*')
@@ -118,8 +138,8 @@ export const generateTimeSlots = async (): Promise<TimeSlot[]> => {
     specificScheduleMap.get(dateKey)!.push(schedule);
   });
 
-  // Generate slots for the next 4 weeks, day by day chronologically
-  for (let dayOffset = 0; dayOffset < 28; dayOffset++) {
+  // Generate slots for the next year, day by day chronologically
+  for (let dayOffset = 0; dayOffset <= BOOKING_HORIZON_DAYS; dayOffset++) {
     const currentDate = addDays(today, dayOffset);
     
     // Skip if date is in the past
@@ -216,13 +236,13 @@ export const generateTimeSlots = async (): Promise<TimeSlot[]> => {
     .is('deleted_at', null);
   
   if (bookings) {
-    // Mark booked slots as unavailable
+    // Mark booked slots as unavailable (Map lookup keeps this fast over a full year)
+    const slotIndexById = new Map<string, number>();
+    slots.forEach((slot, index) => slotIndexById.set(slot.id, index));
+
     for (const booking of bookings) {
-      const bookedSlotIndex = slots.findIndex(
-        slot => slot.date === booking.booking_date && slot.time === booking.booking_time
-      );
-      
-      if (bookedSlotIndex !== -1) {
+      const bookedSlotIndex = slotIndexById.get(`${booking.booking_date}-${booking.booking_time}`);
+      if (bookedSlotIndex !== undefined) {
         slots[bookedSlotIndex].available = false;
       }
     }
@@ -312,12 +332,14 @@ export const checkSlotAvailability = async (date: string, time: string): Promise
       return false;
     }
 
-    // Check for existing confirmed bookings
-    const { data: existingBooking, error: bookingError } = await supabase
+    // Check for existing bookings: the exact slot, or a booking within the
+    // blocking window (the booking's own date + the following days)
+    const windowStart = format(addDays(targetDate, -(BOOKING_BLOCK_DAYS - 1)), 'yyyy-MM-dd');
+    const { data: nearbyBookings, error: bookingError } = await supabase
       .from('bookings')
-      .select('id')
-      .eq('booking_date', date)
-      .eq('booking_time', time)
+      .select('id, booking_date, booking_time, payment_status')
+      .gte('booking_date', windowStart)
+      .lte('booking_date', date)
       .is('deleted_at', null);
 
     if (bookingError) {
@@ -325,8 +347,12 @@ export const checkSlotAvailability = async (date: string, time: string): Promise
       return false;
     }
 
-    // If there's an existing booking, slot is not available
-    if (existingBooking && existingBooking.length > 0) {
+    const conflicts = (nearbyBookings || []).some(
+      b =>
+        (b.booking_date === date && b.booking_time === time) ||
+        ACTIVE_BOOKING_STATUSES.includes(b.payment_status)
+    );
+    if (conflicts) {
       return false;
     }
 
