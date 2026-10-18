@@ -253,7 +253,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
         <div className="flex flex-col space-y-2">
           <button
             onClick={handleOrderClick}
-            className="w-full btn-secondary text-sm px-4 py-3 border-2 border-primary/30 hover:border-primary/60 transition-colors flex flex-col items-center"
+            className="w-full btn-primary text-sm px-4 py-3 flex flex-col items-center"
           >
             <span className="font-bold text-base block">
               <EditableContent contentKey="product-card-book-nu" fallback="Book Nu" />
