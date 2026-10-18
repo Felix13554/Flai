@@ -48,8 +48,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const isSwiping = useRef(false);
 
   const handleOrderClick = () => navigate(`/booking/${product.id}`);
-  const handleSimpleRequestClick = () =>
-    navigate(`/simple-request?product_id=${product.id}&product_name=${encodeURIComponent(product.name)}`);
   const handleViewProduct = () => navigate(`/product/${encodeURIComponent(product.name)}`);
 
   const prevImage = (e?: React.MouseEvent) => {
@@ -254,32 +252,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
         <div className="flex flex-col space-y-2">
           <button
-            onClick={handleSimpleRequestClick}
-            className="w-full btn-primary text-sm px-4 py-3 flex flex-col items-center"
-          >
-            <span className="font-bold text-base block">
-              <EditableContent contentKey="product-card-smart-booking" fallback="Smart Booking" />
-            </span>
-            <span className="text-xs opacity-80 font-normal">
-              <EditableContent
-                contentKey="product-card-vi-vaelger-dato-og-tid"
-                fallback="Jeg vælger dato og tid efter lysforholdende"
-              />
-            </span>
-          </button>
-
-          <button
             onClick={handleOrderClick}
             className="w-full btn-secondary text-sm px-4 py-3 border-2 border-primary/30 hover:border-primary/60 transition-colors flex flex-col items-center"
           >
             <span className="font-bold text-base block">
               <EditableContent contentKey="product-card-book-nu" fallback="Book Nu" />
-            </span>
-            <span className="text-xs opacity-80 font-normal text-neutral-400">
-              <EditableContent
-                contentKey="product-card-du-vaelger-selv-tid-og"
-                fallback="Du vælger selv tid og dato efter dine behov"
-              />
             </span>
           </button>
         </div>
