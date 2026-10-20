@@ -3,6 +3,7 @@ import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../utils/supabase';
 import toast from 'react-hot-toast';
 import { cleanupAuthStorage, isAuthStateCorrupted, safeCleanupAuthStorage } from '../utils/authCleanup';
+import { markAdminResolved, markAdminResolving, markNotLoggedIn } from '../utils/adminHeroAutoplay';
 
 interface AuthContextType {
   user: SupabaseUser | null;
@@ -57,16 +58,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Error checking user profile:', error);
-        return { isAdmin: false, credits: 0 };
+        return { isAdmin: false, credits: 0, ok: false };
       }
 
       return {
         isAdmin: userData?.is_admin || false,
         credits: userData?.credits || 0,
+        ok: true,
       };
     } catch (err) {
       console.error('Error in checkUserProfile:', err);
-      return { isAdmin: false, credits: 0 };
+      return { isAdmin: false, credits: 0, ok: false };
     }
   };
 
@@ -108,6 +110,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
       if (!sessionUser) {
         setProfileLoading(false);
+        // No session → definitely not an admin (hero autoplay store).
+        markNotLoggedIn();
       }
       initializedRef.current = true;
     });
@@ -138,6 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // where loading=false AND profileLoading=false AND isAdmin=false
         // before checkUserProfile() has actually finished.
         setProfileLoading(false);
+        markNotLoggedIn();
         toast.success('Du er nu logget ud');
         // Clean up any orphaned PKCE state to prevent future login issues
         safeCleanupAuthStorage('signed-out-event');
@@ -187,9 +192,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const myGen = profileFetchGenRef.current;
 
     setProfileLoading(true);
+    // Hero autoplay store: fall back to its localStorage hint until the
+    // profile lands.
+    markAdminResolving();
     checkUserProfile(user.id).then((profile) => {
       // Only commit if we are still the latest fetch for this user.
       if (myGen !== profileFetchGenRef.current) return;
+      // Only a successful fetch is authoritative; on error the hint stays in
+      // charge so a network blip can't flip an admin's hero video on.
+      if (profile.ok) markAdminResolved(profile.isAdmin);
       if (profile.isAdmin) isAdminConfirmedRef.current = true;
       setIsAdmin(profile.isAdmin);
       setCredits(profile.credits);
@@ -226,6 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsAdmin(false);
             setCredits(0);
             setProfileLoading(false);
+            markNotLoggedIn();
           }
         }
       } catch (err) {
