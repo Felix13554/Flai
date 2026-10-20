@@ -92,3 +92,4 @@ function subscribe(listener: () => void): () => void {
 export function useAdminHeroAutoplayOff(): boolean {
   return useSyncExternalStore(subscribe, snapshot, () => false)
 }
+

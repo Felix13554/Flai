@@ -1,5 +1,13 @@
 /**
- * HeroVideoSection — v18
+ * HeroVideoSection — v19
+ *
+ * v19 — ADMIN: while logged in as admin the hero does NOT autoplay. The
+ * poster stays up with a play button and nothing calls play() (no automatic
+ * attempt, no global click/keydown fallback, no keep-alive, no resume on
+ * focus/scroll) until the admin presses that button; after that the video
+ * behaves normally for the rest of the page view (incl. project switches).
+ * Everyone else is untouched: `autoplayBlocked` is a constant `false` for
+ * them (see utils/adminHeroAutoplay.ts — no auth wait, no extra renders).
  *
  * v18 — FIX: hero video sometimes did not start until the visitor clicked
  * the screen. Root causes + fixes:
@@ -55,6 +63,7 @@ import {
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
+import { useAdminHeroAutoplayOff } from '../utils/adminHeroAutoplay'
 
 export interface HeroVideoSectionProps {
   className?: string
@@ -139,7 +148,7 @@ const FILL_STYLE: React.CSSProperties = {
 }
 
 // Mobile viewport-height fix
-// ─────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
 // On mobile browsers, `100vh` is the LARGEST possible viewport (as if the
 // address bar / bottom nav were hidden). That makes the hero section taller
 // than what's actually visible once the browser chrome is showing, so the
@@ -314,6 +323,15 @@ function useFrozenViewportHeight(active: boolean) {
 const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children, publicId: controlledPublicId, mobilePublicId: controlledMobilePublicId, onEnded, onProgress }) => {
   useEffect(() => { injectControlHideStyle() }, [])
 
+  // ▶ v19: admin → no autoplay (see header). `false` for every non-admin.
+  const adminAutoplayOff = useAdminHeroAutoplayOff()
+  const [userStarted, setUserStarted] = useState(false)
+  const autoplayBlocked = adminAutoplayOff && !userStarted
+  // Read from inside effects/callbacks without re-running them (re-running the
+  // main playback effect would tear the video down — see its cleanup).
+  const autoplayBlockedRef = useRef(autoplayBlocked)
+  autoplayBlockedRef.current = autoplayBlocked
+
   const isMobile = useIsMobileViewport()
   const isPortraitMobile = useIsPortraitMobile()
   const frozenHeight = useFrozenViewportHeight(isMobile)
@@ -378,13 +396,14 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // video with the poster on those connections.)
   const skipVideo  = false
   // ▶ v18: always 'auto' so the video starts as soon as possible, even on slow links.
-  const preloadVal = 'auto'
+  // ▶ v19: admin without autoplay only needs metadata until they press play.
+  const preloadVal = autoplayBlocked ? 'metadata' : 'auto'
   const autoplayState = useMemo(getAutoplayState, [])
 
   const videoSrc = useMemo(() => cloudinaryMp4Url(publicId), [publicId])
   videoSrcRef.current = videoSrc
 
-  // ── Ref callback ─────────────────────────────────────────────────────────────
+  // ── Ref callback ────────────────────────────────────────────────────────
   // Intentionally stable (no deps). Reads src from videoSrcRef to avoid the
   // brief src-reassignment flicker that occurred when this ran on every render.
   const setVideoRef = useCallback((el: HTMLVideoElement | null) => {
@@ -406,7 +425,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     el.src    = videoSrcRef.current
     // ▶ v16: don't start playback in a tab the user can't see. The
     // visibility handler resumes it as soon as the tab becomes visible.
-    if (!isTabHidden()) el.play().catch(() => {})
+    if (!isTabHidden() && !autoplayBlockedRef.current) el.play().catch(() => {})
   }, [])
 
   // Controlled mode: react to the RESOLVED public id changing (e.g. the user
@@ -548,6 +567,8 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       // ▶ v16: never start playback while the tab is hidden. The visibility
       // handler calls this again the moment the tab becomes visible.
       if (isTabHidden()) return
+      // ▶ v19: admin — never start playback on our own.
+      if (autoplayBlockedRef.current) return
       attemptInFlight = true
       window.clearTimeout(revealTimer)
       // ▶ v18: safety valve — a play() promise that never settles must not
@@ -598,6 +619,9 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     const onGesture = () => {
       if (destroyed) return
       pauseReasons.blurred = false
+      // ▶ v19: admin — a random click/keypress must not start the video;
+      // only the dedicated play button does.
+      if (autoplayBlockedRef.current) return
       if (shouldBePaused()) return
       if (video.paused && !video.ended) {
         video.muted = true
@@ -887,7 +911,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       window.clearTimeout(retryTimer)
       retryTimer = window.setTimeout(() => {
         const el = videoRef.current
-        if (!el || shouldBePaused()) return
+        if (!el || shouldBePaused() || autoplayBlockedRef.current) return
         // Route through the SAME ready-state machinery the main effect
         // uses, so videoReady never gets stuck at false behind the poster.
         const attempt = (el as any).__heroAttemptPlay as (() => void) | undefined
@@ -927,7 +951,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         window.clearTimeout(retryTimer)
         window.clearTimeout(watchTimer)
         video.pause()
-      } else if (video.paused) {
+      } else if (video.paused && !autoplayBlockedRef.current) {
         resume()
       }
     }
@@ -1008,10 +1032,39 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     }
   }, [skipVideo])
 
+  // ▶ v19: react to the admin flag CHANGING after mount (e.g. an admin with no
+  // stored hint, whose profile resolves a moment after first paint). Never
+  // acts on the initial value, so non-admins run no extra code at all.
+  const prevAdminAutoplayOffRef = useRef(adminAutoplayOff)
+  useEffect(() => {
+    if (prevAdminAutoplayOffRef.current === adminAutoplayOff) return
+    prevAdminAutoplayOffRef.current = adminAutoplayOff
+    const video = videoRef.current
+    if (!video) return
+    if (adminAutoplayOff && !userStarted) {
+      // Became admin after the video had already started: stop it and put
+      // the poster + play button back.
+      video.pause()
+      setVideoReady(false)
+      setShowReconnectFrame(false)
+      setShowPlayButton(false)
+    } else if (!adminAutoplayOff) {
+      // No longer admin (signed out / demoted): resume normal autoplay.
+      setUserStarted(false)
+      const attempt = (video as any).__heroAttemptPlay as (() => void) | undefined
+      attempt?.()
+    }
+  }, [adminAutoplayOff, userStarted])
+
   const handleManualPlay = useCallback(() => {
     const video = videoRef.current
     if (!video) return
+    // ▶ v19: the admin pressed play — lift the block (ref first, so the
+    // play() below and every guard see it immediately) for this page view.
+    autoplayBlockedRef.current = false
+    setUserStarted(true)
     video.muted = true
+    pauseReasons.blurred = false
     video.play()
       .then(() => setShowPlayButton(false))
       .catch(() => {})
@@ -1109,7 +1162,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
           style={{ ...FILL_STYLE }}
         />
 
-        {showPlayButton && (
+        {showPlayButton && !autoplayBlocked && (
           <div
             aria-label="Play video"
             style={{
@@ -1146,6 +1199,35 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
           transition: 'none',
         }}
       />
+
+      {/* z=4 — ▶ v19: admin-only play button. Rendered only while autoplay is
+          blocked, ABOVE the content layer (which covers the whole hero and
+          would otherwise swallow clicks meant for the poster). */}
+      {autoplayBlocked && (
+        <button
+          type="button"
+          aria-label="Afspil video"
+          onClick={handleManualPlay}
+          style={{
+            position:   'absolute',
+            top:        '50%',
+            left:       '50%',
+            transform:  'translate(-50%, -50%)',
+            zIndex:     4,
+            padding:    0,
+            border:     0,
+            background: 'transparent',
+            cursor:     'pointer',
+            lineHeight: 0,
+          }}
+        >
+          <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+            <circle cx="36" cy="36" r="36" fill="rgba(0,0,0,0.45)" />
+            <circle cx="36" cy="36" r="35" stroke="rgba(255,255,255,0.6)" strokeWidth="2" />
+            <polygon points="29,22 54,36 29,50" fill="white" />
+          </svg>
+        </button>
+      )}
 
       {/* z=3 — content */}
       {/* No local HeroFrameContext.Provider here: the ambient one from
