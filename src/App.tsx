@@ -14,7 +14,7 @@ import Analyse from './utils/Analyse';
 import { useRoutePreloader } from './hooks/useRoutePreloader';
 import PageSkeleton from './components/PageSkeletonProgressive';
 import SEO from './components/SEO';
-
+ 
 // ─── Lazy-loaded: keep heavy components off the critical path ───────────────
 const Footer = lazy(() => import('./components/Footer'));
 const ContentManagementPanel = lazy(() => import('./components/ContentManagementPanel'));
