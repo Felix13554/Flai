@@ -29,7 +29,6 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const AuthPage = lazy(() => import('./pages/AuthPage'));
 const LoginPage = lazy(() => import('./pages/Login'));
-const RatingsPage = lazy(() => import('./pages/RatingsPage'));
 const UpdatePasswordPage = lazy(() => import('./pages/UpdatePasswordPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
