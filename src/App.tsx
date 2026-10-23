@@ -136,11 +136,8 @@ function SiteShell() {
           */}
           <Route path="/merch" element={<MerchandisePage />} />
           <Route path="/merch/checkout" element={<MerchandisePage />} />
-
-          <Route path="/rate-booking/:token" element={<RateBookingPage />} />
           <Route path="/booking/:productId" element={<BookingPage />} />
           <Route path="/booking-success" element={<BookingSuccessPage />} />
-          <Route path="/ratings" element={<RatingsPage />} />
           <Route path="/file/gdrive/:id" element={<DriveDownload />} />
 <Route path="/file/gdrive/1aGBpYj4Sv9oN8aVcw0Us0uocU-fpPTXn" element={<Navigate to="/file/gdrive/1vLSWbe2v8Lg-W4-Bw6igHR-TYnxlE3qG" replace />} />
           
