@@ -113,6 +113,7 @@ function humanizeLabel(key: string): string {
   return key
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^./, c => c.toUpperCase());

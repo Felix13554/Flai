@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { CONTENT_KEYS } from 'virtual:content-keys';
 import { unknownKeysMap } from '../content/unknown-keys';
 import JsonFieldEditor, { detectJsonKind } from './JsonFieldEditor';
+import { withHeroLogoFields } from '../content/heroProjects';
 
 // ─── Admin settings ────────────────────────────────────────────────────────
 export const ADMIN_SETTINGS_KEY = 'flai_admin_settings';
@@ -627,7 +628,10 @@ const ContentManagementPanel: React.FC = () => {
 
   const handleEdit = (key: string, val: string) => {
     setEditingItem(key);
-    setEditValue(val);
+    // The hero project list lives under the "content" key. Make sure every
+    // project shows the extra logo fields (logo 2/3 + their Logo Size) in
+    // the form, even for older projects that don't have them saved yet.
+    setEditValue(key === 'content' ? withHeroLogoFields(val) : val);
     setEditingType('text');
   };
 

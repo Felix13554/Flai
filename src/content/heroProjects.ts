@@ -56,10 +56,115 @@ export interface HeroProjectItem {
    *  size), so older CMS entries without this field render exactly as
    *  before. */
   logoSize?: number
+  /** Optional — a second client logo, shown next to the first one. Left out
+   *  or empty → no second logo. Has its own `logoSize2`, which works exactly
+   *  like `logoSize` (same scale, same reference heights), so two logos with
+   *  the same value (e.g. both 100) are rendered at the same height. */
+  clientLogoUrl2?: string
+  /** Size of the second logo — same 0…∞ scale as `logoSize`. Omitted or
+   *  invalid → 0. */
+  logoSize2?: number
+  /** Optional — a third client logo (see `clientLogoUrl2`). */
+  clientLogoUrl3?: string
+  /** Size of the third logo — same scale as `logoSize`. Omitted or
+   *  invalid → 0. */
+  logoSize3?: number
 }
 
 export interface HeroProjectsContent {
   content: HeroProjectItem[]
+}
+
+/** A project can show at most this many logos (clientLogoUrl, …2, …3). */
+export const MAX_HERO_LOGOS = 3
+
+export interface HeroProjectLogo {
+  /** 1-based position (1 = clientLogoUrl, 2 = clientLogoUrl2, …). */
+  position: number
+  url: string
+  /** Logo size in percent — already sanitised (a number ≥ 0). */
+  size: number
+}
+
+function sanitizeLogoSize(raw: unknown): number {
+  return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(raw, 0) : 0
+}
+
+/**
+ * The logos a project should show, in order, each with its own size.
+ * Entries without a URL are skipped, so projects that only use the first
+ * logo (all older CMS entries) return a single logo and render as before.
+ */
+export function getHeroProjectLogos(item: HeroProjectItem): HeroProjectLogo[] {
+  const slots: Array<{ url: unknown; size: unknown }> = [
+    { url: item.clientLogoUrl, size: item.logoSize },
+    { url: item.clientLogoUrl2, size: item.logoSize2 },
+    { url: item.clientLogoUrl3, size: item.logoSize3 },
+  ]
+  const logos: HeroProjectLogo[] = []
+  slots.forEach((slot, i) => {
+    if (typeof slot.url !== 'string' || !slot.url.trim()) return
+    logos.push({ position: i + 1, url: slot.url, size: sanitizeLogoSize(slot.size) })
+  })
+  return logos
+}
+
+const HERO_LOGO_KEYS = ['clientLogoUrl', 'logoSize', 'clientLogoUrl2', 'logoSize2', 'clientLogoUrl3', 'logoSize3']
+
+/**
+ * For the CMS editor: the "Formular" view only shows keys that already exist
+ * in the JSON, so older projects would never show the extra logo fields.
+ * This adds any missing logo fields (empty URL / size 0) right after
+ * `clientLogoUrl`, and leaves everything else untouched. Returns the input
+ * unchanged if it isn't a hero-project array.
+ */
+export function withHeroLogoFields(raw: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return raw
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every(
+      (p) => p && typeof p === 'object' && !Array.isArray(p) && typeof (p as Record<string, unknown>).cloudinaryVideoUrl === 'string',
+    )
+  ) {
+    return raw
+  }
+
+  const defaults: Record<string, unknown> = {
+    clientLogoUrl: '',
+    logoSize: 0,
+    clientLogoUrl2: '',
+    logoSize2: 0,
+    clientLogoUrl3: '',
+    logoSize3: 0,
+  }
+  const normalized = (parsed as Array<Record<string, unknown>>).map((item) => {
+    const out: Record<string, unknown> = {}
+    const addLogoFields = () => {
+      HERO_LOGO_KEYS.forEach((k) => {
+        out[k] = k in item ? item[k] : defaults[k]
+      })
+    }
+    let added = false
+    Object.entries(item).forEach(([k, v]) => {
+      if (HERO_LOGO_KEYS.includes(k)) {
+        if (!added) {
+          addLogoFields()
+          added = true
+        }
+        return
+      }
+      out[k] = v
+    })
+    if (!added) addLogoFields()
+    return out
+  })
+  return JSON.stringify(normalized, null, 2)
 }
 
 function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
@@ -72,7 +177,11 @@ function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
     typeof p.cloudinaryVideoUrl === 'string' &&
     (p.cloudinaryVideoUrlMobile === undefined || typeof p.cloudinaryVideoUrlMobile === 'string') &&
     (p.website === undefined || typeof p.website === 'string') &&
-    (p.logoSize === undefined || typeof p.logoSize === 'number')
+    (p.logoSize === undefined || typeof p.logoSize === 'number') &&
+    (p.clientLogoUrl2 === undefined || typeof p.clientLogoUrl2 === 'string') &&
+    (p.logoSize2 === undefined || typeof p.logoSize2 === 'number') &&
+    (p.clientLogoUrl3 === undefined || typeof p.clientLogoUrl3 === 'string') &&
+    (p.logoSize3 === undefined || typeof p.logoSize3 === 'number')
   )
 }
 

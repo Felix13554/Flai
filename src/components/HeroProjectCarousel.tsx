@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import AdaptiveShadowBox from './AdaptiveShadowBox'
-import type { HeroProjectsContent } from '../content/heroProjects'
+import { getHeroProjectLogos, type HeroProjectsContent } from '../content/heroProjects'
 
 export interface HeroProjectCarouselProps {
   data: HeroProjectsContent
@@ -47,7 +47,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   const active = items[activeIndex]
 
   // ── Logo size (content-key driven) ────────────────────────────────────
-  // `active.logoSize` interpolates (and extrapolates past 100) the logo's
+  // Each logo's size field (`logoSize`, `logoSize2`, `logoSize3`) interpolates (and extrapolates past 100) the logo's
   // height against two *live-measured* references so it always tracks the
   // current responsive breakpoint instead of a hardcoded px value:
   //   0   → the "Udvalgt projekt" label's own single-line text height
@@ -108,13 +108,17 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
     return () => ro.disconnect()
   }, [])
 
-  const rawLogoSize = active.logoSize
-  const logoSizePct = Math.max(typeof rawLogoSize === 'number' && !Number.isNaN(rawLogoSize) ? rawLogoSize : 0, 0)
-  const logoSizeFraction = logoSizePct / 100
-  const measuredLogoHeight =
+  // One formula for every logo (1, 2 and 3): the same size value always
+  // gives the same height, because each logo is run through this with its
+  // OWN size (logoSize / logoSize2 / logoSize3) against the same two
+  // measured references. Returns null until both references are measured.
+  const logoHeightFor = (sizePct: number): number | null =>
     labelLineHeight > 0 && headingLineHeight > 0
-      ? labelLineHeight + (headingLineHeight - labelLineHeight) * logoSizeFraction
+      ? labelLineHeight + (headingLineHeight - labelLineHeight) * (Math.max(sizePct, 0) / 100)
       : null
+
+  // Up to 3 logos for the active project (empty slots are skipped).
+  const logos = active ? getHeroProjectLogos(active) : []
 
   // ── Auto-advance ────────────────────────────────────────────────────────
   // Runs alongside manual tab clicks (both are supported, per the task's
@@ -167,34 +171,52 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           only when the project has a "website" in its CMS entry: no href
           means no pointer cursor / no link semantics, so older entries
           without a website keep behaving exactly as before. */}
-      <a
-        {...(active.website
-          ? { href: active.website, target: '_blank', rel: 'noopener noreferrer' }
-          : {})}
-        aria-label={active.website ? `Besøg ${active.industry}s hjemmeside (åbner i ny fane)` : undefined}
-        className={`mb-3 inline-block ${
-          active.website ? 'cursor-pointer transition-opacity duration-200 hover:opacity-80' : ''
-        }`}
-      >
-        <AdaptiveShadowBox kind="logo">
-          <img
-            src={active.clientLogoUrl}
-            alt=""
-            // maxWidth is intentionally against the VIEWPORT (94vw), not the
-            // hero content column's own (narrow, padded) width: the <a> is
-            // inline-block inside a `max-w-screen-xl px-6` column, which on
-            // a phone is only a few hundred px wide. Capping width to 100%
-            // of THAT column was silently shrinking a wide/landscape logo
-            // back down on mobile even though its computed height (from
-            // logoSize below) was correctly the same proportion as on
-            // desktop — the width cap, not the height calc, was the actual
-            // bottleneck. 94vw leaves a small margin so the logo never
-            // touches the screen edges on very wide logos at small viewports.
-            className={measuredLogoHeight == null ? 'h-12 md:h-16 w-auto object-contain' : 'w-auto object-contain'}
-            style={measuredLogoHeight != null ? { height: `${measuredLogoHeight}px`, maxWidth: '94vw' } : { maxWidth: '94vw' }}
-          />
-        </AdaptiveShadowBox>
-      </a>
+      {/* Up to 3 logos side by side (clientLogoUrl, clientLogoUrl2,
+          clientLogoUrl3), each with its OWN size field (logoSize, logoSize2,
+          logoSize3). They all use the same height formula, so equal size
+          values give equal heights. They wrap onto a new line on narrow
+          screens instead of overflowing. Every logo links to the project's
+          website when one is set. */}
+      {logos.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-3 md:gap-x-8">
+          {logos.map((logo) => {
+            const height = logoHeightFor(logo.size)
+            return (
+              <a
+                key={logo.position}
+                {...(active.website
+                  ? { href: active.website, target: '_blank', rel: 'noopener noreferrer' }
+                  : {})}
+                aria-label={active.website ? `Besøg ${active.industry}s hjemmeside (åbner i ny fane)` : undefined}
+                className={`inline-block ${
+                  active.website ? 'cursor-pointer transition-opacity duration-200 hover:opacity-80' : ''
+                }`}
+              >
+                <AdaptiveShadowBox kind="logo">
+                  <img
+                    src={logo.url}
+                    alt=""
+                    // maxWidth is intentionally against the VIEWPORT (94vw),
+                    // not the hero content column's own (narrow, padded)
+                    // width: the <a> is inline-block inside a
+                    // `max-w-screen-xl px-6` column, which on a phone is only
+                    // a few hundred px wide. Capping width to 100% of THAT
+                    // column was silently shrinking a wide/landscape logo
+                    // back down on mobile even though its computed height
+                    // was correctly the same proportion as on desktop — the
+                    // width cap, not the height calc, was the actual
+                    // bottleneck. 94vw leaves a small margin so the logo
+                    // never touches the screen edges on very wide logos at
+                    // small viewports.
+                    className={height == null ? 'h-12 md:h-16 w-auto object-contain' : 'w-auto object-contain'}
+                    style={height != null ? { height: `${height}px`, maxWidth: '94vw' } : { maxWidth: '94vw' }}
+                  />
+                </AdaptiveShadowBox>
+              </a>
+            )
+          })}
+        </div>
+      )}
 
       {/* big heading — the client's industry — also the "100%" size
           reference for the logo above (see labelRef note on why this is a
