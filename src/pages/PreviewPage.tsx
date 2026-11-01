@@ -283,6 +283,20 @@ const PreviewPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxIndex, closeLightbox, showPrev, showNext]);
 
+  // Height of the fixed NavBar, measured so the photo grid can start exactly
+  // below it. (The old `pt-20` was overridden by `sm:p-6` on screens >= 640px,
+  // leaving only 24px of top padding, so the first row sat under the navbar.)
+  const [navHeight, setNavHeight] = useState(64);
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('nav.fixed');
+    if (!nav) return;
+    const update = () => setNavHeight(Math.ceil(nav.getBoundingClientRect().height));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+    // NavBar remounts between the loading/error/ready layouts — re-measure.
+  }, [loading, error, link?.type]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-neutral-900">
@@ -372,7 +386,7 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Photos ────────────────────────────────────────────────────────── */}
       {link.type === 'photos' && (
-        <div className="flex-1 p-4 sm:p-6 pt-20">
+        <div className="flex-1 p-4 sm:p-6" style={{ paddingTop: navHeight + 24 }}>
           {items.length === 0 ? (
             <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
               Ingen billeder fundet.
