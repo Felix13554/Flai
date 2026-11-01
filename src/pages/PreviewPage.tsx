@@ -83,7 +83,7 @@ const VIDEO_ASPECT = 16 / 9;
 // photos. The NavBar's real height is measured at runtime (it varies with
 // logo size/breakpoint), so the grid can never slide underneath it.
 const NAV_FALLBACK_HEIGHT = 64;
-const GRID_TOP_GAP = 24;
+const GRID_TOP_GAP = 56;
 // First screenful of thumbnails loads eagerly; the rest are lazy.
 const EAGER_THUMBS = 12;
 
