@@ -40,7 +40,7 @@
  */
 
 import EditableContent from '../components/EditableContent';
-import React, { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { PreviewLink } from '../types/index';
@@ -48,6 +48,10 @@ import SEO from '../components/SEO';
 import NavBar from '../components/NavBar';
 import CloudinaryVideoPlayer from '../components/CloudinaryVideoPlayer';
 import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
+import {
+  getNetTier, pickLightboxWidth, pickGridThumbSize, sizedGridThumb, lightboxUrl,
+  backgroundPreloadCount, neighborOffsets, preloadImage, whenIdle,
+} from '../utils/previewImages';
 import {
   Loader2, AlertCircle, X, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
@@ -74,6 +78,14 @@ type MetaResult =
 const TOP_OFFSET = 80;
 const BOTTOM_OFFSET = 35;
 const VIDEO_ASPECT = 16 / 9;
+
+// Breathing room between the bottom of the fixed NavBar and the first row of
+// photos. The NavBar's real height is measured at runtime (it varies with
+// logo size/breakpoint), so the grid can never slide underneath it.
+const NAV_FALLBACK_HEIGHT = 64;
+const GRID_TOP_GAP = 24;
+// First screenful of thumbnails loads eagerly; the rest are lazy.
+const EAGER_THUMBS = 12;
 
 const PreviewPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -255,18 +267,77 @@ const PreviewPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [id]);
 
-  const items: FolderItem[] =
-    meta?.type === 'folder' ? meta.items
-    : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: meta.width, height: meta.height, gridThumb: meta.gridThumb }]
-    : [];
-
-  // Request a lightbox image sized for the viewport at the device's actual pixel
-  // density, so photos look sharp on retina/high-DPI screens instead of a fixed
-  // 1920px regardless of screen size. Capped at 2400 to match the API's max.
-  const lightboxWidth = Math.min(
-    2400,
-    Math.round((typeof window !== 'undefined' ? window.innerWidth : 1920) * (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1))
+  // Memoised so the preload effects below don't re-run on every render.
+  const items: FolderItem[] = useMemo(
+    () =>
+      meta?.type === 'folder' ? meta.items
+      : meta?.type === 'image' ? [{ id: meta.id, name: meta.name, width: meta.width, height: meta.height, gridThumb: meta.gridThumb }]
+      : [],
+    [meta]
   );
+
+  // Grid thumbnail size is chosen ONCE from the connection + screen density
+  // (cells are only ~160–260 css px wide; the API's 1000px was overkill).
+  // Locked at mount so a later tier change can't swap every URL and refetch
+  // the whole grid; the lightbox placeholder reuses these same URLs.
+  const [thumbSize] = useState(() => pickGridThumbSize());
+
+  // ── Navbar clearance ────────────────────────────────────────────────
+  // The NavBar is fixed, so the photo grid has to start below its REAL
+  // height — a hard-coded padding let the first row slide under it.
+  const [navHeight, setNavHeight] = useState(NAV_FALLBACK_HEIGHT);
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('nav.fixed');
+    if (!nav) return;
+    const update = () => setNavHeight(Math.ceil(nav.getBoundingClientRect().height));
+    update();
+    window.addEventListener('resize', update);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(update);
+      observer.observe(nav);
+    }
+    return () => {
+      window.removeEventListener('resize', update);
+      observer?.disconnect();
+    };
+    // NavBar remounts when the page switches between its loading/error/ready
+    // layouts, so re-attach to the fresh element each time.
+  }, [loading, error, link?.type]);
+
+  // ── Preconnect to Google's thumbnail CDN ────────────────────────────
+  // Starts DNS/TLS for the grid thumbnails as soon as we know their host,
+  // instead of waiting for the first <img> to be laid out.
+  const thumbOrigin = useMemo(() => {
+    const first = items.find((it) => it.gridThumb)?.gridThumb;
+    try { return first ? new URL(first).origin : null; } catch { return null; }
+  }, [items]);
+  useEffect(() => {
+    if (!thumbOrigin) return;
+    const el = document.createElement('link');
+    el.rel = 'preconnect';
+    el.href = thumbOrigin;
+    el.crossOrigin = 'anonymous';
+    document.head.appendChild(el);
+    return () => { document.head.removeChild(el); };
+  }, [thumbOrigin]);
+
+  // ── Background preloading ───────────────────────────────────────────
+  // Once the grid has had a moment to load, warm the first few lightbox
+  // images (browser cache + Vercel's edge cache) so opening them is
+  // instant. The count follows connection speed — 0 on slow links, where
+  // the bytes would only compete with the thumbnails.
+  useEffect(() => {
+    if (link?.type !== 'photos' || items.length === 0) return;
+    return whenIdle(() => {
+      const count = Math.min(backgroundPreloadCount(), items.length);
+      for (let i = 0; i < count; i++) {
+        // Re-pick per image: the first finished preloads give a real speed
+        // measurement, so later ones adapt if the tier was guessed wrong.
+        preloadImage(lightboxUrl(items[i].id, pickLightboxWidth()));
+      }
+    });
+  }, [items, link?.type]);
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
   const showPrev = useCallback(() => setLightboxIndex(i => (i === null ? null : (i - 1 + items.length) % items.length)), [items.length]);
@@ -282,6 +353,32 @@ const PreviewPage: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxIndex, closeLightbox, showPrev, showNext]);
+
+  // ── Lightbox: size, neighbor preloading, load state ─────────────────
+  // Width follows screen size × density, capped by connection speed, and is
+  // snapped to a shared bucket (see previewImages.ts) so the preloaded URL
+  // is byte-for-byte the one the <img> asks for.
+  const lightboxWidth = lightboxIndex !== null ? pickLightboxWidth(getNetTier()) : 0;
+  const currentItem = lightboxIndex !== null ? items[lightboxIndex] : undefined;
+  const lightboxSrc = currentItem ? lightboxUrl(currentItem.id, lightboxWidth) : null;
+
+  const [fullLoaded, setFullLoaded] = useState(false);
+  const fullImgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    // A preloaded image can already be complete by the time it mounts.
+    const el = fullImgRef.current;
+    setFullLoaded(!!el && el.complete && el.naturalWidth > 0);
+  }, [lightboxSrc]);
+
+  useEffect(() => {
+    if (lightboxIndex === null || items.length < 2) return;
+    // Next photo first (most likely), then the previous one, then further ahead.
+    neighborOffsets().forEach((offset, n) => {
+      const target = items[(lightboxIndex + offset + items.length * 4) % items.length];
+      if (target) preloadImage(lightboxUrl(target.id, lightboxWidth), n < 2);
+    });
+  }, [lightboxIndex, lightboxWidth, items]);
 
   if (loading) {
     return (
@@ -372,7 +469,10 @@ const PreviewPage: React.FC = () => {
 
       {/* ── Photos ────────────────────────────────────────────────────────── */}
       {link.type === 'photos' && (
-        <div className="flex-1 p-4 sm:p-6 pt-20">
+        <div
+          className="flex-1 p-4 sm:p-6"
+          style={{ paddingTop: navHeight + GRID_TOP_GAP }}
+        >
           {items.length === 0 ? (
             <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
               Ingen billeder fundet.
@@ -384,14 +484,19 @@ const PreviewPage: React.FC = () => {
                   key={item.id}
                   type="button"
                   onClick={() => setLightboxIndex(i)}
+                  // Intent signal: the visitor is about to open this photo, so
+                  // start fetching it now (jumps ahead of background preloads).
+                  onPointerEnter={() => preloadImage(lightboxUrl(item.id, pickLightboxWidth()), true)}
+                  onTouchStart={() => preloadImage(lightboxUrl(item.id, pickLightboxWidth()), true)}
                   style={{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '1 / 1' }}
                   className="relative w-full rounded-lg overflow-hidden bg-neutral-800 border border-neutral-700 hover:border-primary/60 transition-colors group"
                 >
                   {item.gridThumb ? (
                     <img
-                      src={item.gridThumb}
+                      src={sizedGridThumb(item.gridThumb, thumbSize) ?? item.gridThumb}
                       alt={item.name}
-                      loading="lazy"
+                      loading={i < EAGER_THUMBS ? 'eager' : 'lazy'}
+                      fetchPriority={i < EAGER_THUMBS ? 'high' : 'auto'}
                       decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
@@ -440,13 +545,62 @@ const PreviewPage: React.FC = () => {
             </>
           )}
 
-          <img
-            key={items[lightboxIndex].id}
-            src={`/api/drive-preview?id=${encodeURIComponent(items[lightboxIndex].id)}&mode=image&w=${lightboxWidth}`}
-            alt={items[lightboxIndex].name}
-            className="max-w-[92vw] max-h-[88vh] object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
+          {/* Progressive display: the grid thumbnail is already in the browser
+              cache, so it shows instantly (scaled up) while the full-size
+              image loads, then the sharp version fades in over it. When the
+              photo's dimensions are unknown we fall back to a plain <img>. */}
+          {(() => {
+            const item = items[lightboxIndex];
+            const placeholder = sizedGridThumb(item.gridThumb, thumbSize);
+            const hasAspect = !!(item.width && item.height);
+
+            const fullImg = (
+              <img
+                key={item.id}
+                ref={fullImgRef}
+                src={lightboxSrc ?? undefined}
+                alt={item.name}
+                decoding="async"
+                onLoad={() => setFullLoaded(true)}
+                onClick={(e) => e.stopPropagation()}
+                className={
+                  hasAspect
+                    ? `absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${fullLoaded ? 'opacity-100' : 'opacity-0'}`
+                    : 'max-w-[92vw] max-h-[88vh] object-contain'
+                }
+              />
+            );
+
+            if (!hasAspect) return fullImg;
+
+            return (
+              <div
+                className="relative"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  aspectRatio: `${item.width} / ${item.height}`,
+                  // Largest box with this aspect ratio inside 92vw × 88vh.
+                  width: `min(92vw, calc(88vh * ${item.width} / ${item.height}))`,
+                }}
+              >
+                {placeholder && (
+                  <img
+                    src={placeholder}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                )}
+                {fullImg}
+                {!fullLoaded && (
+                  <Loader2
+                    className="absolute bottom-3 right-3 animate-spin text-white/70"
+                    size={22}
+                  />
+                )}
+              </div>
+            );
+          })()}
 
           {items.length > 1 && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-xs">

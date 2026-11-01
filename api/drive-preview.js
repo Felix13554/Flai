@@ -182,6 +182,8 @@ function resizeThumbnailLink(link, size) {
   return link.replace(/=s\d+$/, `=s${size}`).replace(/=w\d+-h\d+.*$/, `=s${size}`);
 }
 
+const WIDTH_BUCKETS = [640, 960, 1280, 1600, 1920, 2400];
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -201,7 +203,11 @@ export default async function handler(req, res) {
   if (mode === "image") {
     let width = parseInt(req.query.w || "1600", 10);
     if (!Number.isFinite(width) || width <= 0) width = 1600;
-    width = Math.max(100, Math.min(width, 2400));
+    // Snap UP to a shared bucket (keep in sync with LIGHTBOX_BUCKETS in
+    // src/utils/previewImages.ts). Arbitrary ?w= values would each become
+    // their own cache entry — and their own cold Drive download + resize —
+    // so bucketing lets every visitor/device reuse the same cached render.
+    width = WIDTH_BUCKETS.find((b) => b >= width) ?? WIDTH_BUCKETS[WIDTH_BUCKETS.length - 1];
 
     try {
       const token = await getAccessToken();
@@ -216,10 +222,13 @@ export default async function handler(req, res) {
 
       let outBuf, outType;
       try {
-        outBuf = await sharp(original, { failOn: "none" })
+        // sequentialRead streams big originals instead of buffering a full
+        // decode; mozjpeg's scan optimisation yields progressive JPEGs, which
+        // paint a coarse full image early on slow connections.
+        outBuf = await sharp(original, { failOn: "none", sequentialRead: true })
           .rotate() // respect EXIF orientation
           .resize({ width, withoutEnlargement: true })
-          .jpeg({ quality: 85, mozjpeg: true })
+          .jpeg({ quality: 82, mozjpeg: true, progressive: true })
           .toBuffer();
         outType = "image/jpeg";
       } catch {
