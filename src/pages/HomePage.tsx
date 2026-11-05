@@ -31,1082 +31,1210 @@ const Section_9009b281 = ((
   useState, useEffect, useRef, useMemo, useLayoutEffect
 ) => {
   // ─── Types ────────────────────────────────────────────────────────────────────
-    //
-    // ONE content key holds every review as a JSON ARRAY. Items mirror the shape
-    // coming from cached_reviews.reviews_data so you can copy-paste straight from
-    // the Supabase table without reformatting.
-    //
-    // Required fields per item:  user.name, rating, snippet
-    // Optional fields per item:  user.thumbnail, link, business, result
-    //
-    // Content key:
-    //   testimonials-review-2   -> array of ALL reviews (top of array = shown first)
-    //
-    // Example value:
-    // [
-    //   {
-    //     "user": { "name": "Mette Christensen", "thumbnail": "https://lh3.googleusercontent.com/a/..." },
-    //     "rating": 5,
-    //     "snippet": "Fantastisk service! Felix leverede utrolig flotte dronefotos.",
-    //     "link": "https://maps.google.com/?cid=...",
-    //     "business": "Christensen Ejendomme A/S",
-    //     "result": "https://res.cloudinary.com/your-cloud-name/video/upload/v1700000000/drone-result.mp4"
-    //   },
-    //   {
-    //     "user": { "name": "Jonas Berg" },
-    //     "rating": 5,
-    //     "snippet": "Hurtig, professionel og super kvalitet."
-    //   }
-    // ]
-    //
-    // "business" is the only field that does NOT exist in cached_reviews — add it manually if wanted.
-    // "link" maps to reviews_data[n].link in the cached_reviews table.
-    // If "business" is omitted the label shows "Verificeret Google-anmeldelse".
-    // If "business" is set it shows the business name only (replacing the default label).
-    //
-    // "result" is also not in cached_reviews — add it manually per review to show the
-    // finished work in its own separate box underneath that review's card (so
-    // reviews without a result stay short, instead of every card being padded
-    // out to match the tallest one):
-    //   - a YouTube URL (watch/shorts/youtu.be/embed link) -> rendered as an embedded video
-    //   - a Cloudinary video URL (res.cloudinary.com/.../video/upload/...) -> rendered
-    //     as a native <video> player with controls
-    //   - any other URL -> treated as an image and rendered as an <img>
-    //   - omitted / empty string -> no result box is rendered at all
-    //
-    // If a thumbnail URL contains the word "square" anywhere in it, the avatar is
-    // rendered as a rounded square instead of being cropped into a circle.
-    //
-    // Content key for the header rating badge:
-    //   testimonials-google-rating
-    //
-    // Example:
-    // { "rating": 4.9, "reviewCount": 127, "link": "https://search.google.com/local/writereview?placeid=..." }
-    //
-    // If this key is left empty, the badge falls back to the average rating and count
-    // of every configured review.
-    //
-    // ─── Layout rules ────────────────────────────────────────────────────────────
-    // Desktop (>768px):
-    //   - 8 or fewer reviews  -> single row, all reviews
-    //   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2
-    // Mobile (<=768px):
-    //   - 6 or fewer reviews  -> single row, all reviews
-    //   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)
-    //
-    // Each row is a horizontally scrollable strip. Left/right arrow buttons advance
-    // the row by exactly one card per click, clamped at both ends (no wraparound).
-    // The arrow pair floats centered horizontally over the row, vertically pinned
-    // to the gap between the review card and the result card (see "Arrow
-    // placement" below) — same placement on mobile and desktop.
-    // On touch devices the row can also be swiped natively — no extra JS needed for
-    // that, since it's a plain scroll container.
-    //
-    // ─── Arrow placement ────────────────────────────────────────────────────────────
-    // The arrow pair is positioned absolutely within .testi-row-wrap (which is
-    // therefore position:relative), centered horizontally with left:50% +
-    // translateX(-50%), and pinned vertically to sit in the gap between the
-    // review card and the result card via the --testi-review-height CSS custom
-    // property (the equalized review-card height, written by the Testimonials
-    // component's equalize() effect). Because .testi-card-col now uses a larger
-    // gap (72px) between its two children, there's room for the arrow row to
-    // sit visually "between" the two boxes without overlapping either — and
-    // because CSS gap only inserts space BETWEEN children, a review with no
-    // result (ResultCard renders null) has only one child in its column, so it
-    // gets no extra bottom space at all; only columns that actually render a
-    // result box grow to make room.
-    //
-    // ─── Initial scroll position ──────────────────────────────────────────────────
-    // Each row centers itself based on how many cards currently fit in the
-    // viewport at once:
-    //   - odd count fitting (1, 3, 5…)  -> a single card sits dead-center
-    //   - even count fitting (2, 4, 6…) -> the gap between two cards sits
-    //     dead-center, so cards sit symmetrically in pairs either side of center
-    // This is recomputed on every resize (so rotating a phone or resizing a
-    // window keeps it balanced) until the person scrolls the row themselves,
-    // at which point a manual swipe settles onto the nearest valid position
-    // instead of snapping back to the middle. Positioning only ever touches the
-    // row's own scrollLeft — never the page's scroll — and arrow clicks move
-    // exactly one card at a time.
-    //
-    // ─── Result media (video/image) ────────────────────────────────────────────────
-    // Each review is wrapped in a column (.testi-card-col) that scrolls as one
-    // unit. The review card (quote + author) is always shown; the "result" (see
-    // field docs above), if present, renders as its own separate box stacked
-    // below it in that same column — so it never stretches the review card
-    // itself, and reviews without a result stay short. Both boxes share the
-    // column's width, and because the whole column is what the row's arrow
-    // clicks/centering treat as "one card", the result box moves and fades with
-    // its review — it's automatically covered by the row viewport's existing
-    // left/right edge fade (.testi-row-viewport's mask-image), no separate fade
-    // logic needed.
+  //
+  // ONE content key holds every review as a JSON ARRAY. Items mirror the shape
+  // coming from cached_reviews.reviews_data so you can copy-paste straight from
+  // the Supabase table without reformatting.
+  //
+  // Required fields per item:  user.name, rating, snippet
+  // Optional fields per item:  user.thumbnail, link, business, result
+  //
+  // Content key:
+  //   testimonials-review-2   -> array of ALL reviews (top of array = shown first)
+  //
+  // Example value:
+  // [
+  //   {
+  //     "user": { "name": "Mette Christensen", "thumbnail": "https://lh3.googleusercontent.com/a/..." },
+  //     "rating": 5,
+  //     "snippet": "Fantastisk service! Felix leverede utrolig flotte dronefotos.",
+  //     "link": "https://maps.google.com/?cid=...",
+  //     "business": "Christensen Ejendomme A/S",
+  //     "result": "https://res.cloudinary.com/your-cloud-name/video/upload/v1700000000/drone-result.mp4"
+  //   },
+  //   {
+  //     "user": { "name": "Jonas Berg" },
+  //     "rating": 5,
+  //     "snippet": "Hurtig, professionel og super kvalitet."
+  //   }
+  // ]
+  //
+  // "business" is the only field that does NOT exist in cached_reviews — add it manually if wanted.
+  // "link" maps to reviews_data[n].link in the cached_reviews table.
+  // If "business" is omitted the label shows "Verificeret Google-anmeldelse".
+  // If "business" is set it shows the business name only (replacing the default label).
+  //
+  // "result" is also not in cached_reviews — add it manually per review to show the
+  // finished work in its own separate box underneath that review's card (so
+  // reviews without a result stay short, instead of every card being padded
+  // out to match the tallest one):
+  //   - a YouTube URL (watch/shorts/youtu.be/embed link) -> embedded video
+  //   - a Cloudinary video URL (res.cloudinary.com/.../video/upload/...) -> native
+  //     <video> player with controls
+  //   - any other URL -> treated as an image and rendered as an <img>
+  //   - omitted / empty string -> no result box is rendered at all
+  //
+  // Videos (YouTube AND Cloudinary) use a "facade" for fast page loads: only a
+  // small thumbnail + play button is rendered up front. The real <iframe>/<video>
+  // is created (and starts playing) only when the visitor clicks, so nothing heavy
+  // is downloaded for videos nobody watches.
+  //   - Cloudinary thumbnail: auto-generated from the first frame (640x360, q_auto)
+  //   - YouTube thumbnail: taken from i.ytimg.com
+  //   - Cloudinary playback: served with q_auto/f_auto/max 720px width; if that
+  //     transformed version fails, it automatically falls back to the original URL
+  //   - Optional "resultPoster": a custom thumbnail URL that overrides the above
+  //
+  // If a thumbnail URL contains the word "square" anywhere in it, the avatar is
+  // rendered as a rounded square instead of being cropped into a circle.
+  //
+  // Content key for the header rating badge:
+  //   testimonials-google-rating
+  //
+  // Example:
+  // { "rating": 4.9, "reviewCount": 127, "link": "https://search.google.com/local/writereview?placeid=..." }
+  //
+  // If this key is left empty, the badge falls back to the average rating and count
+  // of every configured review.
+  //
+  // ─── Layout rules ────────────────────────────────────────────────────────────
+  // Desktop (>768px):
+  //   - 8 or fewer reviews  -> single row, all reviews
+  //   - more than 8 reviews -> split in half: top half of the array = row 1, bottom half = row 2
+  // Mobile (<=768px):
+  //   - 6 or fewer reviews  -> single row, all reviews
+  //   - more than 6 reviews -> split in half the same way (top half = row 1, bottom half = row 2)
+  //
+  // Each row is a horizontally scrollable strip. Left/right arrow buttons advance
+  // the row by exactly one card per click, clamped at both ends (no wraparound).
+  // The arrow pair floats centered horizontally over the row, vertically pinned
+  // to the gap between the review card and the result card (see "Arrow
+  // placement" below) — same placement on mobile and desktop.
+  // On touch devices the row can also be swiped natively — no extra JS needed for
+  // that, since it's a plain scroll container.
+  //
+  // ─── Arrow placement ────────────────────────────────────────────────────────────
+  // The arrow pair is positioned absolutely within .testi-row-wrap (which is
+  // therefore position:relative), centered horizontally with left:50% +
+  // translateX(-50%), and pinned vertically to sit in the gap between the
+  // review card and the result card via the --testi-review-height CSS custom
+  // property (the equalized review-card height, written by the Testimonials
+  // component's equalize() effect). Because .testi-card-col now uses a larger
+  // gap (72px) between its two children, there's room for the arrow row to
+  // sit visually "between" the two boxes without overlapping either — and
+  // because CSS gap only inserts space BETWEEN children, a review with no
+  // result (ResultCard renders null) has only one child in its column, so it
+  // gets no extra bottom space at all; only columns that actually render a
+  // result box grow to make room.
+  //
+  // ─── Initial scroll position ──────────────────────────────────────────────────
+  // Each row centers itself based on how many cards currently fit in the
+  // viewport at once:
+  //   - odd count fitting (1, 3, 5…)  -> a single card sits dead-center
+  //   - even count fitting (2, 4, 6…) -> the gap between two cards sits
+  //     dead-center, so cards sit symmetrically in pairs either side of center
+  // This is recomputed on every resize (so rotating a phone or resizing a
+  // window keeps it balanced) until the person scrolls the row themselves,
+  // at which point a manual swipe settles onto the nearest valid position
+  // instead of snapping back to the middle. Positioning only ever touches the
+  // row's own scrollLeft — never the page's scroll — and arrow clicks move
+  // exactly one card at a time.
+  //
+  // ─── Result media (video/image) ────────────────────────────────────────────────
+  // Each review is wrapped in a column (.testi-card-col) that scrolls as one
+  // unit. The review card (quote + author) is always shown; the "result" (see
+  // field docs above), if present, renders as its own separate box stacked
+  // below it in that same column — so it never stretches the review card
+  // itself, and reviews without a result stay short. Both boxes share the
+  // column's width, and because the whole column is what the row's arrow
+  // clicks/centering treat as "one card", the result box moves and fades with
+  // its review — it's automatically covered by the row viewport's existing
+  // left/right edge fade (.testi-row-viewport's mask-image), no separate fade
+  // logic needed.
 
-    interface ReviewUser {
-      name: string;
-      thumbnail?: string;
+  interface ReviewUser {
+    name: string;
+    thumbnail?: string;
+  }
+
+  interface ReviewData {
+    user: ReviewUser;
+    rating: number;
+    snippet: string;
+    link?: string;
+    /** Not in cached_reviews — add manually when editing the content key */
+    business?: string;
+    /**
+     * Not in cached_reviews — add manually when editing the content key.
+     * A YouTube URL renders as an embedded video; a Cloudinary video URL
+     * renders as a native video player; any other URL is treated as an image.
+     * Empty/omitted renders nothing.
+     */
+    result?: string;
+    /** Optional custom thumbnail for a video result (overrides the automatic one). */
+    resultPoster?: string;
+  }
+
+  interface GoogleRatingData {
+    rating: number;
+    reviewCount: number;
+    link?: string;
+  }
+
+  const REVIEWS_KEY = 'testimonials-review-2';
+  const RATING_KEY = 'testimonials-google-rating';
+  const DEFAULT_GOOGLE_LINK =
+    'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';
+
+  const CARD_GAP_PX = 24;
+  const SCROLL_ANIMATION_MS = 380;
+
+  /** Matches youtube.com/watch, youtu.be, /embed/ and /shorts/ links and
+   * captures the 11-character video id. */
+  const YOUTUBE_URL_REGEX =
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i;
+
+  /** File extensions treated as video when found at the end of a URL path. */
+  const VIDEO_FILE_REGEX = /\.(mp4|webm|mov|m4v|ogv)$/i;
+
+  /** Cloudinary transformations: a small first-frame JPG for the thumbnail, and a
+   * size-capped, auto-quality, auto-format version of the video for playback. */
+  const CLOUDINARY_POSTER_TRANSFORM = 'so_0,c_fill,w_640,h_360,q_auto,f_jpg';
+  const CLOUDINARY_VIDEO_TRANSFORM = 'c_limit,w_720,q_auto,f_auto';
+
+  /** Smoothly animates scrollLeft with a fixed easing curve, so arrow clicks
+   * and swipe-driven snap settle with the same feel instead of each browser's
+   * own (differing) default for "smooth" scroll vs. touch snap-back.
+   * Returns a cancel function so a newer scroll request can stop a stale one
+   * from fighting over scrollLeft mid-flight. */
+  function animateScrollTo(el: HTMLElement, targetLeft: number, duration = SCROLL_ANIMATION_MS): () => void {
+    const startLeft = el.scrollLeft;
+    const distance = targetLeft - startLeft;
+    let cancelled = false;
+    if (Math.abs(distance) < 1) return () => {};
+
+    const startTime = performance.now();
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const step = (now: number) => {
+      if (cancelled) return;
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      el.scrollLeft = startLeft + distance * easeOutCubic(progress);
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+
+    return () => {
+      cancelled = true;
+    };
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  function isValidReview(item: unknown): item is ReviewData {
+    const r = item as ReviewData;
+    return !!r?.user?.name && !!r?.snippet;
+  }
+
+  /** Parses the content key holding a JSON array of review objects. */
+  function parseReviewArray(raw: string): ReviewData[] {
+    if (!raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(isValidReview);
+    } catch {
+      return [];
     }
+  }
 
-    interface ReviewData {
-      user: ReviewUser;
-      rating: number;
-      snippet: string;
-      link?: string;
-      /** Not in cached_reviews — add manually when editing the content key */
-      business?: string;
-      /**
-       * Not in cached_reviews — add manually when editing the content key.
-       * A YouTube URL renders as an embedded video; a Cloudinary video URL
-       * renders as a native video player; any other URL is treated as an image.
-       * Empty/omitted renders nothing.
-       */
-      result?: string;
+  function parseRating(raw: string): GoogleRatingData | null {
+    if (!raw.trim()) return null;
+    try {
+      const parsed = JSON.parse(raw) as GoogleRatingData;
+      if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;
+      return parsed;
+    } catch {
+      return null;
     }
+  }
 
-    interface GoogleRatingData {
-      rating: number;
-      reviewCount: number;
-      link?: string;
+  function fallbackRating(reviews: ReviewData[]): GoogleRatingData {
+    if (reviews.length === 0) return { rating: 0, reviewCount: 0 };
+    const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };
+  }
+
+  function getInitials(name: string): string {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  }
+
+  function nameToHue(name: string): number {
+    return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  }
+
+  /** Thumbnails whose URL contains "square" should be shown uncropped
+   * (rounded square) instead of being forced into a circle. */
+  function isSquareThumbnail(url?: string): boolean {
+    return !!url && url.toLowerCase().includes('square');
+  }
+
+  /** Returns the 11-character video id if the string is a recognizable
+   * YouTube link, otherwise null. */
+  function getYouTubeId(url: string): string | null {
+    const match = url.match(YOUTUBE_URL_REGEX);
+    return match ? match[1] : null;
+  }
+
+  /** True for Cloudinary video links, e.g.
+   * https://res.cloudinary.com/<cloud>/video/upload/v123/my-clip.mp4
+   * Matches either the /video/upload/ path segment or a video file extension. */
+  function isCloudinaryVideoUrl(url: string): boolean {
+    try {
+      const u = new URL(url);
+      if (!/(^|\.)cloudinary\.com$/i.test(u.hostname)) return false;
+      return u.pathname.includes('/video/upload/') || VIDEO_FILE_REGEX.test(u.pathname);
+    } catch {
+      return false;
     }
+  }
 
-    const REVIEWS_KEY = 'testimonials-review-2';
-    const RATING_KEY = 'testimonials-google-rating';
-    const DEFAULT_GOOGLE_LINK =
-      'https://search.google.com/local/writereview?placeid=ChIJq5JklwgFuQ0RREPIKUg0EHs';
-
-    const CARD_GAP_PX = 24;
-    const SCROLL_ANIMATION_MS = 380;
-
-    /** Matches youtube.com/watch, youtu.be, /embed/ and /shorts/ links and
-     * captures the 11-character video id. */
-    const YOUTUBE_URL_REGEX =
-      /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i;
-
-    /** File extensions treated as video when found at the end of a URL path. */
-    const VIDEO_FILE_REGEX = /\.(mp4|webm|mov|m4v|ogv)$/i;
-
-    /** Smoothly animates scrollLeft with a fixed easing curve, so arrow clicks
-     * and swipe-driven snap settle with the same feel instead of each browser's
-     * own (differing) default for "smooth" scroll vs. touch snap-back.
-     * Returns a cancel function so a newer scroll request can stop a stale one
-     * from fighting over scrollLeft mid-flight. */
-    function animateScrollTo(el: HTMLElement, targetLeft: number, duration = SCROLL_ANIMATION_MS): () => void {
-      const startLeft = el.scrollLeft;
-      const distance = targetLeft - startLeft;
-      let cancelled = false;
-      if (Math.abs(distance) < 1) return () => {};
-
-      const startTime = performance.now();
-      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-      const step = (now: number) => {
-        if (cancelled) return;
-        const elapsed = now - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        el.scrollLeft = startLeft + distance * easeOutCubic(progress);
-        if (progress < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-
-      return () => {
-        cancelled = true;
-      };
+  /** Inserts a transformation right after /upload/ in a Cloudinary URL and
+   * swaps/strips the file extension. Returns the original URL if it can't. */
+  function transformCloudinaryUrl(url: string, transform: string, extension: string): string {
+    try {
+      const u = new URL(url);
+      if (!u.pathname.includes('/upload/')) return url;
+      u.pathname = u.pathname
+        .replace('/upload/', `/upload/${transform}/`)
+        .replace(VIDEO_FILE_REGEX, extension);
+      return u.toString();
+    } catch {
+      return url;
     }
+  }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────────
+  /** Small first-frame JPG (works with or without a file extension in the URL). */
+  function getCloudinaryPoster(url: string): string {
+    return transformCloudinaryUrl(url, CLOUDINARY_POSTER_TRANSFORM, '.jpg');
+  }
 
-    function isValidReview(item: unknown): item is ReviewData {
-      const r = item as ReviewData;
-      return !!r?.user?.name && !!r?.snippet;
+  /** Optimized video: capped width, automatic quality + format. The extension is
+   * removed so f_auto can choose the best format for the browser. */
+  function getCloudinaryOptimizedVideo(url: string): string {
+    return transformCloudinaryUrl(url, CLOUDINARY_VIDEO_TRANSFORM, '');
+  }
+
+  function getYouTubeThumbnail(id: string): string {
+    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  }
+
+  type CenterMode = 'card' | 'gap';
+
+  /** How many cards fit in the viewport at once decides whether the centered
+   * position should land on a card (odd count) or the gap between two cards
+   * (even count) — the same balance a physical carousel keeps as it resizes. */
+  function modeForVisibleCount(count: number): CenterMode {
+    return count % 2 === 0 ? 'gap' : 'card';
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function computeVisibleCount(cardWidth: number, viewportWidth: number, total: number): number {
+    const raw = Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX));
+    return clamp(raw, 1, total);
+  }
+
+  /** The "natural" middle anchor for the full list in the given mode — an
+   * integer card index for 'card' mode, or index+0.5 (the gap right after
+   * that card) for 'gap' mode. */
+  function naturalAnchor(total: number, mode: CenterMode): number {
+    const center = (total - 1) / 2;
+    if (mode === 'card') {
+      return clamp(Math.round(center), 0, total - 1);
     }
+    const maxHalf = Math.max(0.5, total - 1.5);
+    const half = Number.isInteger(center) ? center + 0.5 : center;
+    return clamp(half, 0.5, maxHalf);
+  }
 
-    /** Parses the content key holding a JSON array of review objects. */
-    function parseReviewArray(raw: string): ReviewData[] {
-      if (!raw.trim()) return [];
-      try {
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed.filter(isValidReview);
-      } catch {
-        return [];
-      }
+  /** Converts a previous anchor to a new mode when the visible-count parity
+   * changes (e.g. resizing across a breakpoint), staying near the same spot
+   * instead of jumping back to the array's natural center every time. */
+  function adjustAnchorForMode(prevAnchor: number | undefined, mode: CenterMode, total: number): number {
+    if (prevAnchor === undefined) return naturalAnchor(total, mode);
+    if (mode === 'card') {
+      return clamp(Math.round(prevAnchor), 0, total - 1);
     }
+    const maxHalf = Math.max(0.5, total - 1.5);
+    if (!Number.isInteger(prevAnchor)) return clamp(prevAnchor, 0.5, maxHalf);
+    let candidate = prevAnchor + 0.5;
+    if (candidate > maxHalf) candidate = prevAnchor - 0.5;
+    return clamp(candidate, 0.5, maxHalf);
+  }
 
-    function parseRating(raw: string): GoogleRatingData | null {
-      if (!raw.trim()) return null;
-      try {
-        const parsed = JSON.parse(raw) as GoogleRatingData;
-        if (typeof parsed?.rating !== 'number' || typeof parsed?.reviewCount !== 'number') return null;
-        return parsed;
-      } catch {
-        return null;
-      }
-    }
+  // ─── Sub-components ───────────────────────────────────────────────────────────
 
-    function fallbackRating(reviews: ReviewData[]): GoogleRatingData {
-      if (reviews.length === 0) return { rating: 0, reviewCount: 0 };
-      const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-      return { rating: Math.round(avg * 10) / 10, reviewCount: reviews.length };
-    }
+  function GoogleG({ size = 14 }: { size?: number }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+      </svg>
+    );
+  }
 
-    function getInitials(name: string): string {
-      return name
-        .split(' ')
-        .map((n) => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase();
-    }
+  function StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? '#FBBF24' : '#404040'} stroke="none">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+      </svg>
+    );
+  }
 
-    function nameToHue(name: string): number {
-      return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
-    }
+  function ReviewCard({ review }: { review: ReviewData }) {
+    const hue = nameToHue(review.user.name);
+    // Business name fully replaces the default label when present.
+    const metaLabel = review.business || 'Verificeret Google-anmeldelse';
+    const googleLink = review.link || DEFAULT_GOOGLE_LINK;
+    const isSquare = isSquareThumbnail(review.user.thumbnail);
 
-    /** Thumbnails whose URL contains "square" should be shown uncropped
-     * (rounded square) instead of being forced into a circle. */
-    function isSquareThumbnail(url?: string): boolean {
-      return !!url && url.toLowerCase().includes('square');
-    }
-
-    /** Returns a privacy-enhanced YouTube embed URL if the given string is a
-     * recognizable YouTube link, otherwise null. */
-    function getYouTubeEmbedUrl(url: string): string | null {
-      const match = url.match(YOUTUBE_URL_REGEX);
-      return match ? `https://www.youtube-nocookie.com/embed/${match[1]}` : null;
-    }
-
-    /** True for Cloudinary video links, e.g.
-     * https://res.cloudinary.com/<cloud>/video/upload/v123/my-clip.mp4
-     * Matches either the /video/upload/ path segment or a video file extension. */
-    function isCloudinaryVideoUrl(url: string): boolean {
-      try {
-        const u = new URL(url);
-        if (!/(^|\.)cloudinary\.com$/i.test(u.hostname)) return false;
-        return u.pathname.includes('/video/upload/') || VIDEO_FILE_REGEX.test(u.pathname);
-      } catch {
-        return false;
-      }
-    }
-
-    /** Cloudinary can serve a still frame of a video by swapping the extension
-     * for .jpg — used as the poster so the box isn't black before playback. */
-    function getCloudinaryPoster(url: string): string | undefined {
-      try {
-        const u = new URL(url);
-        if (!VIDEO_FILE_REGEX.test(u.pathname)) return undefined;
-        u.pathname = u.pathname.replace(VIDEO_FILE_REGEX, '.jpg');
-        return u.toString();
-      } catch {
-        return undefined;
-      }
-    }
-
-    type CenterMode = 'card' | 'gap';
-
-    /** How many cards fit in the viewport at once decides whether the centered
-     * position should land on a card (odd count) or the gap between two cards
-     * (even count) — the same balance a physical carousel keeps as it resizes. */
-    function modeForVisibleCount(count: number): CenterMode {
-      return count % 2 === 0 ? 'gap' : 'card';
-    }
-
-    function clamp(value: number, min: number, max: number): number {
-      return Math.min(max, Math.max(min, value));
-    }
-
-    function computeVisibleCount(cardWidth: number, viewportWidth: number, total: number): number {
-      const raw = Math.floor((viewportWidth + CARD_GAP_PX) / (cardWidth + CARD_GAP_PX));
-      return clamp(raw, 1, total);
-    }
-
-    /** The "natural" middle anchor for the full list in the given mode — an
-     * integer card index for 'card' mode, or index+0.5 (the gap right after
-     * that card) for 'gap' mode. */
-    function naturalAnchor(total: number, mode: CenterMode): number {
-      const center = (total - 1) / 2;
-      if (mode === 'card') {
-        return clamp(Math.round(center), 0, total - 1);
-      }
-      const maxHalf = Math.max(0.5, total - 1.5);
-      const half = Number.isInteger(center) ? center + 0.5 : center;
-      return clamp(half, 0.5, maxHalf);
-    }
-
-    /** Converts a previous anchor to a new mode when the visible-count parity
-     * changes (e.g. resizing across a breakpoint), staying near the same spot
-     * instead of jumping back to the array's natural center every time. */
-    function adjustAnchorForMode(prevAnchor: number | undefined, mode: CenterMode, total: number): number {
-      if (prevAnchor === undefined) return naturalAnchor(total, mode);
-      if (mode === 'card') {
-        return clamp(Math.round(prevAnchor), 0, total - 1);
-      }
-      const maxHalf = Math.max(0.5, total - 1.5);
-      if (!Number.isInteger(prevAnchor)) return clamp(prevAnchor, 0.5, maxHalf);
-      let candidate = prevAnchor + 0.5;
-      if (candidate > maxHalf) candidate = prevAnchor - 0.5;
-      return clamp(candidate, 0.5, maxHalf);
-    }
-
-    // ─── Sub-components ───────────────────────────────────────────────────────────
-
-    function GoogleG({ size = 14 }: { size?: number }) {
-      return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-        </svg>
-      );
-    }
-
-    function StarIcon({ filled = true, size = 14 }: { filled?: boolean; size?: number }) {
-      return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? '#FBBF24' : '#404040'} stroke="none">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-        </svg>
-      );
-    }
-
-    function ReviewCard({ review }: { review: ReviewData }) {
-      const hue = nameToHue(review.user.name);
-      // Business name fully replaces the default label when present.
-      const metaLabel = review.business || 'Verificeret Google-anmeldelse';
-      const googleLink = review.link || DEFAULT_GOOGLE_LINK;
-      const isSquare = isSquareThumbnail(review.user.thumbnail);
-
-      return (
-        <div className="testi-review-card">
-          <span className="big-quote" aria-hidden="true">&ldquo;</span>
-          <p className="testi-quote-text">{review.snippet}</p>
-          <div className="testi-author-row">
-            <a
-              href={googleLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="author-link"
-              title="Se anmeldelse på Google"
-            >
-              {review.user.thumbnail ? (
-                <img
-                  src={review.user.thumbnail}
-                  alt={review.user.name}
-                  className={`author-avatar${isSquare ? ' author-avatar-square' : ''}`}
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-              ) : (
-                <div
-                  className="author-avatar-fallback"
-                  style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}
-                >
-                  {getInitials(review.user.name)}
-                </div>
-              )}
-              <div className="author-info">
-                <div className="testi-stars">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <StarIcon key={i} filled={i <= Math.round(review.rating)} />
-                  ))}
-                </div>
-                <p className="author-name">{review.user.name}</p>
-                <p className="author-meta">{metaLabel}</p>
+    return (
+      <div className="testi-review-card">
+        <span className="big-quote" aria-hidden="true">&ldquo;</span>
+        <p className="testi-quote-text">{review.snippet}</p>
+        <div className="testi-author-row">
+          <a
+            href={googleLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="author-link"
+            title="Se anmeldelse på Google"
+          >
+            {review.user.thumbnail ? (
+              <img
+                src={review.user.thumbnail}
+                alt={review.user.name}
+                className={`author-avatar${isSquare ? ' author-avatar-square' : ''}`}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div
+                className="author-avatar-fallback"
+                style={{ backgroundColor: `hsl(${hue}, 35%, 28%)` }}
+              >
+                {getInitials(review.user.name)}
               </div>
-            </a>
-            <a
-              href={googleLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="google-badge"
-              title="Se anmeldelse på Google"
-            >
-              <GoogleG size={40} />
-            </a>
-          </div>
+            )}
+            <div className="author-info">
+              <div className="testi-stars">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <StarIcon key={i} filled={i <= Math.round(review.rating)} />
+                ))}
+              </div>
+              <p className="author-name">{review.user.name}</p>
+              <p className="author-meta">{metaLabel}</p>
+            </div>
+          </a>
+          <a
+            href={googleLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="google-badge"
+            title="Se anmeldelse på Google"
+          >
+            <GoogleG size={40} />
+          </a>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    /** Separate box stacked below a review's card, holding that review's
-     * "result" media (see field docs at the top of the file). Renders nothing
-     * when there's no result, so it adds no height to reviews without one. */
-    function ResultCard({ review }: { review: ReviewData }) {
-      const trimmedResult = review.result?.trim();
-      const youtubeEmbedUrl = trimmedResult ? getYouTubeEmbedUrl(trimmedResult) : null;
-      const cloudinaryVideoUrl =
-        trimmedResult && !youtubeEmbedUrl && isCloudinaryVideoUrl(trimmedResult) ? trimmedResult : null;
-      const resultImageUrl =
-        trimmedResult && !youtubeEmbedUrl && !cloudinaryVideoUrl ? trimmedResult : null;
+  /** Separate box stacked below a review's card, holding that review's
+   * "result" media (see field docs at the top of the file). Renders nothing
+   * when there's no result, so it adds no height to reviews without one. */
+  function ResultCard({ review }: { review: ReviewData }) {
+    // Hooks must run before any early return.
+    const [playing, setPlaying] = useState(false);
+    const [posterFailed, setPosterFailed] = useState(false);
+    const [useOriginalVideo, setUseOriginalVideo] = useState(false);
 
-      if (!youtubeEmbedUrl && !cloudinaryVideoUrl && !resultImageUrl) return null;
+    const trimmedResult = review.result?.trim();
+    const youtubeId = trimmedResult ? getYouTubeId(trimmedResult) : null;
+    const cloudinaryVideoUrl =
+      trimmedResult && !youtubeId && isCloudinaryVideoUrl(trimmedResult) ? trimmedResult : null;
+    const resultImageUrl =
+      trimmedResult && !youtubeId && !cloudinaryVideoUrl ? trimmedResult : null;
 
+    if (!youtubeId && !cloudinaryVideoUrl && !resultImageUrl) return null;
+
+    const label = `Resultat af ${review.user.name}s anmeldelse`;
+
+    // Plain image result.
+    if (resultImageUrl) {
       return (
         <div className="testi-result-card">
-          {youtubeEmbedUrl ? (
-            <iframe
-              src={youtubeEmbedUrl}
-              title={`Resultat af ${review.user.name}s anmeldelse`}
-              loading="lazy"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          ) : cloudinaryVideoUrl ? (
-            <video
-              src={cloudinaryVideoUrl}
-              poster={getCloudinaryPoster(cloudinaryVideoUrl)}
-              controls
-              playsInline
-              preload="metadata"
-              aria-label={`Resultat af ${review.user.name}s anmeldelse`}
-            />
-          ) : (
-            <img
-              src={resultImageUrl!}
-              alt={`Resultat af ${review.user.name}s anmeldelse`}
-              loading="lazy"
-              onError={(e) => {
-                const wrapper = e.currentTarget.parentElement as HTMLElement | null;
-                if (wrapper) wrapper.style.display = 'none';
-              }}
-            />
-          )}
+          <img
+            src={resultImageUrl}
+            alt={label}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              const wrapper = e.currentTarget.parentElement as HTMLElement | null;
+              if (wrapper) wrapper.style.display = 'none';
+            }}
+          />
         </div>
       );
     }
 
-    function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+    // Video result: lightweight thumbnail + play button until the visitor clicks.
+    const posterUrl =
+      review.resultPoster?.trim() ||
+      (youtubeId ? getYouTubeThumbnail(youtubeId) : getCloudinaryPoster(cloudinaryVideoUrl!));
+
+    if (!playing) {
       return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          {direction === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
-        </svg>
+        <div className="testi-result-card">
+          <button
+            type="button"
+            className="testi-result-play"
+            onClick={() => setPlaying(true)}
+            aria-label={`Afspil video: ${label}`}
+          >
+            {!posterFailed && (
+              <img
+                src={posterUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={() => setPosterFailed(true)}
+              />
+            )}
+            <span className="testi-play-icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="#ffffff">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
+          </button>
+        </div>
       );
     }
 
-    function TestimonialRow({ reviews }: { reviews: ReviewData[] }) {
-      const viewportRef = useRef<HTMLDivElement>(null);
-      const trackRef = useRef<HTMLDivElement>(null);
-      const [canScrollLeft, setCanScrollLeft] = useState(false);
-      const [canScrollRight, setCanScrollRight] = useState(false);
-
-      // Logical position: an integer card index in 'card' mode, or index+0.5
-      // (the gap right after that card) in 'gap' mode. Kept in a ref since it
-      // drives imperative scrolling rather than a re-render.
-      const anchorRef = useRef<number | undefined>(undefined);
-      const modeRef = useRef<CenterMode>('card');
-      const isAutoScrollingRef = useRef(false);
-      const hasUserScrolledRef = useRef(false);
-      const cancelAutoScrollRef = useRef<(() => void) | null>(null);
-      const scrollEndTimeoutRef = useRef<number | undefined>(undefined);
-      // Guards against the settle effect re-running its FIRST-mount reset logic
-      // more than once for the same `reviews` identity — see effect below.
-      const didInitRef = useRef(false);
-
-      const getMetrics = () => {
-        const viewport = viewportRef.current;
-        const track = trackRef.current;
-        if (!viewport || !track) return null;
-        const firstCard = track.firstElementChild as HTMLElement | null;
-        if (!firstCard) return null;
-        return {
-          viewport,
-          track,
-          cards: Array.from(track.children) as HTMLElement[],
-          cardWidth: firstCard.getBoundingClientRect().width,
-          viewportWidth: viewport.clientWidth,
-        };
-      };
-
-      const updateSidePadding = (visibleCount: number) => {
-        const m = getMetrics();
-        if (!m) return;
-        const blockWidth = visibleCount * m.cardWidth + (visibleCount - 1) * CARD_GAP_PX;
-        const sidePad = Math.max(0, (m.viewportWidth - blockWidth) / 2);
-        m.track.style.setProperty('--testi-side-pad', `${sidePad}px`);
-      };
-
-      /** Scrolls — this row's own scrollLeft only, never the page — so the
-       * given anchor (a card, or the gap between two cards) sits centered in
-       * the viewport. Measures live layout each call rather than relying on a
-       * separately-tracked assumption, so it can't drift out of sync. */
-      const scrollToAnchor = (anchor: number, mode: CenterMode, animate: boolean) => {
-        const m = getMetrics();
-        if (!m) return;
-        const { viewport, track, cards } = m;
-        const trackRect = track.getBoundingClientRect();
-
-        let centerFromTrackLeft: number | null = null;
-        if (mode === 'card') {
-          const card = cards[Math.round(anchor)];
-          if (!card) return;
-          const r = card.getBoundingClientRect();
-          centerFromTrackLeft = (r.left - trackRect.left) + r.width / 2;
-        } else {
-          const idx = Math.floor(anchor);
-          const cardA = cards[idx];
-          const cardB = cards[idx + 1];
-          if (!cardA || !cardB) return;
-          const ra = cardA.getBoundingClientRect();
-          const rb = cardB.getBoundingClientRect();
-          const rightOfA = (ra.left - trackRect.left) + ra.width;
-          const leftOfB = rb.left - trackRect.left;
-          centerFromTrackLeft = (rightOfA + leftOfB) / 2;
-        }
-        if (centerFromTrackLeft === null) return;
-
-        // centerFromTrackLeft is measured relative to the track (via
-        // getBoundingClientRect), so it's already an absolute, scroll-invariant
-        // target — NOT relative to the current viewport scroll position.
-        // Do not add viewport.scrollLeft here; that double-counts the current
-        // offset and was causing runaway overshoot -> clamped to the last card
-        // (and arrow clicks inheriting the same overshoot, looking "dead").
-        const targetLeft = centerFromTrackLeft - viewport.clientWidth / 2;
-        const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-        const clamped = clamp(targetLeft, 0, maxScroll);
-
-        // Cancel any in-flight animation from a previous call so two scroll
-        // requests in quick succession (e.g. a fast double-click, or a settle
-        // firing while a user-triggered scroll is still animating) can't fight
-        // over scrollLeft and produce a visible "snap to a different spot".
-        cancelAutoScrollRef.current?.();
-        isAutoScrollingRef.current = true;
-
-        if (animate) {
-          cancelAutoScrollRef.current = animateScrollTo(viewport, clamped);
-          window.setTimeout(() => {
-            isAutoScrollingRef.current = false;
-          }, SCROLL_ANIMATION_MS + 50);
-        } else {
-          viewport.scrollLeft = clamped;
-          requestAnimationFrame(() => {
-            isAutoScrollingRef.current = false;
-          });
-        }
-      };
-
-      const updateArrowAvailability = (visibleCount: number, total: number, mode: CenterMode) => {
-        if (visibleCount >= total) {
-          setCanScrollLeft(false);
-          setCanScrollRight(false);
-          return;
-        }
-        const anchor = anchorRef.current ?? naturalAnchor(total, mode);
-        if (mode === 'card') {
-          setCanScrollLeft(anchor > 0);
-          setCanScrollRight(anchor < total - 1);
-        } else {
-          const maxHalf = Math.max(0.5, total - 1.5);
-          setCanScrollLeft(anchor > 0.5);
-          setCanScrollRight(anchor < maxHalf);
-        }
-      };
-
-      /** Finds whichever card (or gap between two cards) currently sits
-       * closest to the viewport's center — used to softly settle the row after
-       * a manual swipe. There's no native CSS scroll-snap here on purpose: it
-       * was fighting the arrow-click animation and occasionally made a click
-       * jump two cards instead of one, so alignment is handled in JS instead. */
-      const nearestAnchor = (mode: CenterMode): number => {
-        const m = getMetrics();
-        if (!m) return anchorRef.current ?? 0;
-        const { viewport, cards } = m;
-        const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
-
-        if (mode === 'card') {
-          let best = 0;
-          let bestDist = Infinity;
-          cards.forEach((card, i) => {
-            const r = card.getBoundingClientRect();
-            const dist = Math.abs((r.left + r.width / 2) - viewportCenter);
-            if (dist < bestDist) {
-              bestDist = dist;
-              best = i;
+    return (
+      <div className="testi-result-card">
+        {youtubeId ? (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0`}
+            title={label}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            src={
+              useOriginalVideo
+                ? cloudinaryVideoUrl!
+                : getCloudinaryOptimizedVideo(cloudinaryVideoUrl!)
             }
-          });
-          return best;
-        }
+            poster={posterFailed ? undefined : posterUrl}
+            controls
+            autoPlay
+            playsInline
+            preload="auto"
+            aria-label={label}
+            // If the transformed version isn't available (e.g. still being
+            // processed), fall back to the original file once.
+            onError={() => {
+              if (!useOriginalVideo) setUseOriginalVideo(true);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
-        let best = 0.5;
+  function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+    return (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        {direction === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+      </svg>
+    );
+  }
+
+  function TestimonialRow({ reviews }: { reviews: ReviewData[] }) {
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const trackRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    // Logical position: an integer card index in 'card' mode, or index+0.5
+    // (the gap right after that card) in 'gap' mode. Kept in a ref since it
+    // drives imperative scrolling rather than a re-render.
+    const anchorRef = useRef<number | undefined>(undefined);
+    const modeRef = useRef<CenterMode>('card');
+    const isAutoScrollingRef = useRef(false);
+    const hasUserScrolledRef = useRef(false);
+    const cancelAutoScrollRef = useRef<(() => void) | null>(null);
+    const scrollEndTimeoutRef = useRef<number | undefined>(undefined);
+    // Guards against the settle effect re-running its FIRST-mount reset logic
+    // more than once for the same `reviews` identity — see effect below.
+    const didInitRef = useRef(false);
+
+    const getMetrics = () => {
+      const viewport = viewportRef.current;
+      const track = trackRef.current;
+      if (!viewport || !track) return null;
+      const firstCard = track.firstElementChild as HTMLElement | null;
+      if (!firstCard) return null;
+      return {
+        viewport,
+        track,
+        cards: Array.from(track.children) as HTMLElement[],
+        cardWidth: firstCard.getBoundingClientRect().width,
+        viewportWidth: viewport.clientWidth,
+      };
+    };
+
+    const updateSidePadding = (visibleCount: number) => {
+      const m = getMetrics();
+      if (!m) return;
+      const blockWidth = visibleCount * m.cardWidth + (visibleCount - 1) * CARD_GAP_PX;
+      const sidePad = Math.max(0, (m.viewportWidth - blockWidth) / 2);
+      m.track.style.setProperty('--testi-side-pad', `${sidePad}px`);
+    };
+
+    /** Scrolls — this row's own scrollLeft only, never the page — so the
+     * given anchor (a card, or the gap between two cards) sits centered in
+     * the viewport. Measures live layout each call rather than relying on a
+     * separately-tracked assumption, so it can't drift out of sync. */
+    const scrollToAnchor = (anchor: number, mode: CenterMode, animate: boolean) => {
+      const m = getMetrics();
+      if (!m) return;
+      const { viewport, track, cards } = m;
+      const trackRect = track.getBoundingClientRect();
+
+      let centerFromTrackLeft: number | null = null;
+      if (mode === 'card') {
+        const card = cards[Math.round(anchor)];
+        if (!card) return;
+        const r = card.getBoundingClientRect();
+        centerFromTrackLeft = (r.left - trackRect.left) + r.width / 2;
+      } else {
+        const idx = Math.floor(anchor);
+        const cardA = cards[idx];
+        const cardB = cards[idx + 1];
+        if (!cardA || !cardB) return;
+        const ra = cardA.getBoundingClientRect();
+        const rb = cardB.getBoundingClientRect();
+        const rightOfA = (ra.left - trackRect.left) + ra.width;
+        const leftOfB = rb.left - trackRect.left;
+        centerFromTrackLeft = (rightOfA + leftOfB) / 2;
+      }
+      if (centerFromTrackLeft === null) return;
+
+      // centerFromTrackLeft is measured relative to the track (via
+      // getBoundingClientRect), so it's already an absolute, scroll-invariant
+      // target — NOT relative to the current viewport scroll position.
+      // Do not add viewport.scrollLeft here; that double-counts the current
+      // offset and was causing runaway overshoot -> clamped to the last card
+      // (and arrow clicks inheriting the same overshoot, looking "dead").
+      const targetLeft = centerFromTrackLeft - viewport.clientWidth / 2;
+      const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const clamped = clamp(targetLeft, 0, maxScroll);
+
+      // Cancel any in-flight animation from a previous call so two scroll
+      // requests in quick succession (e.g. a fast double-click, or a settle
+      // firing while a user-triggered scroll is still animating) can't fight
+      // over scrollLeft and produce a visible "snap to a different spot".
+      cancelAutoScrollRef.current?.();
+      isAutoScrollingRef.current = true;
+
+      if (animate) {
+        cancelAutoScrollRef.current = animateScrollTo(viewport, clamped);
+        window.setTimeout(() => {
+          isAutoScrollingRef.current = false;
+        }, SCROLL_ANIMATION_MS + 50);
+      } else {
+        viewport.scrollLeft = clamped;
+        requestAnimationFrame(() => {
+          isAutoScrollingRef.current = false;
+        });
+      }
+    };
+
+    const updateArrowAvailability = (visibleCount: number, total: number, mode: CenterMode) => {
+      if (visibleCount >= total) {
+        setCanScrollLeft(false);
+        setCanScrollRight(false);
+        return;
+      }
+      const anchor = anchorRef.current ?? naturalAnchor(total, mode);
+      if (mode === 'card') {
+        setCanScrollLeft(anchor > 0);
+        setCanScrollRight(anchor < total - 1);
+      } else {
+        const maxHalf = Math.max(0.5, total - 1.5);
+        setCanScrollLeft(anchor > 0.5);
+        setCanScrollRight(anchor < maxHalf);
+      }
+    };
+
+    /** Finds whichever card (or gap between two cards) currently sits
+     * closest to the viewport's center — used to softly settle the row after
+     * a manual swipe. There's no native CSS scroll-snap here on purpose: it
+     * was fighting the arrow-click animation and occasionally made a click
+     * jump two cards instead of one, so alignment is handled in JS instead. */
+    const nearestAnchor = (mode: CenterMode): number => {
+      const m = getMetrics();
+      if (!m) return anchorRef.current ?? 0;
+      const { viewport, cards } = m;
+      const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
+
+      if (mode === 'card') {
+        let best = 0;
         let bestDist = Infinity;
-        for (let i = 0; i < cards.length - 1; i++) {
-          const ra = cards[i].getBoundingClientRect();
-          const rb = cards[i + 1].getBoundingClientRect();
-          const gapCenter = (ra.right + rb.left) / 2;
-          const dist = Math.abs(gapCenter - viewportCenter);
+        cards.forEach((card, i) => {
+          const r = card.getBoundingClientRect();
+          const dist = Math.abs((r.left + r.width / 2) - viewportCenter);
           if (dist < bestDist) {
             bestDist = dist;
-            best = i + 0.5;
+            best = i;
           }
-        }
+        });
         return best;
-      };
+      }
 
-      const handleScroll = () => {
-        // Ignore scroll events we caused ourselves (programmatic scrollToAnchor).
-        if (isAutoScrollingRef.current) return;
-        hasUserScrolledRef.current = true;
-        window.clearTimeout(scrollEndTimeoutRef.current);
-        // Wait for scrolling to actually stop (debounce) before locking onto
-        // the nearest card/gap — this is what makes a swipe "lock on" instead
-        // of leaving the row wherever momentum scrolling happened to stop.
-        scrollEndTimeoutRef.current = window.setTimeout(() => {
-          const mode = modeRef.current;
-          const total = reviews.length;
-          const nearest = nearestAnchor(mode);
-          anchorRef.current = nearest;
-          scrollToAnchor(nearest, mode, true);
-          const m = getMetrics();
-          if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);
-        }, 120);
-      };
-
-      useEffect(() => {
-        const viewport = viewportRef.current;
-        if (!viewport) return;
-
-        const total = reviews.length;
-
-        // Only reset scroll/anchor state on a genuine first mount of this row
-        // (or when the review count actually changes, e.g. switching between
-        // the single-row and split-row layouts). Previously this reset ran on
-        // every re-run of this effect, and because `reviews` is recreated as a
-        // new array on every parent render, that meant ANY unrelated re-render
-        // higher up the tree (typing, resizing, other state updates) silently
-        // wiped `anchorRef`/`hasUserScrolledRef` and snapped the row back to
-        // center — which is what looked like "clicking an arrow instantly
-        // resets to the first review" and "swiping never locks on mobile"
-        // (the debounced settle in handleScroll would fire, then get its
-        // result immediately discarded by the next reset).
-        if (!didInitRef.current) {
-          hasUserScrolledRef.current = false;
-          anchorRef.current = undefined;
-          didInitRef.current = true;
+      let best = 0.5;
+      let bestDist = Infinity;
+      for (let i = 0; i < cards.length - 1; i++) {
+        const ra = cards[i].getBoundingClientRect();
+        const rb = cards[i + 1].getBoundingClientRect();
+        const gapCenter = (ra.right + rb.left) / 2;
+        const dist = Math.abs(gapCenter - viewportCenter);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i + 0.5;
         }
+      }
+      return best;
+    };
 
-        // Re-settle (side padding + centering + arrow state) on every layout
-        // change, including the guaranteed initial call ResizeObserver fires
-        // right after observe(). Determines from how many cards currently fit
-        // whether a card or a gap should be centered, and keeps that balanced
-        // as the screen resizes — until the person scrolls the row themselves.
-        const settle = () => {
-          const m = getMetrics();
-          if (!m) return;
-          const visibleCount = computeVisibleCount(m.cardWidth, m.viewportWidth, total);
-          const mode = modeForVisibleCount(visibleCount);
-
-          updateSidePadding(visibleCount);
-
-          if (!hasUserScrolledRef.current) {
-            if (modeRef.current !== mode || anchorRef.current === undefined) {
-              anchorRef.current = adjustAnchorForMode(anchorRef.current, mode, total);
-            }
-            modeRef.current = mode;
-            scrollToAnchor(anchorRef.current, mode, false);
-          } else {
-            modeRef.current = mode;
-          }
-
-          updateArrowAvailability(visibleCount, total, mode);
-        };
-
-        const resizeObserver = new ResizeObserver(settle);
-        resizeObserver.observe(viewport);
-        return () => {
-          resizeObserver.disconnect();
-          cancelAutoScrollRef.current?.();
-          window.clearTimeout(scrollEndTimeoutRef.current);
-        };
-        // Depend on the review count, not the `reviews` array reference itself
-        // (that reference changes on every parent render even when the actual
-        // review data hasn't). Combined with the didInitRef guard above, this
-        // effect's reset logic now truly only runs once per distinct row size.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [reviews.length]);
-
-      const scrollByOneCard = (dir: 'left' | 'right') => {
-        const total = reviews.length;
+    const handleScroll = () => {
+      // Ignore scroll events we caused ourselves (programmatic scrollToAnchor).
+      if (isAutoScrollingRef.current) return;
+      hasUserScrolledRef.current = true;
+      window.clearTimeout(scrollEndTimeoutRef.current);
+      // Wait for scrolling to actually stop (debounce) before locking onto
+      // the nearest card/gap — this is what makes a swipe "lock on" instead
+      // of leaving the row wherever momentum scrolling happened to stop.
+      scrollEndTimeoutRef.current = window.setTimeout(() => {
         const mode = modeRef.current;
-        const current = anchorRef.current ?? naturalAnchor(total, mode);
-        const delta = dir === 'left' ? -1 : 1;
-
-        let next = current + delta;
-        if (mode === 'card') {
-          next = clamp(next, 0, total - 1);
-        } else {
-          const maxHalf = Math.max(0.5, total - 1.5);
-          next = clamp(next, 0.5, maxHalf);
-        }
-
-        hasUserScrolledRef.current = true;
-        anchorRef.current = next;
-        scrollToAnchor(next, mode, true);
-
+        const total = reviews.length;
+        const nearest = nearestAnchor(mode);
+        anchorRef.current = nearest;
+        scrollToAnchor(nearest, mode, true);
         const m = getMetrics();
         if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);
+      }, 120);
+    };
+
+    useEffect(() => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+
+      const total = reviews.length;
+
+      // Only reset scroll/anchor state on a genuine first mount of this row
+      // (or when the review count actually changes, e.g. switching between
+      // the single-row and split-row layouts). Previously this reset ran on
+      // every re-run of this effect, and because `reviews` is recreated as a
+      // new array on every parent render, that meant ANY unrelated re-render
+      // higher up the tree (typing, resizing, other state updates) silently
+      // wiped `anchorRef`/`hasUserScrolledRef` and snapped the row back to
+      // center — which is what looked like "clicking an arrow instantly
+      // resets to the first review" and "swiping never locks on mobile"
+      // (the debounced settle in handleScroll would fire, then get its
+      // result immediately discarded by the next reset).
+      if (!didInitRef.current) {
+        hasUserScrolledRef.current = false;
+        anchorRef.current = undefined;
+        didInitRef.current = true;
+      }
+
+      // Re-settle (side padding + centering + arrow state) on every layout
+      // change, including the guaranteed initial call ResizeObserver fires
+      // right after observe(). Determines from how many cards currently fit
+      // whether a card or a gap should be centered, and keeps that balanced
+      // as the screen resizes — until the person scrolls the row themselves.
+      const settle = () => {
+        const m = getMetrics();
+        if (!m) return;
+        const visibleCount = computeVisibleCount(m.cardWidth, m.viewportWidth, total);
+        const mode = modeForVisibleCount(visibleCount);
+
+        updateSidePadding(visibleCount);
+
+        if (!hasUserScrolledRef.current) {
+          if (modeRef.current !== mode || anchorRef.current === undefined) {
+            anchorRef.current = adjustAnchorForMode(anchorRef.current, mode, total);
+          }
+          modeRef.current = mode;
+          scrollToAnchor(anchorRef.current, mode, false);
+        } else {
+          modeRef.current = mode;
+        }
+
+        updateArrowAvailability(visibleCount, total, mode);
       };
 
-      return (
-        <div className="testi-row-wrap">
-          <div className="testi-row-arrows">
-            <button
-              type="button"
-              className="testi-arrow testi-arrow-left"
-              onClick={() => scrollByOneCard('left')}
-              disabled={!canScrollLeft}
-              aria-label="Se forrige anmeldelse"
-            >
-              <ChevronIcon direction="left" />
-            </button>
-            <button
-              type="button"
-              className="testi-arrow testi-arrow-right"
-              onClick={() => scrollByOneCard('right')}
-              disabled={!canScrollRight}
-              aria-label="Se næste anmeldelse"
-            >
-              <ChevronIcon direction="right" />
-            </button>
-          </div>
+      const resizeObserver = new ResizeObserver(settle);
+      resizeObserver.observe(viewport);
+      return () => {
+        resizeObserver.disconnect();
+        cancelAutoScrollRef.current?.();
+        window.clearTimeout(scrollEndTimeoutRef.current);
+      };
+      // Depend on the review count, not the `reviews` array reference itself
+      // (that reference changes on every parent render even when the actual
+      // review data hasn't). Combined with the didInitRef guard above, this
+      // effect's reset logic now truly only runs once per distinct row size.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reviews.length]);
 
-          <div className="testi-row-viewport" ref={viewportRef} onScroll={handleScroll}>
-            <div ref={trackRef} className="testi-row-track">
-              {reviews.map((review, i) => (
-                <div className="testi-card-col" key={`${review.user.name}-${i}`}>
-                  <ReviewCard review={review} />
-                  <ResultCard review={review} />
-                </div>
-              ))}
-            </div>
+    const scrollByOneCard = (dir: 'left' | 'right') => {
+      const total = reviews.length;
+      const mode = modeRef.current;
+      const current = anchorRef.current ?? naturalAnchor(total, mode);
+      const delta = dir === 'left' ? -1 : 1;
+
+      let next = current + delta;
+      if (mode === 'card') {
+        next = clamp(next, 0, total - 1);
+      } else {
+        const maxHalf = Math.max(0.5, total - 1.5);
+        next = clamp(next, 0.5, maxHalf);
+      }
+
+      hasUserScrolledRef.current = true;
+      anchorRef.current = next;
+      scrollToAnchor(next, mode, true);
+
+      const m = getMetrics();
+      if (m) updateArrowAvailability(computeVisibleCount(m.cardWidth, m.viewportWidth, total), total, mode);
+    };
+
+    return (
+      <div className="testi-row-wrap">
+        <div className="testi-row-arrows">
+          <button
+            type="button"
+            className="testi-arrow testi-arrow-left"
+            onClick={() => scrollByOneCard('left')}
+            disabled={!canScrollLeft}
+            aria-label="Se forrige anmeldelse"
+          >
+            <ChevronIcon direction="left" />
+          </button>
+          <button
+            type="button"
+            className="testi-arrow testi-arrow-right"
+            onClick={() => scrollByOneCard('right')}
+            disabled={!canScrollRight}
+            aria-label="Se næste anmeldelse"
+          >
+            <ChevronIcon direction="right" />
+          </button>
+        </div>
+
+        <div className="testi-row-viewport" ref={viewportRef} onScroll={handleScroll}>
+          <div ref={trackRef} className="testi-row-track">
+            {reviews.map((review, i) => (
+              <div className="testi-card-col" key={`${review.user.name}-${i}`}>
+                <ReviewCard review={review} />
+                <ResultCard review={review} />
+              </div>
+            ))}
           </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    // ─── Main component ───────────────────────────────────────────────────────────
+  // ─── Main component ───────────────────────────────────────────────────────────
 
-    const Testimonials: React.FC = () => {
-      const { getContent } = useData();
+  const Testimonials: React.FC = () => {
+    const { getContent } = useData();
 
-      const reviewsRaw = getContent(REVIEWS_KEY, '');
-      const ratingRaw = getContent(RATING_KEY, '');
+    const reviewsRaw = getContent(REVIEWS_KEY, '');
+    const ratingRaw = getContent(RATING_KEY, '');
 
-      // Stable array reference: only re-parses (and therefore only produces a
-      // new array identity) when the underlying content STRING actually
-      // changes, instead of on every render of this component. This is what
-      // fixes the row snapping back to the start on any interaction — see the
-      // comment in TestimonialRow's effect for the full explanation.
-      const allReviews = useMemo(() => parseReviewArray(reviewsRaw), [reviewsRaw]);
-      const total = allReviews.length;
+    // Stable array reference: only re-parses (and therefore only produces a
+    // new array identity) when the underlying content STRING actually
+    // changes, instead of on every render of this component. This is what
+    // fixes the row snapping back to the start on any interaction — see the
+    // comment in TestimonialRow's effect for the full explanation.
+    const allReviews = useMemo(() => parseReviewArray(reviewsRaw), [reviewsRaw]);
+    const total = allReviews.length;
 
-      // Declared before the early return below so hooks always run in the same
-      // order on every render (rules of hooks).
-      const ratingData = useMemo(
-        () => parseRating(ratingRaw) ?? fallbackRating(allReviews),
-        [ratingRaw, allReviews]
-      );
+    // Declared before the early return below so hooks always run in the same
+    // order on every render (rules of hooks).
+    const ratingData = useMemo(
+      () => parseRating(ratingRaw) ?? fallbackRating(allReviews),
+      [ratingRaw, allReviews]
+    );
 
-      const rowsContainerRef = useRef<HTMLDivElement>(null);
+    const rowsContainerRef = useRef<HTMLDivElement>(null);
 
-      // Keeps every review card the same height as the tallest one currently
-      // rendered (measured from its natural, unclamped content height) so a
-      // short snippet doesn't leave its card looking undersized next to a long
-      // one. Recomputed on mount and on window resize, since resizing can
-      // change how the quote text wraps (and therefore its natural height).
-      // Also writes that height out as --testi-review-height on the container,
-      // which .testi-row-arrows uses to pin itself into the gap between the
-      // review card and the result card, regardless of scroll position.
-      useLayoutEffect(() => {
-        const container = rowsContainerRef.current;
-        if (!container) return;
+    // Keeps every review card the same height as the tallest one currently
+    // rendered (measured from its natural, unclamped content height) so a
+    // short snippet doesn't leave its card looking undersized next to a long
+    // one. Recomputed on mount and on window resize, since resizing can
+    // change how the quote text wraps (and therefore its natural height).
+    // Also writes that height out as --testi-review-height on the container,
+    // which .testi-row-arrows uses to pin itself into the gap between the
+    // review card and the result card, regardless of scroll position.
+    useLayoutEffect(() => {
+      const container = rowsContainerRef.current;
+      if (!container) return;
 
-        const equalize = () => {
-          const cards = Array.from(container.querySelectorAll<HTMLElement>('.testi-review-card'));
-          if (cards.length === 0) return;
-          // Reset to natural height first so we measure real content height,
-          // not a height forced by a previous run of this same function.
-          cards.forEach((card) => { card.style.height = 'auto'; });
-          const tallest = cards.reduce((max, card) => Math.max(max, card.getBoundingClientRect().height), 0);
-          cards.forEach((card) => { card.style.height = `${tallest}px`; });
-          container.style.setProperty('--testi-review-height', `${tallest}px`);
-        };
+      const equalize = () => {
+        const cards = Array.from(container.querySelectorAll<HTMLElement>('.testi-review-card'));
+        if (cards.length === 0) return;
+        // Reset to natural height first so we measure real content height,
+        // not a height forced by a previous run of this same function.
+        cards.forEach((card) => { card.style.height = 'auto'; });
+        const tallest = cards.reduce((max, card) => Math.max(max, card.getBoundingClientRect().height), 0);
+        cards.forEach((card) => { card.style.height = `${tallest}px`; });
+        container.style.setProperty('--testi-review-height', `${tallest}px`);
+      };
 
-        equalize();
+      equalize();
 
-        let frame: number;
-        const handleResize = () => {
-          cancelAnimationFrame(frame);
-          frame = requestAnimationFrame(equalize);
-        };
-        window.addEventListener('resize', handleResize);
-        return () => {
-          window.removeEventListener('resize', handleResize);
-          cancelAnimationFrame(frame);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [total]);
+      let frame: number;
+      const handleResize = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(equalize);
+      };
+      window.addEventListener('resize', handleResize);
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        cancelAnimationFrame(frame);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [total]);
 
-      // No reviews configured at all — render nothing.
-      if (total === 0) return null;
+    // No reviews configured at all — render nothing.
+    if (total === 0) return null;
 
-      return (
-        <section className="py-20">
-          <style>{`
-            .testi-header {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              text-align: center;
-              gap: 20px;
-              margin-bottom: 48px;
-              padding: 0 24px;
-            }
-            .testi-rating-badge {
-              display: inline-flex;
-              align-items: center;
-              gap: 8px;
-              background: #1a1a1a;
-              border: 1px solid #2a2a2a;
-              border-radius: 999px;
-              padding: 8px 18px;
-              text-decoration: none;
-              color: #f0f0f0;
-              font-family: 'Inter', sans-serif;
-              font-size: 0.85rem;
-              font-weight: 600;
-            }
-            .testi-rating-badge .testi-badge-stars {
-              display: flex;
-              gap: 1px;
-            }
-            .testi-header h2 {
-              font-family: 'Inter', sans-serif;
-              font-size: clamp(1.75rem, 3.5vw, 2.75rem);
-              font-weight: 700;
-              color: #ffffff;
-              margin: 0;
-              max-width: 700px;
-              line-height: 1.2;
-            }
-            .testi-rows {
-              display: flex;
-              flex-direction: column;
-              gap: 24px;
-            }
-            .testi-row-wrap {
-              display: flex;
-              flex-direction: column;
-              gap: 12px;
-              position: relative;
-            }
-            .testi-row-arrows {
-              position: absolute;
-              top: calc(var(--testi-review-height, 0px) + 10px);
-              left: 50%;
-              transform: translateX(-50%);
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              z-index: 5;
-            }
+    return (
+      <section className="py-20">
+        <style>{`
+          .testi-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 20px;
+            margin-bottom: 48px;
+            padding: 0 24px;
+          }
+          .testi-rating-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 999px;
+            padding: 8px 18px;
+            text-decoration: none;
+            color: #f0f0f0;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+          }
+          .testi-rating-badge .testi-badge-stars {
+            display: flex;
+            gap: 1px;
+          }
+          .testi-header h2 {
+            font-family: 'Inter', sans-serif;
+            font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0;
+            max-width: 700px;
+            line-height: 1.2;
+          }
+          .testi-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+          }
+          .testi-row-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            position: relative;
+          }
+          .testi-row-arrows {
+            position: absolute;
+            top: calc(var(--testi-review-height, 0px) + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 5;
+          }
+          .testi-row-viewport {
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: auto;
+            scrollbar-width: none;
+            overflow-anchor: none;
+            width: 100%;
+            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+          }
+          .testi-row-viewport::-webkit-scrollbar {
+            display: none;
+          }
+          .testi-row-track {
+            display: flex;
+            gap: 24px;
+            width: max-content;
+            min-width: 100%;
+            justify-content: center;
+            padding: 0 var(--testi-side-pad, 24px);
+          }
+          .testi-arrow {
+            flex-shrink: 0;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 1px solid #2f2f2f;
+            background: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;
+          }
+          .testi-arrow:hover:not(:disabled) {
+            background: #262626;
+            border-color: #454545;
+          }
+          .testi-arrow:active:not(:disabled) {
+            transform: scale(0.94);
+          }
+          .testi-arrow:disabled {
+            opacity: 0.25;
+            cursor: default;
+          }
+          .testi-card-col {
+            display: flex;
+            flex-direction: column;
+            gap: 72px;
+            width: 380px;
+            flex-shrink: 0;
+          }
+          .testi-review-card {
+            background: #141414;
+            border: 1px solid #262626;
+            border-radius: 20px;
+            padding: 32px;
+            width: 100%;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+          }
+          .big-quote {
+            font-size: 3.5rem;
+            line-height: 0.7;
+            color: #3B82F6;
+            font-family: Georgia, serif;
+            font-weight: 700;
+            user-select: none;
+            display: block;
+            margin-bottom: 8px;
+          }
+          .testi-quote-text {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 400;
+            color: #f0f0f0;
+            line-height: 1.6;
+            letter-spacing: -0.01em;
+            margin: 0;
+            flex: 1;
+          }
+          .testi-author-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #262626;
+          }
+          .author-avatar {
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+          }
+          .author-avatar-square {
+            border-radius: 0;
+          }
+          .author-avatar-fallback {
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.05rem; font-weight: 700; color: white;
+            flex-shrink: 0;
+          }
+          .author-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+            text-decoration: none;
+          }
+          .author-info { flex: 1; min-width: 0; }
+          .author-name {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0 0 2px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .author-meta {
+            font-size: 0.72rem;
+            color: #A3A3A3;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .google-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            background: transparent;
+            border: none;
+            padding: 0;
+            flex-shrink: 0;
+          }
+          .testi-stars {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 6px;
+          }
+          .testi-result-card {
+            background: #141414;
+            border: 1px solid #262626;
+            border-radius: 20px;
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+            width: 100%;
+            flex-shrink: 0;
+          }
+          .testi-result-card iframe,
+          .testi-result-card video,
+          .testi-result-card img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: none;
+            object-fit: cover;
+          }
+          .testi-result-card video {
+            background: #000;
+          }
+          .testi-result-play {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            border: none;
+            background: #0d0d0d;
+            cursor: pointer;
+          }
+          .testi-result-play img {
+            position: absolute;
+            inset: 0;
+          }
+          .testi-play-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 64px;
+            height: 64px;
+            margin: -32px 0 0 -32px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-left: 3px;
+            transition: transform 0.15s, background 0.15s;
+          }
+          .testi-result-play:hover .testi-play-icon {
+            transform: scale(1.08);
+            background: rgba(0, 0, 0, 0.78);
+          }
+          @media (max-width: 768px) {
+            .testi-card-col { width: 300px; }
+            .testi-review-card { padding: 24px; }
+            .big-quote { font-size: 2.75rem; }
+            .testi-quote-text { font-size: 0.95rem; }
             .testi-row-viewport {
-              overflow-x: auto;
-              overflow-y: hidden;
-              -webkit-overflow-scrolling: touch;
-              scroll-behavior: auto;
-              scrollbar-width: none;
-              overflow-anchor: none;
-              width: 100%;
-              -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
-              mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+              -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
+              mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
             }
-            .testi-row-viewport::-webkit-scrollbar {
-              display: none;
-            }
-            .testi-row-track {
-              display: flex;
-              gap: 24px;
-              width: max-content;
-              min-width: 100%;
-              justify-content: center;
-              padding: 0 var(--testi-side-pad, 24px);
-            }
-            .testi-arrow {
-              flex-shrink: 0;
-              width: 52px;
-              height: 52px;
-              border-radius: 50%;
-              border: 1px solid #2f2f2f;
-              background: #1a1a1a;
-              color: #ffffff;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              cursor: pointer;
-              transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;
-            }
-            .testi-arrow:hover:not(:disabled) {
-              background: #262626;
-              border-color: #454545;
-            }
-            .testi-arrow:active:not(:disabled) {
-              transform: scale(0.94);
-            }
-            .testi-arrow:disabled {
-              opacity: 0.25;
-              cursor: default;
-            }
-            .testi-card-col {
-              display: flex;
-              flex-direction: column;
-              gap: 72px;
-              width: 380px;
-              flex-shrink: 0;
-            }
-            .testi-review-card {
-              background: #141414;
-              border: 1px solid #262626;
-              border-radius: 20px;
-              padding: 32px;
-              width: 100%;
-              flex-shrink: 0;
-              display: flex;
-              flex-direction: column;
-            }
-            .big-quote {
-              font-size: 3.5rem;
-              line-height: 0.7;
-              color: #3B82F6;
-              font-family: Georgia, serif;
-              font-weight: 700;
-              user-select: none;
-              display: block;
-              margin-bottom: 8px;
-            }
-            .testi-quote-text {
-              font-family: 'Inter', sans-serif;
-              font-size: 1.05rem;
-              font-weight: 400;
-              color: #f0f0f0;
-              line-height: 1.6;
-              letter-spacing: -0.01em;
-              margin: 0;
-              flex: 1;
-            }
-            .testi-author-row {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              margin-top: 20px;
-              padding-top: 16px;
-              border-top: 1px solid #262626;
-            }
-            .author-avatar {
-              width: 48px; height: 48px;
-              border-radius: 50%;
-              object-fit: cover;
-              flex-shrink: 0;
-            }
-            .author-avatar-square {
-              border-radius: 0;
-            }
-            .author-avatar-fallback {
-              width: 48px; height: 48px;
-              border-radius: 50%;
-              display: flex; align-items: center; justify-content: center;
-              font-size: 1.05rem; font-weight: 700; color: white;
-              flex-shrink: 0;
-            }
-            .author-link {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              flex: 1;
-              min-width: 0;
-              text-decoration: none;
-            }
-            .author-info { flex: 1; min-width: 0; }
-            .author-name {
-              font-size: 0.88rem;
-              font-weight: 700;
-              color: #ffffff;
-              margin: 0 0 2px 0;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-            }
-            .author-meta {
-              font-size: 0.72rem;
-              color: #A3A3A3;
-              margin: 0;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-            }
-            .google-badge {
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              text-decoration: none;
-              background: transparent;
-              border: none;
-              padding: 0;
-              flex-shrink: 0;
-            }
-            .testi-stars {
-              display: flex;
-              gap: 2px;
-              margin-bottom: 6px;
-            }
-            .testi-result-card {
-              background: #141414;
-              border: 1px solid #262626;
-              border-radius: 20px;
-              overflow: hidden;
-              aspect-ratio: 16 / 9;
-              width: 100%;
-              flex-shrink: 0;
-            }
-            .testi-result-card iframe,
-            .testi-result-card video,
-            .testi-result-card img {
-              display: block;
-              width: 100%;
-              height: 100%;
-              border: none;
-              object-fit: cover;
-            }
-            @media (max-width: 768px) {
-              .testi-card-col { width: 300px; }
-              .testi-review-card { padding: 24px; }
-              .big-quote { font-size: 2.75rem; }
-              .testi-quote-text { font-size: 0.95rem; }
-              .testi-row-viewport {
-                -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
-                mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
-              }
-            }
-          `}</style>
+          }
+        `}</style>
 
-          <div className="testi-header">
-            <a
-              href={ratingData.link || DEFAULT_GOOGLE_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="testi-rating-badge"
-            >
-              <span className="testi-badge-stars">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />
-                ))}
-              </span>
-              Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google
-            </a>
-            <h2>Andre glade kunder</h2>
-          </div>
+        <div className="testi-header">
+          <a
+            href={ratingData.link || DEFAULT_GOOGLE_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="testi-rating-badge"
+          >
+            <span className="testi-badge-stars">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />
+              ))}
+            </span>
+            Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google
+          </a>
+          <h2>Andre glade kunder</h2>
+        </div>
 
-          <div className="testi-rows" ref={rowsContainerRef}>
-            <TestimonialRow reviews={allReviews} />
-          </div>
-        </section>
-      );
-    };
+        <div className="testi-rows" ref={rowsContainerRef}>
+          <TestimonialRow reviews={allReviews} />
+        </div>
+      </section>
+    );
+  };
   return Testimonials;
 })(
   React.useState, React.useEffect, React.useRef, React.useMemo, React.useLayoutEffect
