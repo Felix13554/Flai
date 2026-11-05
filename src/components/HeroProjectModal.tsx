@@ -19,7 +19,7 @@ export interface HeroProjectModalProps {
  * while this is open, via HeroVideoSection's `paused` prop).
  *
  * Layout, top to bottom:
- *   1. project title       (`industry` from the CMS "content" key)
+ *   1. project title       (`name` from the CMS "content" key)
  *   2. project description (`description` from the CMS "content" key)
  *   3. "Se videoen med lyd"
  *   4. the project's Cloudinary video — NO autoplay and NOT muted (the
@@ -62,6 +62,9 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
 
   const publicId = extractCloudinaryPublicId(project.cloudinaryVideoUrl)
   const description = project.description?.trim()
+  // The CMS content array stores the project's display name in its `name` field.
+  // Keep this compatible with older HeroProjectItem type definitions.
+  const projectName = (project as HeroProjectItem & { name?: string }).name?.trim() ?? ''
 
   return createPortal(
     <div
@@ -72,7 +75,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={project.industry}
+        aria-label={projectName || 'Projekt'}
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-4xl max-h-full overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-900 p-5 md:p-8 shadow-2xl"
       >
@@ -88,7 +91,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
 
         {/* 1. Title */}
         <h2 className="pr-10 text-2xl md:text-4xl font-bold leading-tight text-white">
-          {project.industry}
+          {projectName}
         </h2>
 
         {/* 2. Description (from the "content" key) */}
@@ -108,7 +111,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
               // key → a fresh player (no leftover playback) for every project
               key={publicId}
               publicId={publicId}
-              title={project.industry}
+              title={projectName}
             />
           </div>
         )}
@@ -119,3 +122,4 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
 }
 
 export default HeroProjectModal
+
