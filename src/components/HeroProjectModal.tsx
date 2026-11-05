@@ -24,7 +24,7 @@ export interface HeroProjectModalProps {
  *   4. the project's Cloudinary video — NO autoplay and NOT muted (the
  *      visitor presses play, and it then plays with sound)
  *
- * Closes on the X button, a click on the dark backdrop, or Escape. Page
+ * Closes on the X button, a click outside the container (the backdrop is fully transparent — no blur or dimming), or Escape. Page
  * scroll is locked while open. Rendered through a portal so it always sits
  * above the NavBar (z-50) and the hero's own stacking context.
  */
@@ -54,7 +54,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 md:p-8"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-transparent p-3 md:p-8"
       onClick={onClose}
       role="presentation"
     >
