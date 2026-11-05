@@ -250,7 +250,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           onClick={onSeeMore}
           aria-haspopup="dialog"
           aria-label={`Se mere om ${active.industry}`}
-          className="btn-primary mb-8 md:mb-10"
+          className="btn-primary text-lg px-8 py-4 mb-8 md:mb-10"
         >
           Se mere
         </button>
