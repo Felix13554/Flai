@@ -107,7 +107,7 @@ const BookingsManager: React.FC = () => {
     wasSent: boolean;
   } | null>(null);
   
-  const [editingData, setEditingData] = useState<{
+  type EditingData = {
     payment_status: string;
     payment_method: string;
     zip_file_url: string;
@@ -118,7 +118,12 @@ const BookingsManager: React.FC = () => {
     is_completed: boolean;
     price: number;
     product_id: number;
-  }>({
+    customer_name: string;
+    email: string;
+    address: string;
+  };
+
+  const emptyEditingData: EditingData = {
     payment_status: '',
     payment_method: '',
     zip_file_url: '',
@@ -128,8 +133,13 @@ const BookingsManager: React.FC = () => {
     include_editing: false,
     is_completed: false,
     price: 0,
-    product_id: 0
-  });
+    product_id: 0,
+    customer_name: '',
+    email: '',
+    address: ''
+  };
+
+  const [editingData, setEditingData] = useState<EditingData>(emptyEditingData);
 
   // Create booking form state
   const [newBookingData, setNewBookingData] = useState({
@@ -482,24 +492,25 @@ const BookingsManager: React.FC = () => {
       toast.success(finalizeOnly ? 'Faktura finaliseret' : 'Faktura sendt til kunden');
       handleCloseInvoiceModal();
 
-      // Show the download popup if we got a PDF/hosted URL back. The chain
+      // Always show the result popup after a successful finalize/send. It used
+      // to be gated on invoicePdf/invoiceUrl, so e.g. finalize-only with a
+      // bank-transfer version (where only bankTransferPdf/combinedPdf come
+      // back) just closed with no download button. The chain
       // (queue-invoice -> process-invoices -> send-invoice) is awaited end to
-      // end, so this is already available synchronously — no polling needed.
-      if (result.invoicePdf || result.invoiceUrl) {
-        setInvoiceResult({
-          invoicePdf: result.invoicePdf || null,
-          invoiceUrl: result.invoiceUrl || null,
-          bankTransferPdf: result.bankTransferPdf || null,
-          combinedPdf: result.combinedPdf || null,
-          bankTransferPdfError: result.bankTransferPdfError || null,
-          wasSent: !!result.wasSent,
-        });
+      // end, so everything is available synchronously — no polling needed.
+      setInvoiceResult({
+        invoicePdf: result.invoicePdf || null,
+        invoiceUrl: result.invoiceUrl || null,
+        bankTransferPdf: result.bankTransferPdf || null,
+        combinedPdf: result.combinedPdf || null,
+        bankTransferPdfError: result.bankTransferPdfError || null,
+        wasSent: !!result.wasSent && !finalizeOnly,
+      });
 
-        // The Stripe invoice was still created/sent successfully even if the
-        // bank-transfer PDF generation failed — surface it as a warning only.
-        if (result.bankTransferPdfError) {
-          toast.error(`Bankoverførsel-PDF kunne ikke genereres: ${result.bankTransferPdfError}`);
-        }
+      // The Stripe invoice was still created/sent successfully even if the
+      // bank-transfer PDF generation failed — surface it as a warning only.
+      if (result.bankTransferPdfError) {
+        toast.error(`Bankoverførsel-PDF kunne ikke genereres: ${result.bankTransferPdfError}`);
       }
     } catch (error: any) {
       console.error('BookingsManager: Error sending invoice:', error);
@@ -543,7 +554,10 @@ const BookingsManager: React.FC = () => {
       include_editing: booking.include_editing || false,
       is_completed: booking.is_completed || false,
       price: booking.price || 0,
-      product_id: booking.product_id || 0
+      product_id: booking.product_id || 0,
+      customer_name: booking.customer_name || '',
+      email: booking.user_email || booking.guest_email || '',
+      address: booking.address || ''
     });
 
     // Auto-fetch Drive files using the booking's customer name
@@ -773,25 +787,42 @@ const BookingsManager: React.FC = () => {
       const hadZipFile = booking?.zip_file_url;
       const hasNewZipFile = editingData.zip_file_url && editingData.zip_file_url !== hadZipFile;
 
-      await updateBooking(editingBooking, editingData);
-      
+      // `email` is not a column on bookings — it maps to user_id / guest_email.
+      const { email, ...bookingUpdates } = editingData;
+      const updates: Record<string, any> = {
+        ...bookingUpdates,
+        customer_name: bookingUpdates.customer_name.trim(),
+        address: bookingUpdates.address.trim(),
+      };
+
+      const newEmail = email.trim();
+      const oldEmail = (booking?.user_email || booking?.guest_email || '').trim();
+      const emailChanged = newEmail.toLowerCase() !== oldEmail.toLowerCase();
+
+      if (emailChanged) {
+        if (!newEmail) {
+          toast.error('Email må ikke være tom');
+          return;
+        }
+        if (!/^\S+@\S+\.\S+$/.test(newEmail)) {
+          toast.error('Ugyldig email-adresse');
+          return;
+        }
+        // Link to an existing user if the new email belongs to one, otherwise
+        // store it as a guest email.
+        const foundUserId = await checkUserByEmail(newEmail);
+        updates.user_id = foundUserId || null;
+        updates.guest_email = foundUserId ? null : newEmail;
+      }
+
+      await updateBooking(editingBooking, updates);
+
       if (hasNewZipFile && sendCompletionEmail && booking) {
-        await sendBookingCompletionEmail(booking);
+        await sendBookingCompletionEmail(emailChanged ? { ...booking, user_email: newEmail } : booking);
       }
 
       setEditingBooking(null);
-      setEditingData({ 
-        payment_status: '', 
-        payment_method: '', 
-        zip_file_url: '',
-        share_project_url: '',
-        booking_date: '',
-        booking_time: '',
-        include_editing: false,
-        is_completed: false,
-        price: 0,
-        product_id: 0
-      });
+      setEditingData(emptyEditingData);
       setSendCompletionEmail(true);
       toast.success('Booking opdateret');
     } catch (error) {
@@ -802,18 +833,7 @@ const BookingsManager: React.FC = () => {
 
   const handleCancelEdit = () => {
     setEditingBooking(null);
-    setEditingData({ 
-      payment_status: '', 
-      payment_method: '', 
-      zip_file_url: '',
-      share_project_url: '',
-      booking_date: '',
-      booking_time: '',
-      include_editing: false,
-      is_completed: false,
-      price: 0,
-      product_id: 0
-    });
+    setEditingData(emptyEditingData);
     setSendCompletionEmail(true);
   };
 
@@ -2070,6 +2090,57 @@ const BookingsManager: React.FC = () => {
                   />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
+                      <label className="block text-sm font-medium text-neutral-300 mb-1">
+                        <EditableContent contentKey="admin-bookings-edit-customer-name-label" fallback="Kundenavn" /></label>
+                      <input
+                        type="text"
+                        value={editingData.customer_name}
+                        onChange={(e) => setEditingData({ ...editingData, customer_name: e.target.value })}
+                        className="form-input w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-300 mb-1">
+                        <EditableContent contentKey="admin-bookings-edit-email-label" fallback="Email" /></label>
+                      <input
+                        type="email"
+                        value={editingData.email}
+                        onChange={(e) => setEditingData({ ...editingData, email: e.target.value })}
+                        placeholder="kunde@example.com"
+                        className="form-input w-full"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-neutral-300 mb-1">
+                        <EditableContent contentKey="admin-bookings-edit-address-label" fallback="Adresse" /></label>
+                      <input
+                        type="text"
+                        value={editingData.address}
+                        onChange={(e) => setEditingData({ ...editingData, address: e.target.value })}
+                        className="form-input w-full"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-neutral-300 mb-1">
+                        <EditableContent contentKey="admin-bookings-edit-product-label" fallback="Produkt" /></label>
+                      <select
+                        value={editingData.product_id}
+                        onChange={(e) => setEditingData({ ...editingData, product_id: parseInt(e.target.value) || 0 })}
+                        className="form-input w-full"
+                      >
+                        {!products.some(p => p.id === editingData.product_id) && (
+                          <option value={editingData.product_id}>{getProductName(editingData.product_id)}</option>
+                        )}
+                        {products.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
                       <EditableContent
                         contentKey="admin-bookings-edit-status-label"
                         as="label"
@@ -2491,6 +2562,22 @@ const BookingsManager: React.FC = () => {
               </div>
             )}
             <div className="flex flex-col gap-3">
+              {!invoiceResult.invoicePdf && !invoiceResult.bankTransferPdf && !invoiceResult.combinedPdf && !invoiceResult.invoiceUrl && (
+                <p className="text-xs text-neutral-400">
+                  <EditableContent contentKey="admin-bookings-invoice-result-no-files" fallback="Der blev ikke returneret nogen PDF-links. Fakturaen kan findes i Stripe." />
+                </p>
+              )}
+              {invoiceResult.invoiceUrl && !invoiceResult.invoicePdf && (
+                <a
+                  href={invoiceResult.invoiceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center px-5 py-2.5 bg-success text-white rounded-lg hover:bg-success/80 transition-colors font-medium"
+                >
+                  <Download size={16} className="mr-2" />
+                  <EditableContent contentKey="admin-bookings-invoice-result-open-invoice" fallback="Åbn Faktura" />
+                </a>
+              )}
               {invoiceResult.invoicePdf && (
                 <a
                   href={invoiceResult.invoicePdf}
