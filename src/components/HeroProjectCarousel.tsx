@@ -250,7 +250,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           onClick={onSeeMore}
           aria-haspopup="dialog"
           aria-label={`Se mere om ${active.industry}`}
-          className="mb-8 md:mb-10 inline-flex items-center rounded-lg border border-white/60 bg-black/30 px-5 py-2.5 text-sm md:text-base font-medium text-white backdrop-blur-sm transition-colors duration-200 hover:bg-white hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+          className="btn-primary mb-8 md:mb-10"
         >
           Se mere
         </button>
