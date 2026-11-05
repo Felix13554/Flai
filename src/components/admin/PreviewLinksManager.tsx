@@ -207,7 +207,7 @@ const PreviewLinksManager: React.FC = () => {
                 : 'bg-neutral-800 border-neutral-600 text-neutral-400 hover:text-white'
             }`}
           >
-            <Film size={16} /> Video
+            <Film size={16} /> <EditableContent contentKey="preview-links-manager-video" fallback="Video" />
           </button>
           <button
             type="button"
@@ -218,12 +218,12 @@ const PreviewLinksManager: React.FC = () => {
                 : 'bg-neutral-800 border-neutral-600 text-neutral-400 hover:text-white'
             }`}
           >
-            <Images size={16} /> Billeder
+            <Images size={16} /> <EditableContent contentKey="preview-links-manager-billeder" fallback="Billeder" />
           </button>
         </div>
 
         <div>
-          <label className="block text-sm text-neutral-300 mb-1.5">Titel / kundenavn</label>
+          <label className="block text-sm text-neutral-300 mb-1.5"><EditableContent contentKey="preview-links-manager-titel-kundenavn" fallback="Titel / kundenavn" /></label>
           <input
             className="w-full bg-neutral-800 border border-neutral-600 rounded-lg px-4 py-2.5 text-white placeholder-neutral-500 focus:outline-none focus:border-primary transition-colors"
             placeholder="F.eks. Villa Strandvej 12"
@@ -264,11 +264,11 @@ const PreviewLinksManager: React.FC = () => {
 
       {/* Existing links */}
       <div>
-        <h3 className="font-medium text-white mb-4">Eksisterende preview-links</h3>
+        <h3 className="font-medium text-white mb-4"><EditableContent contentKey="preview-links-manager-eksisterende-preview-links" fallback="Eksisterende preview-links" /></h3>
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-neutral-500" /></div>
         ) : links.length === 0 ? (
-          <p className="text-neutral-500 text-sm">Ingen preview-links endnu.</p>
+          <p className="text-neutral-500 text-sm"><EditableContent contentKey="preview-links-manager-ingen-preview-links-endnu" fallback="Ingen preview-links endnu." /></p>
         ) : (
           <div className="space-y-3">
             {links.map(link => (
@@ -279,9 +279,9 @@ const PreviewLinksManager: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-white truncate">{link.title}</p>
                   <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-3">
-                    <span>/preview/{link.id}</span>
+                    <span><EditableContent contentKey="preview-links-manager-preview" fallback="/preview/" />{link.id}</span>
                     <span className="flex items-center gap-1"><Eye size={12} /> {link.view_count}</span>
-                    {!link.is_active && <span className="text-amber-400">Deaktiveret</span>}
+                    {!link.is_active && <span className="text-amber-400"><EditableContent contentKey="preview-links-manager-deaktiveret" fallback="Deaktiveret" /></span>}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">

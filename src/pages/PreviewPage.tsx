@@ -380,7 +380,7 @@ const PreviewPage: React.FC = () => {
 
       {link.type === 'video' && !link.youtube_id && (
         <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-6 text-center py-20 pt-20">
-          Videoen kunne ikke indlæses. Kontakt afsenderen af linket.
+          <EditableContent contentKey="preview-page-videoen-kunne-ikke-indlaeses-kontakt" fallback="Videoen kunne ikke indlæses. Kontakt afsenderen af linket." />
         </div>
       )}
 
@@ -389,7 +389,7 @@ const PreviewPage: React.FC = () => {
         <div className="flex-1 p-4 sm:p-6" style={{ paddingTop: navHeight + 24 }}>
           {items.length === 0 ? (
             <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
-              Ingen billeder fundet.
+              <EditableContent contentKey="preview-page-ingen-billeder-fundet" fallback="Ingen billeder fundet." />
             </div>
           ) : (
             <div className="grid gap-3 max-w-6xl mx-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gridAutoRows: 'max-content' }}>

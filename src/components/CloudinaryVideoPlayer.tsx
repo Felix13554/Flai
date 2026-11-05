@@ -19,6 +19,7 @@
  * normal browser controls). Only one player plays at a time on a page.
  */
 
+import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import { cloudinaryMp4Url, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
@@ -282,7 +283,7 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
 
       {failed && (
         <div className="absolute inset-x-0 bottom-0 bg-black/70 text-neutral-200 text-xs text-center py-1.5 px-2 pointer-events-none">
-          Videoen kunne ikke indlæses lige nu. Prøv igen om lidt.
+          <EditableContent contentKey="cloudinary-video-player-videoen-kunne-ikke-indlaeses-lige" fallback="Videoen kunne ikke indlæses lige nu. Prøv igen om lidt." />
         </div>
       )}
     </div>

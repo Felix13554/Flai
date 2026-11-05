@@ -1035,9 +1035,9 @@ const Section_9009b281 = ((
                   <StarIcon key={i} filled={i <= Math.round(ratingData.rating)} size={13} />
                 ))}
               </span>
-              Bedømt {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}/5 på Google
+              <EditableContent contentKey="home-page-bedoemt" fallback="Bedømt" /> {Number.isInteger(ratingData.rating) ? ratingData.rating : ratingData.rating.toFixed(1)}<EditableContent contentKey="home-page-5-paa-google" fallback="/5 på Google" />
             </a>
-            <h2>Andre glade kunder</h2>
+            <h2><EditableContent contentKey="home-page-andre-glade-kunder" fallback="Andre glade kunder" /></h2>
           </div>
 
           <div className="testi-rows">

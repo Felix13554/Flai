@@ -1,3 +1,4 @@
+import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import AdaptiveShadowBox from './AdaptiveShadowBox'
 import { getHeroProjectLogos, type HeroProjectsContent } from '../content/heroProjects'
@@ -166,7 +167,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           kind="text"
           className="text-sm md:text-base font-medium tracking-wide uppercase text-neutral-200 mb-3"
         >
-          Udvalgt projekt
+          <EditableContent contentKey="hero-project-carousel-udvalgt-projekt" fallback="Udvalgt projekt" />
         </AdaptiveShadowBox>
       </div>
 
@@ -252,7 +253,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           aria-label={`Se mere om ${active.industry}`}
           className="btn-primary text-lg px-8 py-4 mb-8 md:mb-10 w-full sm:w-auto"
         >
-          Se mere
+          <EditableContent contentKey="hero-project-carousel-se-mere" fallback="Se mere" />
         </button>
       )}
 

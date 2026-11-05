@@ -1,3 +1,4 @@
+import EditableContent from './EditableContent';
 import React, { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
@@ -100,7 +101,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
         {publicId && (
           <div className="mt-6 md:mt-8">
             <p className="mb-3 text-lg md:text-2xl font-bold text-white">
-              Se videoen med lyd
+              <EditableContent contentKey="hero-project-modal-se-videoen-med-lyd" fallback="Se videoen med lyd" />
             </p>
             <CloudinaryVideoPlayer
               // key → a fresh player (no leftover playback) for every project

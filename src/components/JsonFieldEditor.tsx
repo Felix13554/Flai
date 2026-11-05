@@ -1,3 +1,4 @@
+import EditableContent from './EditableContent';
 import React, { useMemo, useState, useCallback } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronUp, Code, LayoutGrid, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -171,7 +172,7 @@ const PrimitiveField: React.FC<{
   if (value === null) {
     return (
       <div>
-        <label className="block text-xs text-neutral-300 mb-1">{label} <span className="text-neutral-500">(tom)</span></label>
+        <label className="block text-xs text-neutral-300 mb-1">{label} <span className="text-neutral-500"><EditableContent contentKey="json-field-editor-tom" fallback="(tom)" /></span></label>
         <input
           type="text"
           value=""
@@ -272,7 +273,7 @@ const StringArrayField: React.FC<{
           className="form-input text-sm flex-1"
         />
         <button type="button" onClick={add} className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded text-xs text-neutral-200 flex items-center gap-1">
-          <Plus size={12} /> Tilføj
+          <Plus size={12} /> <EditableContent contentKey="json-field-editor-tilfoej-2" fallback="Tilføj" />
         </button>
       </div>
     </div>
@@ -364,7 +365,7 @@ const ObjectCard: React.FC<{
                     }}
                     className="flex items-center gap-1 text-xs text-primary hover:text-primary/80"
                   >
-                    <Plus size={12} /> Tilføj {label.toLowerCase()}
+                    <Plus size={12} /> <EditableContent contentKey="json-field-editor-tilfoej" fallback="Tilføj" /> {label.toLowerCase()}
                   </button>
                 </div>
               )}
@@ -443,14 +444,14 @@ const JsonFieldEditor: React.FC<JsonFieldEditorProps> = ({ value, onChange }) =>
             onClick={() => setMode('friendly')}
             className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${mode === 'friendly' ? 'bg-primary/20 text-primary' : 'text-neutral-400 hover:text-neutral-200'}`}
           >
-            <LayoutGrid size={11} /> Formular
+            <LayoutGrid size={11} /> <EditableContent contentKey="json-field-editor-formular" fallback="Formular" />
           </button>
           <button
             type="button"
             onClick={() => { setRawDraft(value); setMode('code'); }}
             className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${mode === 'code' ? 'bg-primary/20 text-primary' : 'text-neutral-400 hover:text-neutral-200'}`}
           >
-            <Code size={11} /> Kode
+            <Code size={11} /> <EditableContent contentKey="json-field-editor-kode" fallback="Kode" />
           </button>
         </div>
       </div>
@@ -470,7 +471,7 @@ const JsonFieldEditor: React.FC<JsonFieldEditorProps> = ({ value, onChange }) =>
           />
           {parseError && (
             <p className="flex items-center gap-1.5 text-xs text-red-400">
-              <AlertTriangle size={12} /> Ugyldig JSON: {parseError}
+              <AlertTriangle size={12} /> <EditableContent contentKey="json-field-editor-ugyldig-json" fallback="Ugyldig JSON:" /> {parseError}
             </p>
           )}
         </div>
@@ -523,7 +524,7 @@ const JsonFieldEditor: React.FC<JsonFieldEditorProps> = ({ value, onChange }) =>
               }}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-dashed border-primary/40 rounded-lg text-sm transition-colors"
             >
-              <Plus size={14} /> Tilføj element
+              <Plus size={14} /> <EditableContent contentKey="json-field-editor-tilfoej-element" fallback="Tilføj element" />
             </button>
           )}
         </div>

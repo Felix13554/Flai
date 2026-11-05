@@ -373,7 +373,7 @@ const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({ onSelectTimeSlot, selec
                           className="w-full px-3 py-2 rounded-lg text-center text-sm transition-all font-medium bg-neutral-800 text-neutral-200 hover:bg-neutral-700 flex items-center justify-between"
                         >
                           <span>{item.rangeLabel}</span>
-                          <span className="text-xs text-neutral-400">{item.slots.length} tider ▾</span>
+                          <span className="text-xs text-neutral-400">{item.slots.length} <EditableContent contentKey="time-slot-picker-tider" fallback="tider ▾" /></span>
                         </button>
                       );
                     }

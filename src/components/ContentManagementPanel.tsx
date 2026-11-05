@@ -751,12 +751,12 @@ const ContentManagementPanel: React.FC = () => {
               </span>
               {jsonKind && (
                 <span className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-300 flex items-center gap-1">
-                  <Braces size={10} /> JSON
+                  <Braces size={10} /> <EditableContent contentKey="content-management-panel-json" fallback="JSON" />
                 </span>
               )}
               {isNoDeploy && (
                 <span className="px-1.5 py-0.5 rounded text-xs bg-sky-500/20 text-sky-300 flex items-center gap-1" title="Deployes ikke til GitHub — forbliver kun i databasen">
-                  <ShieldAlert size={10} /> Kun database
+                  <ShieldAlert size={10} /> <EditableContent contentKey="content-management-panel-kun-database" fallback="Kun database" />
                 </span>
               )}
             </div>

@@ -499,7 +499,7 @@ const ProductsManager: React.FC = () => {
             </div>
 
             <div>
-              <label htmlFor="booking-block-days" className="form-label">Blokeringsdage efter booking</label>
+              <label htmlFor="booking-block-days" className="form-label"><EditableContent contentKey="products-manager-blokeringsdage-efter-booking-2" fallback="Blokeringsdage efter booking" /></label>
               <input
                 id="booking-block-days"
                 type="number"
@@ -514,7 +514,7 @@ const ProductsManager: React.FC = () => {
                 }}
                 className="form-input"
               />
-              <p className="text-sm text-neutral-400 mt-1">Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage).</p>
+              <p className="text-sm text-neutral-400 mt-1"><EditableContent contentKey="products-manager-antal-dage-inkl-bookingdatoen-hvor-2" fallback="Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage)." /></p>
             </div>
 
             <div>
@@ -635,7 +635,7 @@ const ProductsManager: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="booking-block-days-edit" className="form-label">Blokeringsdage efter booking</label>
+                    <label htmlFor="booking-block-days-edit" className="form-label"><EditableContent contentKey="products-manager-blokeringsdage-efter-booking" fallback="Blokeringsdage efter booking" /></label>
                     <input
                       id="booking-block-days-edit"
                       type="number"
@@ -650,7 +650,7 @@ const ProductsManager: React.FC = () => {
                       }}
                       className="form-input"
                     />
-                    <p className="text-sm text-neutral-400 mt-1">Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage).</p>
+                    <p className="text-sm text-neutral-400 mt-1"><EditableContent contentKey="products-manager-antal-dage-inkl-bookingdatoen-hvor" fallback="Antal dage (inkl. bookingdatoen) hvor kalenderen er optaget efter en booking af dette produkt. Lad feltet være tomt for standard (7 dage)." /></p>
                   </div>
 
                   <div>

@@ -620,7 +620,7 @@ const DeployContentManager: React.FC = () => {
       {!!excludedCount && (
         <p className="text-xs text-neutral-500 -mt-2 flex items-center gap-1.5">
           <ShieldAlert size={12} className="text-amber-500" />
-          {excludedCount} nøgle{excludedCount !== 1 ? 'r' : ''} er markeret &ldquo;kun database&rdquo; og udelades fra deploy.
+          {excludedCount} <EditableContent contentKey="deploy-content-manager-noegle" fallback="nøgle" />{excludedCount !== 1 ? 'r' : ''} <EditableContent contentKey="deploy-content-manager-er-markeret-kun-database-og" fallback="er markeret “kun database” og udelades fra deploy." />
         </p>
       )}
 
