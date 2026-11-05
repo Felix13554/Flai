@@ -22,6 +22,13 @@ export interface HeroProjectCarouselProps {
    * (e.g. as a fallback, or if a project's video is unusually long/short).
    */
   autoAdvanceMs?: number
+  /**
+   * Called when the visitor presses the "Se mere" button under the active
+   * project's heading. The parent (HomePage) opens the project container
+   * (<HeroProjectModal>) and pauses the hero video. When omitted, the
+   * button isn't rendered.
+   */
+  onSeeMore?: () => void
 }
 
 /**
@@ -42,6 +49,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   onChangeIndex,
   progress = 0,
   autoAdvanceMs = 0,
+  onSeeMore,
 }) => {
   const items = data.content
   const active = items[activeIndex]
@@ -225,11 +233,28 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
         <AdaptiveShadowBox
           kind="text"
           as="div"
-          className="text-3xl md:text-5xl font-bold text-white mb-8 md:mb-10 leading-tight"
+          className={`text-3xl md:text-5xl font-bold text-white leading-tight ${
+            onSeeMore ? 'mb-5 md:mb-6' : 'mb-8 md:mb-10'
+          }`}
         >
           {active.industry}
         </AdaptiveShadowBox>
       </div>
+
+      {/* "Se mere" — opens the project container over the hero (and pauses
+          the hero video; both handled by HomePage). Sits between the heading
+          and the numbered tabs. */}
+      {onSeeMore && (
+        <button
+          type="button"
+          onClick={onSeeMore}
+          aria-haspopup="dialog"
+          aria-label={`Se mere om ${active.industry}`}
+          className="mb-8 md:mb-10 inline-flex items-center rounded-lg border border-white/60 bg-black/30 px-5 py-2.5 text-sm md:text-base font-medium text-white backdrop-blur-sm transition-colors duration-200 hover:bg-white hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        >
+          Se mere
+        </button>
+      )}
 
       {/* numbered project tabs — every number stays fully white/opaque
           regardless of active state (no grey/dim treatment for the

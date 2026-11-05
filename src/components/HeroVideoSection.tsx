@@ -102,6 +102,14 @@ export interface HeroVideoSectionProps {
    * rAF loop needed since the bar doesn't need sub-frame smoothness.
    */
   onProgress?: (fraction: number) => void
+  /**
+   * When true the video is paused and stays paused — every auto-resume path
+   * (keep-alive interval, user-gesture fallback, visibility/scroll resume,
+   * reconnect) is blocked until it flips back to false, at which point
+   * playback continues from where it stopped. Used by the homepage's
+   * "Se mere" container, which opens over the hero.
+   */
+  paused?: boolean
 }
 
 // 'unknown' is the safe default: we always attempt play() and handle rejection.
@@ -198,9 +206,10 @@ const PHONE_LANDSCAPE_MAX_HEIGHT_PX = 500
 //   - scrolled out      (IntersectionObserver — section has 0px visible)
 // ▶ v18: `blurred` always starts FALSE (never derived from document.hasFocus()
 // at mount — a page that merely loads unfocused must still autoplay).
-const pauseReasons = { hidden: false, blurred: false, offscreen: false }
+// ▶ v20: `external` = the parent asked for a pause via the `paused` prop.
+const pauseReasons = { hidden: false, blurred: false, offscreen: false, external: false }
 const shouldBePaused = () =>
-  pauseReasons.hidden || pauseReasons.blurred || pauseReasons.offscreen
+  pauseReasons.hidden || pauseReasons.blurred || pauseReasons.offscreen || pauseReasons.external
 const isTabHidden = shouldBePaused // ▶ v17: name kept so existing guards keep working
 
 function useIsMobileViewport() {
@@ -320,7 +329,7 @@ function useFrozenViewportHeight(active: boolean) {
   return height
 }
 
-const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children, publicId: controlledPublicId, mobilePublicId: controlledMobilePublicId, onEnded, onProgress }) => {
+const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', children, publicId: controlledPublicId, mobilePublicId: controlledMobilePublicId, onEnded, onProgress, paused = false }) => {
   useEffect(() => { injectControlHideStyle() }, [])
 
   // ▶ v19: admin → no autoplay (see header). `false` for every non-admin.
@@ -1055,6 +1064,28 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       attempt?.()
     }
   }, [adminAutoplayOff, userStarted])
+
+  // ▶ v20: externally controlled pause (the `paused` prop). Sets the shared
+  // pause reason FIRST (so keep-alive / gesture / resume paths all see it),
+  // then pauses. On release it resumes through the normal attemptPlay path.
+  // Skips the initial mount so it never interferes with first autoplay.
+  const prevPausedRef = useRef(paused)
+  useEffect(() => {
+    if (prevPausedRef.current === paused) return
+    prevPausedRef.current = paused
+    pauseReasons.external = paused
+    const video = videoRef.current
+    if (!video) return
+    if (paused) {
+      video.pause()
+    } else if (video.paused && !video.ended && !autoplayBlockedRef.current && !shouldBePaused()) {
+      const attempt = (video as any).__heroAttemptPlay as (() => void) | undefined
+      if (attempt) attempt()
+      else video.play().catch(() => {})
+    }
+  }, [paused])
+  // Never leave the module-level flag stuck if the hero unmounts while paused.
+  useEffect(() => () => { pauseReasons.external = false }, [])
 
   const handleManualPlay = useCallback(() => {
     const video = videoRef.current

@@ -69,6 +69,10 @@ export interface HeroProjectItem {
   /** Size of the third logo — same scale as `logoSize`. Omitted or
    *  invalid → 0. */
   logoSize3?: number
+  /** Optional — a longer description of the project. Shown in the "Se mere"
+   *  container (HeroProjectModal) under the project title (`industry`).
+   *  Left out or empty → the container just shows the title and the video. */
+  description?: string
 }
 
 export interface HeroProjectsContent {
@@ -115,7 +119,8 @@ const HERO_LOGO_KEYS = ['clientLogoUrl', 'logoSize', 'clientLogoUrl2', 'logoSize
  * For the CMS editor: the "Formular" view only shows keys that already exist
  * in the JSON, so older projects would never show the extra logo fields.
  * This adds any missing logo fields (empty URL / size 0) right after
- * `clientLogoUrl`, and leaves everything else untouched. Returns the input
+ * `clientLogoUrl`, plus an empty `description` (the "Se mere" text) at the
+ * end of each project, and leaves everything else untouched. Returns the input
  * unchanged if it isn't a hero-project array.
  */
 export function withHeroLogoFields(raw: string): string {
@@ -162,6 +167,9 @@ export function withHeroLogoFields(raw: string): string {
       out[k] = v
     })
     if (!added) addLogoFields()
+    // Same idea for the "Se mere" description: make the field show up in the
+    // form for older projects that don't have it saved yet.
+    if (!('description' in out)) out.description = ''
     return out
   })
   return JSON.stringify(normalized, null, 2)
@@ -181,7 +189,8 @@ function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
     (p.clientLogoUrl2 === undefined || typeof p.clientLogoUrl2 === 'string') &&
     (p.logoSize2 === undefined || typeof p.logoSize2 === 'number') &&
     (p.clientLogoUrl3 === undefined || typeof p.clientLogoUrl3 === 'string') &&
-    (p.logoSize3 === undefined || typeof p.logoSize3 === 'number')
+    (p.logoSize3 === undefined || typeof p.logoSize3 === 'number') &&
+    (p.description === undefined || typeof p.description === 'string')
   )
 }
 
