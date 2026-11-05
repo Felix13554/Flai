@@ -90,7 +90,7 @@ const HeroProjectModal: React.FC<HeroProjectModalProps> = ({ project, open, onCl
         {/* 3 + 4. Label directly above the video, then the video */}
         {publicId && (
           <div className="mt-6 md:mt-8">
-            <p className="mb-2 text-sm md:text-base font-medium text-neutral-200">
+            <p className="mb-3 text-lg md:text-2xl font-bold text-white">
               Se videoen med lyd
             </p>
             <CloudinaryVideoPlayer
