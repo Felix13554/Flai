@@ -87,6 +87,13 @@ where p.id = s.id;
 
 -- 4. Bundles → én opgave pr. bundle ---------------------------------------------------
 
+-- Hjælpefunktion til sortering: virker uanset kolonnens type (int, numeric, text …).
+-- Værdier der ikke er tal (fx NULL) bliver til standardværdien.
+create or replace function pg_temp.pf_num(v text, dflt numeric default 0)
+returns numeric language sql immutable as $$
+  select case when v ~ '^-?[0-9]+(\.[0-9]+)?$' then v::numeric else dflt end
+$$;
+
 create temp table _pf_bundle_agg on commit drop as
 with ordered as (
   select
@@ -102,11 +109,11 @@ with ordered as (
     gen_random_uuid()::text  as mid,
     row_number() over (
       partition by pi.bundle_id
-      order by coalesce(pi.sort_order, 0), pi.created_at, pi.id
+      order by pg_temp.pf_num(pi.sort_order::text), pi.created_at, pi.id
     ) as rn_media,
     row_number() over (
       partition by pi.bundle_id
-      order by coalesce(pi."array", 50) desc, coalesce(pi.sort_order, 0), pi.created_at, pi.id
+      order by pg_temp.pf_num(pi."array"::text, 50) desc, pg_temp.pf_num(pi.sort_order::text), pi.created_at, pi.id
     ) as rn_keeper
   from portfolio_images pi
   where pi.bundle_id is not null
