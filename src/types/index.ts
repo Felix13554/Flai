@@ -56,10 +56,23 @@ export interface AddressZone {
   updated_at: string;
 }
 
+/** Ét medie i en portfolio-opgave. `url` bruger samme præfikser som altid:
+ *  https://… (billede), panorama:…, youtube:ID, cloudinary:ID. */
+export interface PortfolioMediaItem {
+  id: string;
+  url: string;
+}
+
+/** En række i portfolio_images = én opgave (med flere medier i `media`). */
 export interface PortfolioImage {
   id: string;
   title: string;
+  /** Holdes synkroniseret med coveret (ellers første medie) — bruges af søgning m.m. */
   image_url: string;
+  /** Alle opgavens medier. Mangler kolonnen (migration ikke kørt), bruges image_url. */
+  media?: PortfolioMediaItem[] | null;
+  /** id på det medie i `media` der er cover (vises ikke i "Se alle billeder"-containeren). */
+  cover_media_id?: string | null;
   description?: string | null;
   likes: number;
   dislikes: number;
