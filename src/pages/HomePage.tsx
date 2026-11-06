@@ -1124,7 +1124,7 @@ export const DEPLOYED_HOME_SECTIONS = [
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { getContent, isSiteContentLoaded, homeSections: dbSections, isHomeSectionsLoaded, portfolioImages } = useData();
+  const { getContent, isSiteContentLoaded, homeSections: dbSections, isHomeSectionsLoaded, portfolioImages, isPortfolioLoaded } = useData();
   const { loading: coverageLoading, covered, cityName } = useIpCoverage();
 
   const heroLogo     = getContent('site-logo',      '/Logo.webp', 'image');
@@ -1209,15 +1209,31 @@ const HomePage: React.FC = () => {
     );
   }, [portfolioImages, activeProjectName]);
 
+  // Trykkes der, før portfolio-data er hentet, venter vi på den i stedet for at
+  // redirecte — og åbner kortet, så snart den er der.
+  const [seeProjectPending, setSeeProjectPending] = useState(false);
+
+  const redirectToPortfolio = useCallback(() => {
+    navigate('/portfolio', activeProjectName ? { state: { scrollToProject: activeProjectName } } : undefined);
+  }, [navigate, activeProjectName]);
+
   const handleSeeProject = useCallback(() => {
     if (activePortfolioTask) {
       setProjectModalOpen(true);
-      return;
+    } else if (!isPortfolioLoaded) {
+      setSeeProjectPending(true);
+    } else {
+      // Reserve: data er hentet, men der findes intet kort med projektets navn.
+      redirectToPortfolio();
     }
-    // Reserve: projektet har intet (fundet) portfolio-kort at vise — så er
-    // Projekter-siden stadig bedre end en knap, der ikke gør noget.
-    navigate('/portfolio', activeProjectName ? { state: { scrollToProject: activeProjectName } } : undefined);
-  }, [navigate, activePortfolioTask, activeProjectName]);
+  }, [activePortfolioTask, isPortfolioLoaded, redirectToPortfolio]);
+
+  useEffect(() => {
+    if (!seeProjectPending || !isPortfolioLoaded) return;
+    setSeeProjectPending(false);
+    if (activePortfolioTask) setProjectModalOpen(true);
+    else redirectToPortfolio();
+  }, [seeProjectPending, isPortfolioLoaded, activePortfolioTask, redirectToPortfolio]);
   const handleCloseProject = useCallback(() => setProjectModalOpen(false), []);
 
   // Skifter hero-projektet, mens modalen er åben (fx via auto-advance, hvis videoen

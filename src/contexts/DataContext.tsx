@@ -507,7 +507,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const path = location.pathname.replace(/\/$/, '') || '/';
 
     const getDataKeysForPath = (p: string): PageDataKey[] => {
-      if (p === '/')                       return ['homeSections', 'clientLogos'];
+      // 'portfolio': hero-knappen "Se projekt" åbner portfolio-kortet direkte på forsiden.
+      if (p === '/')                       return ['homeSections', 'clientLogos', 'portfolio'];
       if (p === '/products')               return ['products'];
       if (p.startsWith('/products/'))      return ['products'];
       if (p.startsWith('/product/'))       return ['products'];
