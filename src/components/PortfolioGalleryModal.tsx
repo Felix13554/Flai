@@ -93,13 +93,13 @@ const PortfolioGalleryModal: React.FC<PortfolioGalleryModalProps> = ({ open, onC
           type="button"
           onClick={onClose}
           aria-label="Tilbage"
-          className="absolute right-3 top-3 rounded-full p-2 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
+          className="absolute right-3 top-3 rounded-full p-3 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
         >
-          <ArrowLeft size={22} />
+          <ArrowLeft size={33} />
         </button>
 
         {/* Title — identical styling to the "Se mere" title */}
-        <h2 className="pr-10 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+        <h2 className="pr-20 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
 
         {active === null ? (
           /* ── 1. Grid with all images ─────────────────────────────────── */
