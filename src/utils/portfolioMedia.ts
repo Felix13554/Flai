@@ -24,6 +24,23 @@ export type PortfolioMediaKind = 'image' | 'panorama' | 'youtube' | 'cloudinary'
 
 export const PANORAMA_PREFIX = 'panorama:';
 
+/**
+ * Nøgle til at matche et projektnavn mod en opgaves titel — både `project` fra
+ * hero'ens content-nøgle og navnet i URL'en (/portfolio/<navn>). Ligeglad med
+ * store/små bogstaver, mellemrum vs. bindestreg/understreg/+ og æ/ø/å vs.
+ * ae/oe/aa, så "Mit Projekt", "mit-projekt" og "mit_projekt" er det samme.
+ */
+export const projectKey = (s: string | null | undefined): string =>
+  (s ?? '')
+    .toLowerCase()
+    .replace(/æ/g, 'ae')
+    .replace(/ø/g, 'oe')
+    .replace(/å/g, 'aa')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
 export function getMediaKind(url: string): PortfolioMediaKind {
   if (url.startsWith(PANORAMA_PREFIX)) return 'panorama';
   if (isYoutubeMedia(url)) return 'youtube';

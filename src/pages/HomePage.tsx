@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { Video, Camera, MapPin } from 'lucide-react';
 import HeroVideoSection from '../components/HeroVideoSection';
 import HeroProjectCarousel from '../components/HeroProjectCarousel';
+import PortfolioProjectModal from '../components/PortfolioProjectModal';
+import { projectKey } from '../utils/portfolioMedia';
 import { heroProjectsContent, parseHeroProjectsContent, getHeroProjectLogos } from '../content/heroProjects';
 import EditableContent from '../components/EditableContent';
 import HomeSectionCard from '../components/HomeSectionCard';
@@ -1122,7 +1124,7 @@ export const DEPLOYED_HOME_SECTIONS = [
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { getContent, isSiteContentLoaded, homeSections: dbSections, isHomeSectionsLoaded } = useData();
+  const { getContent, isSiteContentLoaded, homeSections: dbSections, isHomeSectionsLoaded, portfolioImages } = useData();
   const { loading: coverageLoading, covered, cityName } = useIpCoverage();
 
   const heroLogo     = getContent('site-logo',      '/Logo.webp', 'image');
@@ -1193,13 +1195,36 @@ const HomePage: React.FC = () => {
 
   const activeProject = heroProjectItems[activeProjectIndex];
 
-  // Hero-knappen åbner ikke længere en container: den sender besøgende til
-  // Projekter-siden, som scroller ned til projektet med samme navn som
-  // `project` i det aktive hero-projekt (CMS "content"-nøglen).
+  // Hero-knappen "Se projekt" sender ikke længere besøgende til Projekter-siden:
+  // den åbner portfolio-kortet (PortfolioTaskCard) for projektet med samme navn
+  // som `project` i det aktive hero-projekt (CMS "content"-nøglen) i en modal
+  // med blurret baggrund oven på forsiden. Hero-videoen pauses, mens den er åben.
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const activeProjectName = activeProject?.project?.trim();
+  const activePortfolioTask = useMemo(() => {
+    const wanted = projectKey(activeProjectName);
+    if (!wanted) return undefined;
+    return portfolioImages.find(
+      (t) => ((t.media && t.media.length > 0) || t.image_url) && projectKey(t.title) === wanted,
+    );
+  }, [portfolioImages, activeProjectName]);
+
   const handleSeeProject = useCallback(() => {
-    const projectName = activeProject?.project?.trim();
-    navigate('/portfolio', projectName ? { state: { scrollToProject: projectName } } : undefined);
-  }, [navigate, activeProject]);
+    if (activePortfolioTask) {
+      setProjectModalOpen(true);
+      return;
+    }
+    // Reserve: projektet har intet (fundet) portfolio-kort at vise — så er
+    // Projekter-siden stadig bedre end en knap, der ikke gør noget.
+    navigate('/portfolio', activeProjectName ? { state: { scrollToProject: activeProjectName } } : undefined);
+  }, [navigate, activePortfolioTask, activeProjectName]);
+  const handleCloseProject = useCallback(() => setProjectModalOpen(false), []);
+
+  // Skifter hero-projektet, mens modalen er åben (fx via auto-advance, hvis videoen
+  // skulle nå at slutte), lukkes modalen i stedet for at vise et andet projekt.
+  useEffect(() => {
+    setProjectModalOpen(false);
+  }, [activeProjectIndex]);
   const activeProjectPublicId = activeProject
     ? extractCloudinaryPublicId(activeProject.cloudinaryVideoUrl)
     : undefined;
@@ -1325,6 +1350,8 @@ const HomePage: React.FC = () => {
           // none) the video should keep looping forever, same as before.
           onEnded={heroProjectItems.length > 1 ? handleProjectVideoEnded : undefined}
           onProgress={setHeroVideoProgress}
+          // Pauset, mens portfolio-kortet er åbent oven på hero'en.
+          paused={projectModalOpen}
         >
           <div className="flex flex-col h-full w-full">
             <div className="flex-1" />
@@ -1350,6 +1377,12 @@ const HomePage: React.FC = () => {
           style={{ backgroundColor: '#111' }}
         />
       )}
+
+      <PortfolioProjectModal
+        task={activePortfolioTask}
+        open={projectModalOpen}
+        onClose={handleCloseProject}
+      />
 
       {homeSections.filter(s => s.is_active).map((section, index) => {
         const isCode = section.section_type === 'code' || section.section_type === 'visual_editor';

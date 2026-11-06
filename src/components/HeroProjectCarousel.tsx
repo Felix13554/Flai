@@ -25,9 +25,9 @@ export interface HeroProjectCarouselProps {
   autoAdvanceMs?: number
   /**
    * Called when the visitor presses the "Se projekt" button under the active
-   * project's heading. The parent (HomePage) navigates to the Projekter page
-   * and scrolls to the project named in the item's `project` field. When
-   * omitted, the button isn't rendered.
+   * project's heading. The parent (HomePage) opens the portfolio card
+   * (PortfolioTaskCard) of the project named in the item's `project` field in a
+   * modal over the hero — no navigation. When omitted, the button isn't rendered.
    */
   onSeeMore?: () => void
 }
