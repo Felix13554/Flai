@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
 import { useData } from '../contexts/DataContext';
@@ -38,9 +38,22 @@ const PortfolioTaskSkeleton: React.FC = () => (
  * Clicking the cover image or the button opens the "Se alle billeder"
  * container (PortfolioGalleryModal) with every image of the task.
  */
-/** Til at matche `project` fra hero'ens content-nøgle mod en opgaves titel. */
-const normalizeProjectName = (s: string | null | undefined) =>
-  (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+/**
+ * Nøgle til at matche et projektnavn mod en opgaves titel — både `project` fra
+ * hero'ens content-nøgle og navnet i URL'en (/portfolio/<navn>). Ligeglad med
+ * store/små bogstaver, mellemrum vs. bindestreg/understreg/+ og æ/ø/å vs.
+ * ae/oe/aa, så "Mit Projekt", "mit-projekt" og "mit_projekt" er det samme.
+ */
+const projectKey = (s: string | null | undefined) =>
+  (s ?? '')
+    .toLowerCase()
+    .replace(/æ/g, 'ae')
+    .replace(/ø/g, 'oe')
+    .replace(/å/g, 'aa')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -162,25 +175,29 @@ const PortfolioPage: React.FC = () => {
     [portfolioImages],
   );
 
-  // Kommer man fra hero-knappen på forsiden, ligger projektets navn i
-  // location.state.scrollToProject. Siden skal åbne allerede scrollet ned til
-  // projektet — uden animation — så det sker i et layout-effect (før browseren
-  // tegner siden) og med behavior 'instant'. ScrollToTop springer sin
-  // nulstilling over i det tilfælde. Kører kun én gang pr. besøg.
+  // Siden kan åbne allerede scrollet ned til et projekt — uden animation — på to måder:
+  //  1. Hero-knappen på forsiden: projektets navn ligger i location.state.scrollToProject.
+  //  2. Et projektnavn i URL'en: /portfolio/<navn>. Når der er scrollet, nulstilles
+  //     URL'en til /portfolio (replace, så Tilbage-knappen ikke havner på
+  //     /portfolio/<navn> igen), og ScrollToTop lader siden blive stående.
+  // Det sker i et layout-effect (før browseren tegner siden) med behavior 'instant'.
+  // Kører kun én gang pr. besøg. Findes navnet ikke, nulstilles URL'en bare.
   const location = useLocation();
+  const navigate = useNavigate();
+  const { project: projectParam } = useParams<{ project?: string }>();
   const scrollToProject = (location.state as { scrollToProject?: string } | null)?.scrollToProject;
-  const hasScrolledRef = useRef(false);
+  const wantedProject = scrollToProject ?? projectParam;
+  const hasHandledRef = useRef(false);
 
   useLayoutEffect(() => {
-    if (hasScrolledRef.current || !scrollToProject || !isPortfolioLoaded) return;
-    const wanted = normalizeProjectName(scrollToProject);
-    const target = tasks.find((t) => normalizeProjectName(t.title) === wanted);
-    if (!target) return;
-    const el = document.getElementById(`portfolio-task-${target.id}`);
-    if (!el) return;
-    hasScrolledRef.current = true;
-    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
-  }, [scrollToProject, isPortfolioLoaded, tasks]);
+    if (hasHandledRef.current || !wantedProject || !isPortfolioLoaded) return;
+    hasHandledRef.current = true;
+    const wanted = projectKey(wantedProject);
+    const target = wanted ? tasks.find((t) => projectKey(t.title) === wanted) : undefined;
+    const el = target ? document.getElementById(`portfolio-task-${target.id}`) : null;
+    if (el) el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+    if (projectParam) navigate('/portfolio', { replace: true, state: { keepScroll: !!el } });
+  }, [wantedProject, projectParam, isPortfolioLoaded, tasks, navigate]);
 
   return (
     <div className="pb-16 pt-20">

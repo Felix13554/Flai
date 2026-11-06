@@ -116,6 +116,8 @@ function SiteShell() {
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/product/:name" element={<ProductPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
+          {/* /portfolio/<projektnavn> scroller til projektet og nulstiller URL'en til /portfolio */}
+          <Route path="/portfolio/:project" element={<PortfolioPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/login" element={<LoginPage />} />
