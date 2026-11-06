@@ -132,7 +132,7 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
 
               {/* 5. "Se alle billeder" */}
               {gallery.length > 1 && (
-                <div className="mt-4">
+                <div className="mt-4 flex justify-center">
                   <button type="button" onClick={() => setGalleryOpen(true)} className="btn-primary">
                     <EditableContent contentKey="portfolio-page-se-alle-billeder" fallback="Se alle billeder" />
                   </button>
