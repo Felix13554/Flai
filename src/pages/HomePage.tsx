@@ -7,7 +7,6 @@ import { useNavigate } from 'react-router-dom';
 import { Video, Camera, MapPin } from 'lucide-react';
 import HeroVideoSection from '../components/HeroVideoSection';
 import HeroProjectCarousel from '../components/HeroProjectCarousel';
-import HeroProjectModal from '../components/HeroProjectModal';
 import { heroProjectsContent, parseHeroProjectsContent } from '../content/heroProjects';
 import EditableContent from '../components/EditableContent';
 import HomeSectionCard from '../components/HomeSectionCard';
@@ -1176,12 +1175,6 @@ const HomePage: React.FC = () => {
   // sits as a sibling wrapper around the carousel.
   const [activeProjectIndex, setActiveProjectIndex] = useState(0);
 
-  // "Se mere" container over the hero. While it's open the hero video is
-  // paused (HeroVideoSection `paused` prop) and resumes when it closes.
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const openProjectModal = useCallback(() => setProjectModalOpen(true), []);
-  const closeProjectModal = useCallback(() => setProjectModalOpen(false), []);
-
   // Playback progress (0–1) of the active project's video, used to draw the
   // growing line under its number in the carousel. Reset whenever the active
   // project changes so the new video's tab doesn't briefly show the old
@@ -1199,6 +1192,14 @@ const HomePage: React.FC = () => {
   }, [heroProjectItems.length, activeProjectIndex]);
 
   const activeProject = heroProjectItems[activeProjectIndex];
+
+  // Hero-knappen åbner ikke længere en container: den sender besøgende til
+  // Projekter-siden, som scroller ned til projektet med samme navn som
+  // `project` i det aktive hero-projekt (CMS "content"-nøglen).
+  const handleSeeProject = useCallback(() => {
+    const projectName = activeProject?.project?.trim();
+    navigate('/portfolio', projectName ? { state: { scrollToProject: projectName } } : undefined);
+  }, [navigate, activeProject]);
   const activeProjectPublicId = activeProject
     ? extractCloudinaryPublicId(activeProject.cloudinaryVideoUrl)
     : undefined;
@@ -1292,7 +1293,6 @@ const HomePage: React.FC = () => {
           // none) the video should keep looping forever, same as before.
           onEnded={heroProjectItems.length > 1 ? handleProjectVideoEnded : undefined}
           onProgress={setHeroVideoProgress}
-          paused={projectModalOpen}
         >
           <div className="flex flex-col h-full w-full">
             <div className="flex-1" />
@@ -1301,7 +1301,7 @@ const HomePage: React.FC = () => {
               activeIndex={activeProjectIndex}
               onChangeIndex={setActiveProjectIndex}
               progress={heroVideoProgress}
-              onSeeMore={openProjectModal}
+              onSeeMore={handleSeeProject}
             />
           </div>
         </HeroVideoSection>
@@ -1318,12 +1318,6 @@ const HomePage: React.FC = () => {
           style={{ backgroundColor: '#111' }}
         />
       )}
-
-      <HeroProjectModal
-        project={activeProject}
-        open={projectModalOpen}
-        onClose={closeProjectModal}
-      />
 
       {homeSections.filter(s => s.is_active).map((section, index) => {
         const isCode = section.section_type === 'code' || section.section_type === 'visual_editor';

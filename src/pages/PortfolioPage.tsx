@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
 import { useData } from '../contexts/DataContext';
@@ -37,6 +38,10 @@ const PortfolioTaskSkeleton: React.FC = () => (
  * Clicking the cover image or the button opens the "Se alle billeder"
  * container (PortfolioGalleryModal) with every image of the task.
  */
+/** Til at matche `project` fra hero'ens content-nøgle mod en opgaves titel. */
+const normalizeProjectName = (s: string | null | undefined) =>
+  (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
 const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const { video, cover, gallery } = useMemo(() => getTaskLayout(task), [task]);
@@ -46,7 +51,10 @@ const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
   const hasBoth = !!video && !!cover;
 
   return (
-    <article className="rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8">
+    <article
+      id={`portfolio-task-${task.id}`}
+      className="scroll-mt-24 rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8"
+    >
       {/* 1. Logo (small, above the title) */}
       {task.business_logo_url && (
         <a
@@ -132,6 +140,33 @@ const PortfolioPage: React.FC = () => {
         .sort((a, b) => (b.array ?? 50) - (a.array ?? 50)),
     [portfolioImages],
   );
+
+  // Kommer man fra hero-knappen på forsiden, ligger projektets navn i
+  // location.state.scrollToProject — scroll ned til det projekt, så snart listen
+  // er indlæst. Forsinkelsen sikrer at ScrollToTop (der scroller til toppen ved
+  // sideskift) når at køre først, så vi ikke bliver scrollet tilbage op igen.
+  const location = useLocation();
+  const scrollToProject = (location.state as { scrollToProject?: string } | null)?.scrollToProject;
+
+  useEffect(() => {
+    if (!scrollToProject || !isPortfolioLoaded) return;
+    const wanted = normalizeProjectName(scrollToProject);
+    const target = tasks.find((t) => normalizeProjectName(t.title) === wanted);
+    if (!target) return;
+
+    let attempts = 0;
+    let timer: number;
+    const tryScroll = () => {
+      const el = document.getElementById(`portfolio-task-${target.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (attempts++ < 10) {
+        timer = window.setTimeout(tryScroll, 100);
+      }
+    };
+    timer = window.setTimeout(tryScroll, 150);
+    return () => window.clearTimeout(timer);
+  }, [scrollToProject, isPortfolioLoaded, tasks]);
 
   return (
     <div className="pb-16 pt-20">

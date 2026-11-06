@@ -24,10 +24,10 @@ export interface HeroProjectCarouselProps {
    */
   autoAdvanceMs?: number
   /**
-   * Called when the visitor presses the "Se mere" button under the active
-   * project's heading. The parent (HomePage) opens the project container
-   * (<HeroProjectModal>) and pauses the hero video. When omitted, the
-   * button isn't rendered.
+   * Called when the visitor presses the "Se projekt" button under the active
+   * project's heading. The parent (HomePage) navigates to the Projekter page
+   * and scrolls to the project named in the item's `project` field. When
+   * omitted, the button isn't rendered.
    */
   onSeeMore?: () => void
 }
@@ -249,8 +249,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
         <button
           type="button"
           onClick={onSeeMore}
-          aria-haspopup="dialog"
-          aria-label={`Se mere om ${active.industry}`}
+          aria-label={`Se projektet ${active.project?.trim() || active.industry}`}
           className="btn-primary text-lg px-8 py-4 mb-8 md:mb-10 w-1/2 sm:w-auto whitespace-nowrap"
         >
           <EditableContent contentKey="hero-project-carousel-se-mere" fallback="Se mere" />

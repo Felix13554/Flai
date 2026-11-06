@@ -73,6 +73,11 @@ export interface HeroProjectItem {
    *  container (HeroProjectModal) under the project title (`industry`).
    *  Left out or empty → the container just shows the title and the video. */
   description?: string
+  /** Optional — navnet på projektet på Projekter-siden (præcis som titlen
+   *  der står på projektet under /portfolio; store/små bogstaver er ligegyldige).
+   *  Når der trykkes på knappen i hero'en, går besøgende til Projekter-siden
+   *  og scroller ned til det projekt. Tom/mangler → går bare til Projekter-siden. */
+  project?: string
 }
 
 export interface HeroProjectsContent {
@@ -170,6 +175,7 @@ export function withHeroLogoFields(raw: string): string {
     // Same idea for the "Se mere" description: make the field show up in the
     // form for older projects that don't have it saved yet.
     if (!('description' in out)) out.description = ''
+    if (!('project' in out)) out.project = ''
     return out
   })
   return JSON.stringify(normalized, null, 2)
@@ -190,7 +196,8 @@ function isValidHeroProjectItem(item: unknown): item is HeroProjectItem {
     (p.logoSize2 === undefined || typeof p.logoSize2 === 'number') &&
     (p.clientLogoUrl3 === undefined || typeof p.clientLogoUrl3 === 'string') &&
     (p.logoSize3 === undefined || typeof p.logoSize3 === 'number') &&
-    (p.description === undefined || typeof p.description === 'string')
+    (p.description === undefined || typeof p.description === 'string') &&
+    (p.project === undefined || typeof p.project === 'string')
   )
 }
 
