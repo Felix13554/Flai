@@ -6,8 +6,8 @@
 -- transaktion: går noget galt, bliver intet ændret.
 --
 -- Hvad den gør
---   1. Tager backup af portfolio_images og portfolio_bundles
---      (portfolio_images_backup_20261106 / portfolio_bundles_backup_20261106,
+--   1. Tager backup af portfolio_images, portfolio_bundles og portfolio_reactions
+--      (…_backup_20261106,
 --       RLS slået til uden policies, så de ikke kan læses udefra).
 --   2. Tilføjer to kolonner til portfolio_images:
 --        media           jsonb   liste af {"id": "...", "url": "..."}
@@ -26,7 +26,7 @@
 --        media               = alle bundlens medier i den gamle rækkefølge
 --        cover               = første almindelige billede
 --        rækkefølge (array)  = den højeste i bundlen (samme placering som før)
---        likes/dislikes      = summeres
+--        likes/dislikes      = summeres, og reaktionerne flyttes til opgaven
 --      De øvrige rækker i bundlen slettes (de ligger i backup-tabellen).
 --   5. image_url på hver opgave sættes til coveret (ellers første medie), så
 --      søgning, Meilisearch og AI-forslag stadig virker uændret.
@@ -50,9 +50,12 @@ create table if not exists portfolio_images_backup_20261106 as
   table portfolio_images;
 create table if not exists portfolio_bundles_backup_20261106 as
   table portfolio_bundles;
+create table if not exists portfolio_reactions_backup_20261106 as
+  table portfolio_reactions;
 
 alter table portfolio_images_backup_20261106 enable row level security;
 alter table portfolio_bundles_backup_20261106 enable row level security;
+alter table portfolio_reactions_backup_20261106 enable row level security;
 
 -- 2. Nye kolonner ----------------------------------------------------------------
 
@@ -146,6 +149,16 @@ select
   sum(o.dislikes)::int                                             as dislikes
 from ordered o
 group by o.bundle_id;
+
+-- Likes/dislikes (portfolio_reactions) hænger på den enkelte række via en
+-- fremmednøgle uden cascade. Flyt dem over på den opgave der bliver tilbage,
+-- før de øvrige rækker slettes — ellers kan rækkerne ikke slettes.
+update portfolio_reactions r
+set image_id = a.keeper_id
+from portfolio_images pi
+join _pf_bundle_agg a on a.bundle_id = pi.bundle_id
+where r.image_id = pi.id
+  and pi.id <> a.keeper_id;
 
 -- Slet bundlens øvrige rækker (alt ligger i media + backup-tabellen).
 delete from portfolio_images
