@@ -24,7 +24,6 @@ const ROUTE_IMPORTS: Record<string, () => Promise<any>> = {
   '/profile': () => import('../pages/ProfilePage'),
   '/buy-credits': () => import('../pages/BuyCreditsPage'),
   '/coverage': () => import('../pages/CoverageAreasPage'),
-  '/search': () => import('../pages/SearchPage'),
   '/admin': () => import('../pages/AdminPage'),
 };
 const preloadedRoutes = new Set<string>();

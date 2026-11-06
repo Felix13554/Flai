@@ -35,7 +35,6 @@ const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const CoverageAreasPage = lazy(() => import('./pages/CoverageAreasPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const EmailConfirmedPage = lazy(() => import('./pages/EmailConfirmedPage'));
-const SearchPage = lazy(() => import('./pages/SearchPage'));
 const RateBookingPage = lazy(() => import('./pages/RateBookingPage'));
 const BuyCreditsPage = lazy(() => import('./pages/BuyCreditsPage'));
 const MerchandisePage = lazy(() => import('./pages/MerchandisePage'));
@@ -118,7 +117,6 @@ function SiteShell() {
           <Route path="/portfolio" element={<PortfolioPage />} />
           {/* /portfolio/<projektnavn> scroller til projektet og nulstiller URL'en til /portfolio */}
           <Route path="/portfolio/:project" element={<PortfolioPage />} />
-          <Route path="/search" element={<SearchPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<LoginPage />} />

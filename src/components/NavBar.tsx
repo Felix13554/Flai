@@ -1,13 +1,10 @@
 import EditableContent from './EditableContent';
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, LogOut, Coins, ArrowDown, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { useAdaptiveShadow } from '../hooks/useAdaptiveShadow';
-
-// SearchButton has its own search logic — lazy load to remove from initial parse
-const SearchButton = lazy(() => import('./SearchButton'));
 
 const NavBar: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -166,11 +163,6 @@ const NavBar: React.FC = () => {
             </button>
           </div>
 
-          {/* Search Button */}
-          <Suspense fallback={<div className="w-8 h-5" />}>
-            <SearchButton atHero={atHero} />
-          </Suspense>
-          
           {user ? (
             <div className="relative group">
               <button className="appearance-none flex items-center space-x-2 hover:opacity-80 transition-opacity">
@@ -274,9 +266,6 @@ const NavBar: React.FC = () => {
         </div>
         
         <div className="md:hidden flex items-center space-x-4">
-          <Suspense fallback={<div className="w-6 h-6" />}>
-            <SearchButton isMobile atHero={atHero} />
-          </Suspense>
           <button
             className="appearance-none text-white"
             onClick={toggleMenu}

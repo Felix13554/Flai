@@ -515,7 +515,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // /portfolio/<projektnavn> er samme side (scroller til projektet) og skal hente det samme.
       if (p === '/portfolio' || p.startsWith('/portfolio/')) return ['portfolio', 'bundles'];
       if (p === '/ratings')                return [];
-      if (p === '/search')                 return ['products'];
       if (p.startsWith('/booking/'))       return ['products'];
       if (p.startsWith('/payment/'))       return ['bookings'];
       if (p === '/profile')                return ['bookings', 'discountCodes'];

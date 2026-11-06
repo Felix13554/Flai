@@ -102,13 +102,6 @@ const ROUTE_KEYS: Record<string, string[]> = {
     'simple-total-label','simple-cancel-button','simple-submitting-button',
     'simple-submit-button','simple-payment-section-title','simple-payment-section-description',
   ],
-  '/search': [
-    'search-page-title','search-results-for','search-results-count','search-loading-text',
-    'search-no-query-title','search-no-query-description','search-no-results-title',
-    'search-no-results-description','search-browse-products-button',
-    'search-products-section-title','search-portfolio-section-title',
-    'search-pages-section-title','search-content-section-title',
-  ],
   '/contact': [
     'contact-page-title','contact-page-subtitle','contact-info-title',
     'contact-email-label','contact-email','contact-email-note',
