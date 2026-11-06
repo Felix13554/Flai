@@ -14,6 +14,8 @@ import { useLocation } from 'react-router-dom';
 const PageSkeleton = () => {
   const location = useLocation();
   const path = location.pathname;
+  // /portfolio/<projektnavn> er samme side som /portfolio.
+  const isPortfolioPath = path === '/portfolio' || path.startsWith('/portfolio/');
 
   // Animation delays for progressive appearance
   const delay = (index: number) => ({ animationDelay: `${index * 100}ms` });
@@ -310,7 +312,7 @@ const PageSkeleton = () => {
     }
 
     // Portfolio page — matches pt-20 pb-16 wrapper + bg-primary/10 py-12 mb-12 header
-    if (path === '/portfolio') {
+    if (isPortfolioPath) {
       return (
         <>
           {/* Header banner — bg-primary/10 py-12 mb-12, centered title + subtitle */}
@@ -361,7 +363,7 @@ const PageSkeleton = () => {
   return (
     <div className={`min-h-screen bg-neutral-900 ${
       path === '/' ? '' :
-      (path === '/products' || path === '/portfolio') ? 'pt-20 pb-16' :
+      (path === '/products' || isPortfolioPath) ? 'pt-20 pb-16' :
       'pt-16'
     }`}>
       {renderSkeleton()}
