@@ -93,7 +93,7 @@ const PortfolioGalleryModal: React.FC<PortfolioGalleryModalProps> = ({ open, onC
           type="button"
           onClick={onClose}
           aria-label="Tilbage"
-          className="absolute right-3 top-3 rounded-full p-2.5 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
+          className="absolute right-3 top-3 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
         >
           <ArrowLeft size={26} />
         </button>
