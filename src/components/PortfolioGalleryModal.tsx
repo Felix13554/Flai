@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import EditableContent from './EditableContent';
 import { PortfolioMediaPlayer, PortfolioMediaThumb } from './PortfolioMediaView';
 import type { PortfolioMediaItem } from '../types';
@@ -86,18 +86,19 @@ const PortfolioGalleryModal: React.FC<PortfolioGalleryModalProps> = ({ open, onC
         onClick={(e) => e.stopPropagation()}
         className="relative max-h-full w-full max-w-4xl overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8"
       >
+        {/* Tilbage-ikon (ikke X): lukker galleriet og går tilbage til kortet. */}
         <button
           ref={closeBtnRef}
           type="button"
           onClick={onClose}
-          aria-label="Luk"
-          className="absolute right-3 top-3 rounded-full p-2 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
+          aria-label="Tilbage"
+          className="absolute left-3 top-3 rounded-full p-2 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:left-4 md:top-4"
         >
-          <X size={22} />
+          <ArrowLeft size={22} />
         </button>
 
-        {/* Title — identical styling to the "Se mere" title */}
-        <h2 className="pr-10 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+        {/* Title — same styling as the "Se mere" title; indented to make room for the back icon */}
+        <h2 className="pl-10 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
 
         {active === null ? (
           /* ── 1. Grid with all images ─────────────────────────────────── */
