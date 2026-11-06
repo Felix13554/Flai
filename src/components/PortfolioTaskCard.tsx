@@ -62,16 +62,16 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
           type="button"
           onClick={onClose}
           aria-label="Luk"
-          className="absolute right-3 top-3 z-10 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
+          className="absolute right-3 top-3 z-10 rounded-full p-2 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
         >
-          <X size={26} />
+          <X size={22} />
         </button>
       )}
 
       {/* 1+2. Logo (small) next to the title — same row, so the logo no
           longer takes up a line of its own above the title. Wraps under the
           logo only if the title is too long for the row. */}
-      <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-5 ${onClose ? 'pr-16' : ''}`}>
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-5 ${onClose ? 'pr-10' : ''}`}>
         {task.business_logo_url && (
           <a
             href={task.business_website_url || undefined}
