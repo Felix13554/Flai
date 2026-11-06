@@ -1,373 +1,178 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Package, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
 import { useData } from '../contexts/DataContext';
 import { SkeletonLoader } from '../components/SkeletonLoader';
-import { supabase } from '../utils/supabase';
-import PanoramaViewer from '../components/PanoramaViewer';
-import CloudinaryVideoPlayer, { CloudinaryVideoThumb } from '../components/CloudinaryVideoPlayer';
-import { isCloudinaryMedia, getCloudinaryMediaId } from '../utils/cloudinaryMedia';
+import PortfolioGalleryModal from '../components/PortfolioGalleryModal';
+import { PortfolioMediaPlayer, PortfolioMediaThumb } from '../components/PortfolioMediaView';
+import { getTaskLayout } from '../utils/portfolioMedia';
+import type { PortfolioImage } from '../types';
 
-// Portfolio-specific skeleton that matches actual portfolio card dimensions
-const PortfolioCardSkeleton: React.FC = () => (
-  <div className="bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700">
-    <div className="relative">
-      <div className="w-full aspect-video bg-gradient-to-r from-neutral-700 via-neutral-600 to-neutral-700 animate-shimmer bg-[length:200%_100%] rounded-t-lg" />
-    </div>
-    <div className="p-4">
-      <SkeletonLoader height="1.25rem" className="mb-1" width="60%" />
-      <SkeletonLoader height="0.875rem" className="mb-2" width="40%" />
-      <SkeletonLoader height="0.875rem" width="80%" />
+// Skeleton that matches a task card: title, description, then the media row.
+const PortfolioTaskSkeleton: React.FC = () => (
+  <div className="rounded-xl border border-neutral-700 bg-neutral-900 p-5 md:p-8">
+    <SkeletonLoader height="2.25rem" className="mb-4" width="50%" />
+    <SkeletonLoader height="1rem" className="mb-2" width="90%" />
+    <SkeletonLoader height="1rem" className="mb-6" width="70%" />
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+      <div className="aspect-video w-full animate-shimmer rounded-lg bg-gradient-to-r from-neutral-700 via-neutral-600 to-neutral-700 bg-[length:200%_100%]" />
+      <div className="aspect-video w-full animate-shimmer rounded-lg bg-gradient-to-r from-neutral-700 via-neutral-600 to-neutral-700 bg-[length:200%_100%]" />
     </div>
   </div>
 );
 
-interface Bundle {
-  id: string;
-  name: string;
-  created_at: string;
-}
+/**
+ * One portfolio task = one row, always — on every screen size.
+ *
+ * Design is taken from the hero's "Se mere" container (HeroProjectModal):
+ * same dark bordered box, same title and description styling. Top to bottom:
+ *   1. (small client logo — same logo + website link as before)
+ *   2. title
+ *   3. description
+ *   4. media: video and cover image 50% / 50% side by side on desktop;
+ *      on mobile the video is on top and the cover directly below it.
+ *      If the task only has one of them, it fills the row.
+ *   5. blue "Se alle billeder" button (only when there is more than one image)
+ *
+ * Clicking the cover image or the button opens the "Se alle billeder"
+ * container (PortfolioGalleryModal) with every image of the task.
+ */
+const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const { video, cover, gallery } = useMemo(() => getTaskLayout(task), [task]);
+
+  const title = task.title?.trim() ?? '';
+  const description = task.description?.trim();
+  const hasBoth = !!video && !!cover;
+
+  return (
+    <article className="rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8">
+      {/* 1. Logo (small, above the title) */}
+      {task.business_logo_url && (
+        <a
+          href={task.business_website_url || undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-4 inline-block md:mb-5"
+          title={task.business_website_url ? 'Besøg hjemmeside' : undefined}
+          onClick={(e) => { if (!task.business_website_url) e.preventDefault(); }}
+          style={task.business_website_url ? undefined : { cursor: 'default' }}
+        >
+          <img
+            src={task.business_logo_url}
+            alt=""
+            className="h-10 max-w-[200px] w-auto object-contain md:h-12 md:max-w-[240px]"
+          />
+        </a>
+      )}
+
+      {/* 2. Title — identical to the "Se mere" title */}
+      <h2 className="text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+
+      {/* 3. Description — identical to the "Se mere" description */}
+      {description && (
+        <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-neutral-300 md:mt-5 md:text-lg">
+          {description}
+        </p>
+      )}
+
+      {/* 4. Media — video first in the DOM, so it is on top on mobile */}
+      {(video || cover) && (
+        <div className={`mt-6 grid grid-cols-1 gap-4 md:mt-8 md:gap-6 ${hasBoth ? 'md:grid-cols-2' : ''}`}>
+          {video && (
+            <div className="min-w-0">
+              <PortfolioMediaPlayer url={video.url} title={title} />
+            </div>
+          )}
+          {cover && (
+            <button
+              type="button"
+              onClick={() => setGalleryOpen(true)}
+              aria-label={`Se alle billeder – ${title}`}
+              className="group relative block aspect-video w-full min-w-0 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 transition-colors hover:border-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <PortfolioMediaThumb
+                url={cover.url}
+                title={title}
+                className="transition-transform duration-300 group-hover:scale-[1.03]"
+              />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 5. "Se alle billeder" */}
+      {gallery.length > 1 && (
+        <div className="mt-4 md:mt-6">
+          <button type="button" onClick={() => setGalleryOpen(true)} className="btn-primary">
+            <EditableContent contentKey="portfolio-page-se-alle-billeder" fallback="Se alle billeder" />
+          </button>
+        </div>
+      )}
+
+      <PortfolioGalleryModal
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        title={title}
+        items={gallery}
+      />
+    </article>
+  );
+};
 
 const PortfolioPage: React.FC = () => {
   const { portfolioImages, isPortfolioLoaded, getContent } = useData();
-  const [bundles, setBundles] = useState<Bundle[]>([]);
-  const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    loadBundles();
-  }, []);
-
-  const loadBundles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('portfolio_bundles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setBundles(data || []);
-    } catch (err) {
-      console.error('Error loading bundles:', err);
-    }
-  };
-
-  const toggleBundle = (bundleId: string) => {
-    setExpandedBundles(prev => {
-      const newSet = new Set(prev);
-      newSet.has(bundleId) ? newSet.delete(bundleId) : newSet.add(bundleId);
-      return newSet;
-    });
-  };
-
-  // ─── Pure array-based ordering ─────────────────────────────────────────────
-  const imageKey = portfolioImages.map(i => `${i.id}:${i.array ?? 50}`).join(',');
-
-  const imageScores = useMemo(() => {
-    if (portfolioImages.length === 0) return new Map<string, number>();
-    const map = new Map<string, number>();
-    portfolioImages.forEach(img => {
-      map.set(img.id, img.array ?? 50);
-    });
-    return map;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageKey]);
-
-  const sortedImages = useMemo(() => {
-    return [...portfolioImages].sort((a, b) => {
-      const scoreA = imageScores.get(a.id) ?? 0;
-      const scoreB = imageScores.get(b.id) ?? 0;
-      return scoreB - scoreA;
-    });
-  }, [portfolioImages, imageScores]);
-
-  // ─── Render helpers ─────────────────────────────────────────────────────────
-
-  const getMediaType = (url: string): 'panorama' | 'youtube' | 'cloudinary' | 'image' => {
-    if (url.startsWith('panorama:')) return 'panorama';
-    if (url.startsWith('youtube:'))  return 'youtube';
-    if (isCloudinaryMedia(url))      return 'cloudinary';
-    return 'image';
-  };
-
-  const renderMedia = (image: any) => {
-    const mediaType = getMediaType(image.image_url);
-
-    if (mediaType === 'panorama') {
-      const rawUrl = image.image_url.replace('panorama:', '');
-      return (
-        <div className="relative w-full">
-          <PanoramaViewer
-            url={rawUrl}
-            title={image.title}
-            autoRotate={0.8}
-            className="w-full"
-          />
-          <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-1 pointer-events-none">
-            <svg className="w-3 h-3 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <ellipse cx="12" cy="12" rx="5" ry="10" />
-              <path d="M2 12h20" />
-            </svg>
-            <span className="text-white text-xs font-bold tracking-wider">360°</span>
-          </div>
-        </div>
-      );
-    }
-
-    if (mediaType === 'youtube') {
-      const videoId = image.image_url.split(':')[1];
-      return (
-        <div className="relative w-full pt-[56.25%]">
-          <iframe
-            className="absolute inset-0 w-full h-full rounded-lg"
-            src={`https://www.youtube.com/embed/${videoId}`}
-            title="YouTube video player"
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
-          />
-        </div>
-      );
-    }
-
-    if (mediaType === 'cloudinary') {
-      return (
-        <CloudinaryVideoPlayer
-          publicId={getCloudinaryMediaId(image.image_url)}
-          title={image.title}
-        />
-      );
-    }
-
-    return (
-      <img
-        src={image.image_url}
-        alt={image.title}
-        className="w-full aspect-video object-cover rounded-lg"
-      />
-    );
-  };
-
-  const renderImageCard = (image: any) => (
-    <div key={image.id} className="bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700">
-      <div className="relative">{renderMedia(image)}</div>
-      <div className="p-4 flex items-stretch gap-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-medium mb-1">{image.title}</h3>
-          {image.image_name && (
-            <p className="text-sm text-neutral-400 mb-2">{image.image_name}</p>
-          )}
-          {image.description && (
-            <p className="text-sm text-neutral-300 leading-relaxed">{image.description}</p>
-          )}
-        </div>
-        {image.business_logo_url && (
-          <a
-            href={image.business_website_url || undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 flex items-center justify-end"
-            title={image.business_website_url ? 'Besøg hjemmeside' : undefined}
-            onClick={(e) => { if (!image.business_website_url) e.preventDefault(); }}
-          >
-            <img
-              src={image.business_logo_url}
-              alt=""
-              className="h-full max-h-16 w-auto object-contain"
-            />
-          </a>
-        )}
-      </div>
-    </div>
+  // Highest `array` first (default 50) — same ordering as before. The sort is
+  // stable, so equal values keep the newest-first order from the query.
+  const tasks = useMemo(
+    () =>
+      [...portfolioImages]
+        .filter((t) => (t.media && t.media.length > 0) || t.image_url)
+        .sort((a, b) => (b.array ?? 50) - (a.array ?? 50)),
+    [portfolioImages],
   );
 
-  const getThumbnailElement = (imageUrl: string, className: string = '') => {
-    if (imageUrl.startsWith('panorama:')) {
-      return (
-        <div className={`w-full h-full bg-neutral-900 flex items-center justify-center ${className}`}>
-          <svg className="w-12 h-12 text-primary/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="12" cy="12" r="10" />
-            <ellipse cx="12" cy="12" rx="5" ry="10" />
-            <path d="M2 12h20" />
-          </svg>
-        </div>
-      );
-    }
-    if (imageUrl.startsWith('youtube:')) {
-      return (
-        <div className={`w-full h-full bg-neutral-800 flex items-center justify-center ${className}`}>
-          <svg className="w-12 h-12 text-neutral-600" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
-          </svg>
-        </div>
-      );
-    }
-    if (isCloudinaryMedia(imageUrl)) {
-      return <CloudinaryVideoThumb publicId={getCloudinaryMediaId(imageUrl)} className={className} iconSize={28} />;
-    }
-    return <img src={imageUrl} alt="" className={`w-full h-full object-cover ${className}`} />;
-  };
-
-  // ─── Grid items ─────────────────────────────────────────────────────────────
-  const renderGrid = () => {
-    const renderedBundles = new Set<string>();
-
-    return sortedImages.map((image) => {
-      if (image.bundle_id) {
-        if (renderedBundles.has(image.bundle_id)) return null;
-        renderedBundles.add(image.bundle_id);
-
-        const bundle = bundles.find(b => b.id === image.bundle_id);
-        const bundleImages = sortedImages.filter(img => img.bundle_id === image.bundle_id);
-        const isExpanded = expandedBundles.has(image.bundle_id);
-
-        if (!isExpanded) {
-          return (
-            <div key={`bundle-${image.bundle_id}`} className="relative pb-8 pr-8">
-              <div className="relative cursor-pointer group" onClick={() => toggleBundle(image.bundle_id!)}>
-                {bundleImages.length > 2 && bundleImages[2] && (
-                  <div className="absolute inset-0 rounded-xl border-2 border-neutral-600 transform translate-x-6 translate-y-6 transition-all duration-300 group-hover:translate-x-8 group-hover:translate-y-8 overflow-hidden origin-top-left">
-                    {getThumbnailElement(bundleImages[2].image_url, '')}
-                    <div className="absolute inset-0 bg-gradient-to-br from-neutral-900/40 via-neutral-900/50 to-neutral-900/60" />
-                  </div>
-                )}
-                {bundleImages.length > 1 && bundleImages[1] && (
-                  <div className="absolute inset-0 rounded-xl border-2 border-neutral-600 transform translate-x-3 translate-y-3 transition-all duration-300 group-hover:translate-x-4 group-hover:translate-y-4 overflow-hidden origin-top-left">
-                    {getThumbnailElement(bundleImages[1].image_url, '')}
-                    <div className="absolute inset-0 bg-gradient-to-br from-neutral-900/30 via-neutral-900/40 to-neutral-900/50" />
-                  </div>
-                )}
-                <div className="relative bg-neutral-800 rounded-xl overflow-hidden border-2 border-neutral-600 transition-all duration-300">
-                  <div className="relative">
-                    {bundleImages[0].image_url.startsWith('panorama:') ? (
-                      <div className="w-full aspect-video bg-neutral-900 flex flex-col items-center justify-center gap-2">
-                        <svg className="w-14 h-14 text-primary/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <circle cx="12" cy="12" r="10" />
-                          <ellipse cx="12" cy="12" rx="5" ry="10" />
-                          <path d="M2 12h20" />
-                        </svg>
-                        <span className="text-xs text-neutral-500"><EditableContent contentKey="portfolio-page-360-panorama" fallback="360° Panorama" /></span>
-                      </div>
-                    ) : (
-                      renderMedia(bundleImages[0])
-                    )}
-                    <div className="absolute top-3 right-3 bg-neutral-900/90 backdrop-blur-sm px-3 py-2 rounded-lg flex items-center space-x-2 border border-neutral-600">
-                      <Package size={16} className="text-neutral-300" />
-                      <span className="text-sm font-medium">{bundleImages.length}</span>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Package size={16} className="text-neutral-300" />
-                        <h3 className="font-semibold">{bundle?.name || 'Bundle'}</h3>
-                      </div>
-                      <button className="text-neutral-300 hover:text-white text-sm font-medium flex items-center">
-                        <EditableContent contentKey="portfolio-page-se-alle" fallback="Se alle" /> <ChevronDown size={16} className="ml-1" />
-                      </button>
-                    </div>
-                    <p className="text-sm text-neutral-400 mt-1">
-                      {bundleImages.length} {bundleImages.length === 1 ? 'billede' : 'billeder'}
-                    </p>
-                    {bundleImages[0]?.description && (
-                      <p className="text-sm text-neutral-300 mt-2 leading-relaxed line-clamp-2">
-                        {bundleImages[0].description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        // Expanded bundle — spans full width, then individual cards in 2-col grid
-        return (
-          <React.Fragment key={`bundle-${image.bundle_id}`}>
-            <div className="col-span-1 md:col-span-2">
-              <div
-                className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-xl p-4 cursor-pointer hover:from-primary/15 hover:to-primary/10 transition-all border-2 border-primary/30"
-                onClick={() => toggleBundle(image.bundle_id!)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <ChevronUp size={24} className="text-primary" />
-                    <Package size={24} className="text-primary" />
-                    <div>
-                      <h3 className="text-xl font-semibold">{bundle?.name || 'Bundle'}</h3>
-                      <p className="text-neutral-400 text-sm">
-                        {bundleImages.length} {bundleImages.length === 1 ? 'billede' : 'billeder'}
-                      </p>
-                    </div>
-                  </div>
-                  <button className="text-primary hover:text-primary/80 font-medium"><EditableContent contentKey="portfolio-page-luk" fallback="Luk" /></button>
-                </div>
-              </div>
-            </div>
-            {bundleImages.map((bundleImage, index) => (
-              <div
-                key={bundleImage.id}
-                className="animate-in fade-in slide-in-from-top-4"
-                style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'backwards' }}
-              >
-                <div className="relative">
-                  <div className="absolute -inset-1 bg-primary/10 rounded-xl" />
-                  <div className="relative border-2 border-primary/40 rounded-xl overflow-hidden">
-                    {renderImageCard(bundleImage)}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </React.Fragment>
-        );
-      }
-
-      return renderImageCard(image);
-    });
-  };
-
   return (
-    <div className="pt-20 pb-16">
+    <div className="pb-16 pt-20">
       <SEO
-        title={getContent('portfolio-page-title', "Projekter")}
+        title={getContent('portfolio-page-title', 'Projekter')}
         description="Se eksempler på vores dronefotografering og dronefilmning. Flai leverer professionelle luftoptagelser i hele Danmark."
         canonical="/portfolio"
       />
-      <div className="bg-primary/10 py-12 mb-12">
+      <div className="mb-12 bg-primary/10 py-12">
         <div className="container">
           <EditableContent
             contentKey="portfolio-page-title"
             as="h1"
-            className="text-3xl md:text-4xl font-bold text-center mb-4"
+            className="mb-4 text-center text-3xl font-bold md:text-4xl"
             fallback="Projekter"
           />
           <EditableContent
             contentKey="portfolio-page-subtitle"
             as="p"
-            className="text-center text-lg text-neutral-300 max-w-2xl mx-auto"
+            className="mx-auto max-w-2xl text-center text-lg text-neutral-300"
             fallback="Udforsk mine projekter."
           />
         </div>
       </div>
       <div className="container">
-        {!isPortfolioLoaded ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {Array.from({ length: 4 }).map((_, i) => <PortfolioCardSkeleton key={i} />)}
-          </div>
-        ) : portfolioImages.length === 0 ? (
-          <div className="text-center py-12 text-neutral-400">
-            <EditableContent
-              contentKey="portfolio-no-images"
-              as="p"
-              fallback="Ingen portfolio billeder fundet endnu."
-            />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {renderGrid()}
-          </div>
-        )}
+        {/* One task per row, on every screen size */}
+        <div className="mx-auto max-w-5xl space-y-8">
+          {!isPortfolioLoaded ? (
+            Array.from({ length: 3 }).map((_, i) => <PortfolioTaskSkeleton key={i} />)
+          ) : tasks.length === 0 ? (
+            <div className="py-12 text-center text-neutral-400">
+              <EditableContent
+                contentKey="portfolio-no-images"
+                as="p"
+                fallback="Ingen portfolio billeder fundet endnu."
+              />
+            </div>
+          ) : (
+            tasks.map((task) => <PortfolioTaskCard key={task.id} task={task} />)
+          )}
+        </div>
       </div>
     </div>
   );
