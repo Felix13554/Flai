@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import EditableContent from '../components/EditableContent';
 import SEO from '../components/SEO';
@@ -142,30 +142,23 @@ const PortfolioPage: React.FC = () => {
   );
 
   // Kommer man fra hero-knappen på forsiden, ligger projektets navn i
-  // location.state.scrollToProject — scroll ned til det projekt, så snart listen
-  // er indlæst. Forsinkelsen sikrer at ScrollToTop (der scroller til toppen ved
-  // sideskift) når at køre først, så vi ikke bliver scrollet tilbage op igen.
+  // location.state.scrollToProject. Siden skal åbne allerede scrollet ned til
+  // projektet — uden animation — så det sker i et layout-effect (før browseren
+  // tegner siden) og med behavior 'instant'. ScrollToTop springer sin
+  // nulstilling over i det tilfælde. Kører kun én gang pr. besøg.
   const location = useLocation();
   const scrollToProject = (location.state as { scrollToProject?: string } | null)?.scrollToProject;
+  const hasScrolledRef = useRef(false);
 
-  useEffect(() => {
-    if (!scrollToProject || !isPortfolioLoaded) return;
+  useLayoutEffect(() => {
+    if (hasScrolledRef.current || !scrollToProject || !isPortfolioLoaded) return;
     const wanted = normalizeProjectName(scrollToProject);
     const target = tasks.find((t) => normalizeProjectName(t.title) === wanted);
     if (!target) return;
-
-    let attempts = 0;
-    let timer: number;
-    const tryScroll = () => {
-      const el = document.getElementById(`portfolio-task-${target.id}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else if (attempts++ < 10) {
-        timer = window.setTimeout(tryScroll, 100);
-      }
-    };
-    timer = window.setTimeout(tryScroll, 150);
-    return () => window.clearTimeout(timer);
+    const el = document.getElementById(`portfolio-task-${target.id}`);
+    if (!el) return;
+    hasScrolledRef.current = true;
+    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
   }, [scrollToProject, isPortfolioLoaded, tasks]);
 
   return (
