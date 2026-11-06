@@ -86,20 +86,21 @@ const PortfolioGalleryModal: React.FC<PortfolioGalleryModalProps> = ({ open, onC
         onClick={(e) => e.stopPropagation()}
         className="relative max-h-full w-full max-w-4xl overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8"
       >
-        {/* Tilbage-ikon i stedet for X: samme placering og samme størrelse som X'et
-            (size 22, p-2, øverst til højre). Lukker galleriet og går tilbage til kortet. */}
-        <button
-          ref={closeBtnRef}
-          type="button"
-          onClick={onClose}
-          aria-label="Tilbage"
-          className="absolute right-3 top-3 rounded-full p-2 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
-        >
-          <ArrowLeft size={22} />
-        </button>
-
-        {/* Title — identical styling to the "Se mere" title */}
-        <h2 className="pr-10 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+        {/* Header-række: titel til venstre, tilbage-ikon (i stedet for X) til højre,
+            centreret lodret ud fra titlen. Lukker galleriet og går tilbage til kortet. */}
+        <div className="flex items-center gap-3">
+          {/* Title — identical styling to the "Se mere" title */}
+          <h2 className="min-w-0 flex-1 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+          <button
+            ref={closeBtnRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Tilbage"
+            className="-my-2 -mr-2 shrink-0 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:-mr-4"
+          >
+            <ArrowLeft size={26} />
+          </button>
+        </div>
 
         {active === null ? (
           /* ── 1. Grid with all images ─────────────────────────────────── */

@@ -57,21 +57,16 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
       id={withAnchor ? `portfolio-task-${task.id}` : undefined}
       className={`relative scroll-mt-24 rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8 ${className}`}
     >
-      {onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Luk"
-          className="absolute right-3 top-3 z-10 rounded-full p-2 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:right-4 md:top-4"
-        >
-          <X size={22} />
-        </button>
-      )}
+      {/* Header-række: logo + titel til venstre, X til højre — X'et centreres
+          lodret ud fra logo/titel-rækken (items-center). Negative margener gør,
+          at den større knap hverken gør rækken højere eller flytter indholdet,
+          og holder X'et 12/16px fra kortets kant som før. */}
+      <div className="flex items-center gap-3">
 
       {/* 1+2. Logo (small) next to the title — same row, so the logo no
           longer takes up a line of its own above the title. Wraps under the
           logo only if the title is too long for the row. */}
-      <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-5 ${onClose ? 'pr-10' : ''}`}>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-5">
         {task.business_logo_url && (
           <a
             href={task.business_website_url || undefined}
@@ -95,6 +90,18 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
         )}
         {/* Title — identical to the "Se mere" title */}
         <h2 className="min-w-0 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+      </div>
+
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Luk"
+            className="-my-2 -mr-2 shrink-0 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:-mr-4"
+          >
+            <X size={26} />
+          </button>
+        )}
       </div>
 
       {/* 3. Description — identical to the "Se mere" description */}
