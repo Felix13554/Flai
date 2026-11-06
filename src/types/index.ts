@@ -84,6 +84,8 @@ export interface PortfolioImage {
   sort_order?: number;
   image_name?: string | null;
   business_logo_url?: string | null;
+  /** Logoets størrelse i procent (100 = normal). Mangler kolonnen, bruges 100. */
+  business_logo_scale?: number | null;
   business_website_url?: string | null;
 }
 

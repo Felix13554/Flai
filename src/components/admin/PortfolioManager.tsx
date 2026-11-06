@@ -27,6 +27,8 @@ interface TaskDraft {
   title: string;
   description: string;
   business_logo_url: string;
+  /** Logoets størrelse i procent (100 = normal). */
+  business_logo_scale: number;
   business_website_url: string;
   media: PortfolioMediaItem[];
   cover_media_id: string | null;
@@ -36,6 +38,7 @@ const EMPTY_DRAFT: TaskDraft = {
   title: '',
   description: '',
   business_logo_url: '',
+  business_logo_scale: 100,
   business_website_url: '',
   media: [],
   cover_media_id: null,
@@ -95,6 +98,7 @@ const PortfolioManager: React.FC = () => {
       title: task.title ?? '',
       description: task.description ?? '',
       business_logo_url: task.business_logo_url ?? '',
+      business_logo_scale: task.business_logo_scale ?? 100,
       business_website_url: task.business_website_url ?? '',
       media,
       cover_media_id: cover && getMediaKind(cover.url) === 'image' ? cover.id : null,
@@ -171,6 +175,7 @@ const PortfolioManager: React.FC = () => {
       title: current.title.trim(),
       description: current.description.trim() || null,
       business_logo_url: current.business_logo_url || null,
+      business_logo_scale: Math.min(300, Math.max(25, Math.round(current.business_logo_scale || 100))),
       business_website_url: current.business_website_url.trim() || null,
       media: current.media,
       cover_media_id: cover?.id ?? null,
@@ -201,7 +206,9 @@ const PortfolioManager: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       const msg = String(err?.message ?? '');
-      if (/media|cover_media_id/i.test(msg) && /column|schema/i.test(msg)) {
+      if (/business_logo_scale/i.test(msg) && /column|schema/i.test(msg)) {
+        toast.error('Databasen mangler kolonnen "business_logo_scale". Kør SQL-migrationen først.');
+      } else if (/media|cover_media_id/i.test(msg) && /column|schema/i.test(msg)) {
         toast.error('Databasen mangler kolonnerne "media" og "cover_media_id". Kør SQL-migrationen først.');
       } else {
         toast.error('Kunne ikke gemme opgaven');
@@ -455,6 +462,49 @@ const PortfolioManager: React.FC = () => {
                 bucket="portfolio"
               />
             </div>
+            {draft.business_logo_url && (
+              <div className="mb-3">
+                <label className="form-label">Logostørrelse ({draft.business_logo_scale}%)</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={25}
+                    max={300}
+                    step={5}
+                    value={draft.business_logo_scale}
+                    onChange={(e) => patchDraft({ business_logo_scale: parseInt(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    min={25}
+                    max={300}
+                    value={draft.business_logo_scale}
+                    onChange={(e) => patchDraft({ business_logo_scale: parseInt(e.target.value) || 100 })}
+                    className="form-input w-24"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => patchDraft({ business_logo_scale: 100 })}
+                    className="btn-secondary"
+                  >
+                    Nulstil
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">100% er normal størrelse, 200% er dobbelt så stort.</p>
+                <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-900 p-3">
+                  <img
+                    src={draft.business_logo_url}
+                    alt=""
+                    className="w-auto object-contain [--logo-h:3rem] [--logo-mw:240px]"
+                    style={{
+                      height: `calc(var(--logo-h) * ${draft.business_logo_scale / 100})`,
+                      maxWidth: `min(100%, calc(var(--logo-mw) * ${draft.business_logo_scale / 100}))`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="form-label">
                 <EditableContent contentKey="portfolio-manager-virksomhed-website" fallback="Virksomhedens hjemmeside-link" />

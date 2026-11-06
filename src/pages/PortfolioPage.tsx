@@ -69,7 +69,11 @@ const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
           <img
             src={task.business_logo_url}
             alt=""
-            className="h-10 max-w-[200px] w-auto object-contain md:h-12 md:max-w-[240px]"
+            className="w-auto object-contain [--logo-h:2.5rem] [--logo-mw:200px] md:[--logo-h:3rem] md:[--logo-mw:240px]"
+            style={{
+              height: `calc(var(--logo-h) * ${(task.business_logo_scale ?? 100) / 100})`,
+              maxWidth: `min(100%, calc(var(--logo-mw) * ${(task.business_logo_scale ?? 100) / 100}))`,
+            }}
           />
         </a>
       )}
