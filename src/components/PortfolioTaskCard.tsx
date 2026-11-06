@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import EditableContent from './EditableContent';
 import PortfolioGalleryModal from './PortfolioGalleryModal';
@@ -52,6 +52,38 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
   const description = task.description?.trim();
   const hasBoth = !!video && !!cover;
 
+  // X-knappen centreres lodret ud fra logo/titel-rækken. Brydes logoet ned OVER
+  // titlen (smal skærm / lang titel), skal knappen i stedet centreres ud fra
+  // logoet alene. CSS kan ikke se, om rækken er brudt, så vi måler: ligger titlen
+  // under logoet, gemmer vi logoets lodrette midte (relativt til header-rækken).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLImageElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [stackedLogoCenter, setStackedLogoCenter] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const img = logoRef.current;
+    const titleEl = titleRef.current;
+    if (!onClose || !header || !img || !titleEl) {
+      setStackedLogoCenter(null);
+      return;
+    }
+    const measure = () => {
+      const h = header.getBoundingClientRect();
+      const i = img.getBoundingClientRect();
+      const t = titleEl.getBoundingClientRect();
+      const stacked = t.top >= i.bottom - 1;
+      setStackedLogoCenter(stacked ? Math.round(i.top - h.top + i.height / 2) : null);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(header);
+    ro.observe(img);
+    ro.observe(titleEl);
+    return () => ro.disconnect();
+  }, [onClose, task.id, task.business_logo_url, task.business_logo_scale, title]);
+
   return (
     <article
       id={withAnchor ? `portfolio-task-${task.id}` : undefined}
@@ -61,7 +93,7 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
           lodret ud fra logo/titel-rækken (items-center). Negative margener gør,
           at den større knap hverken gør rækken højere eller flytter indholdet,
           og holder X'et 12/16px fra kortets kant som før. */}
-      <div className="flex items-center gap-3">
+      <div ref={headerRef} className="flex items-center gap-3">
 
       {/* 1+2. Logo (small) next to the title — same row, so the logo no
           longer takes up a line of its own above the title. Wraps under the
@@ -78,6 +110,7 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
             style={task.business_website_url ? undefined : { cursor: 'default' }}
           >
             <img
+              ref={logoRef}
               src={task.business_logo_url}
               alt=""
               className="w-auto object-contain [--logo-h:2rem] [--logo-mw:140px] md:[--logo-h:2.5rem] md:[--logo-mw:180px]"
@@ -89,7 +122,7 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
           </a>
         )}
         {/* Title — identical to the "Se mere" title */}
-        <h2 className="min-w-0 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+        <h2 ref={titleRef} className="min-w-0 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
       </div>
 
         {onClose && (
@@ -97,7 +130,12 @@ const PortfolioTaskCard: React.FC<PortfolioTaskCardProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Luk"
-            className="-my-2 -mr-2 shrink-0 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:-mr-4"
+            // Logo over titlen: knappen (46px høj = ikon 26 + 2×10 padding) lægges med
+            // `top` så dens midte ligger på logoets midte; ellers centreres den med rækken.
+            className={`-mr-2 shrink-0 rounded-full p-2.5 text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:-mr-4 ${
+              stackedLogoCenter !== null ? 'relative self-start' : '-my-2'
+            }`}
+            style={stackedLogoCenter !== null ? { top: stackedLogoCenter - 23 } : undefined}
           >
             <X size={26} />
           </button>
