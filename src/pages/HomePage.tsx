@@ -1,13 +1,13 @@
 import '../utils/heroPreload'
 import { initHeroSync } from '../utils/heroSync'
-import { extractCloudinaryPublicId, prefetchProjectVideo } from '../utils/heroPreload'
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { extractCloudinaryPublicId, prefetchProjectVideo, preloadProjectForSwitch, isPortraitMobileNow } from '../utils/heroPreload'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SEO from '../components/SEO';
 import { useNavigate } from 'react-router-dom';
 import { Video, Camera, MapPin } from 'lucide-react';
 import HeroVideoSection from '../components/HeroVideoSection';
 import HeroProjectCarousel from '../components/HeroProjectCarousel';
-import { heroProjectsContent, parseHeroProjectsContent } from '../content/heroProjects';
+import { heroProjectsContent, parseHeroProjectsContent, getHeroProjectLogos } from '../content/heroProjects';
 import EditableContent from '../components/EditableContent';
 import HomeSectionCard from '../components/HomeSectionCard';
 import { useData } from '../contexts/DataContext';
@@ -1215,11 +1215,43 @@ const HomePage: React.FC = () => {
   // played all the way through (HeroVideoSection's `onEnded`), instead of
   // switching on a fixed timer that could cut a longer video off early.
   // No-op with 0 or 1 projects, matching HeroProjectCarousel's own guard.
+  // Both a tab click and the auto-advance go through `requestProject`: the
+  // carousel keeps showing the CURRENT project until the requested one is
+  // fully loaded (poster, start of the video, logos), and only then swaps
+  // text, logo and video together — so the hero never shows a half-loaded
+  // project. `switchTokenRef` makes the latest request win if the visitor
+  // clicks again while an earlier one is still loading; the preload has a
+  // timeout, so a slow asset can never leave the hero stuck.
+  const activeProjectIndexRef = useRef(activeProjectIndex);
+  activeProjectIndexRef.current = activeProjectIndex;
+  const switchTokenRef = useRef(0);
+
+  const requestProject = useCallback((index: number) => {
+    const item = heroProjectItems[index];
+    if (!item || index === activeProjectIndexRef.current) {
+      switchTokenRef.current += 1; // cancel any pending switch to elsewhere
+      return;
+    }
+    const token = ++switchTokenRef.current;
+    const desktopId = extractCloudinaryPublicId(item.cloudinaryVideoUrl);
+    const mobileId = item.cloudinaryVideoUrlMobile
+      ? extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile)
+      : undefined;
+    // Same choice HeroVideoSection makes: the vertical cut only on a phone in portrait.
+    const videoId = isPortraitMobileNow() && mobileId ? mobileId : desktopId;
+    preloadProjectForSwitch({
+      publicId: videoId || undefined,
+      logoUrls: getHeroProjectLogos(item).map((l) => l.url),
+    }).then(() => {
+      if (switchTokenRef.current === token) setActiveProjectIndex(index);
+    });
+  }, [heroProjectItems]);
+
   const handleProjectVideoEnded = useCallback(() => {
-    setActiveProjectIndex((i) =>
-      heroProjectItems.length > 1 ? (i + 1) % heroProjectItems.length : i
-    );
-  }, [heroProjectItems.length]);
+    if (heroProjectItems.length > 1) {
+      requestProject((activeProjectIndexRef.current + 1) % heroProjectItems.length);
+    }
+  }, [heroProjectItems.length, requestProject]);
 
   // Warm the cache for whichever project tab the visitor is most likely to
   // land on next — the auto-advance target, and the tab on either side of
@@ -1299,7 +1331,7 @@ const HomePage: React.FC = () => {
             <HeroProjectCarousel
               data={{ content: heroProjectItems }}
               activeIndex={activeProjectIndex}
-              onChangeIndex={setActiveProjectIndex}
+              onChangeIndex={requestProject}
               progress={heroVideoProgress}
               onSeeMore={handleSeeProject}
             />

@@ -55,31 +55,34 @@ const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
       id={`portfolio-task-${task.id}`}
       className="scroll-mt-24 rounded-xl border border-neutral-700 bg-neutral-900 p-5 shadow-2xl md:p-8"
     >
-      {/* 1. Logo (small, above the title) */}
-      {task.business_logo_url && (
-        <a
-          href={task.business_website_url || undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mb-4 inline-block md:mb-5"
-          title={task.business_website_url ? 'Besøg hjemmeside' : undefined}
-          onClick={(e) => { if (!task.business_website_url) e.preventDefault(); }}
-          style={task.business_website_url ? undefined : { cursor: 'default' }}
-        >
-          <img
-            src={task.business_logo_url}
-            alt=""
-            className="w-auto object-contain [--logo-h:2.5rem] [--logo-mw:200px] md:[--logo-h:3rem] md:[--logo-mw:240px]"
-            style={{
-              height: `calc(var(--logo-h) * ${(task.business_logo_scale ?? 100) / 100})`,
-              maxWidth: `min(100%, calc(var(--logo-mw) * ${(task.business_logo_scale ?? 100) / 100}))`,
-            }}
-          />
-        </a>
-      )}
-
-      {/* 2. Title — identical to the "Se mere" title */}
-      <h2 className="text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+      {/* 1+2. Logo (small) next to the title — same row, so the logo no
+          longer takes up a line of its own above the title. Wraps under the
+          logo only if the title is too long for the row. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-5">
+        {task.business_logo_url && (
+          <a
+            href={task.business_website_url || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block shrink-0"
+            title={task.business_website_url ? 'Besøg hjemmeside' : undefined}
+            onClick={(e) => { if (!task.business_website_url) e.preventDefault(); }}
+            style={task.business_website_url ? undefined : { cursor: 'default' }}
+          >
+            <img
+              src={task.business_logo_url}
+              alt=""
+              className="w-auto object-contain [--logo-h:2rem] [--logo-mw:140px] md:[--logo-h:2.5rem] md:[--logo-mw:180px]"
+              style={{
+                height: `calc(var(--logo-h) * ${(task.business_logo_scale ?? 100) / 100})`,
+                maxWidth: `min(100%, calc(var(--logo-mw) * ${(task.business_logo_scale ?? 100) / 100}))`,
+              }}
+            />
+          </a>
+        )}
+        {/* Title — identical to the "Se mere" title */}
+        <h2 className="min-w-0 text-2xl font-bold leading-tight text-white md:text-4xl">{title}</h2>
+      </div>
 
       {/* 3. Description — identical to the "Se mere" description */}
       {description && (
@@ -96,25 +99,39 @@ const PortfolioTaskCard: React.FC<{ task: PortfolioImage }> = ({ task }) => {
               <PortfolioMediaPlayer url={video.url} title={title} />
             </div>
           )}
+          {/* Cover image + (below IT, not below the video) "Se alle billeder".
+              On desktop this is the right-hand column; on mobile it comes
+              after the video, so the button ends up under the images there too. */}
           {cover && (
-            <button
-              type="button"
-              onClick={() => setGalleryOpen(true)}
-              aria-label={`Se alle billeder – ${title}`}
-              className="group relative block aspect-video w-full min-w-0 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 transition-colors hover:border-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              <PortfolioMediaThumb
-                url={cover.url}
-                title={title}
-                className="transition-transform duration-300 group-hover:scale-[1.03]"
-              />
-            </button>
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={() => setGalleryOpen(true)}
+                aria-label={`Se alle billeder – ${title}`}
+                className="group relative block aspect-video w-full min-w-0 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 transition-colors hover:border-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <PortfolioMediaThumb
+                  url={cover.url}
+                  title={title}
+                  className="transition-transform duration-300 group-hover:scale-[1.03]"
+                />
+              </button>
+
+              {/* 5. "Se alle billeder" */}
+              {gallery.length > 1 && (
+                <div className="mt-4">
+                  <button type="button" onClick={() => setGalleryOpen(true)} className="btn-primary">
+                    <EditableContent contentKey="portfolio-page-se-alle-billeder" fallback="Se alle billeder" />
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
 
-      {/* 5. "Se alle billeder" */}
-      {gallery.length > 1 && (
+      {/* No cover (only a video + non-image gallery items): keep the button reachable. */}
+      {!cover && gallery.length > 1 && (
         <div className="mt-4 md:mt-6">
           <button type="button" onClick={() => setGalleryOpen(true)} className="btn-primary">
             <EditableContent contentKey="portfolio-page-se-alle-billeder" fallback="Se alle billeder" />

@@ -284,6 +284,93 @@ export function prefetchProjectVideo(publicId: string): void {
   head.appendChild(frag)
 }
 
+// ─── Load-before-switch (hero carousel) ───────────────────────────────────────
+// When the visitor switches project (tab click or auto-advance), the carousel
+// must NOT change until the next project is actually ready — otherwise the
+// text/logo/progress change instantly while the video is still downloading and
+// the hero shows an empty poster for a moment. `preloadProjectForSwitch` loads
+// everything the new project needs (poster, first chunk of video, logos) and
+// resolves once it is ready, or after `timeoutMs` at the latest so a slow or
+// failing asset can never freeze the carousel on the old project.
+const _switchPreloads = new Map<string, Promise<void>>()
+
+/** True when the phone is held in portrait — same test HeroVideoSection uses. */
+export function isPortraitMobileNow(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches
+}
+
+function loadImageReady(url: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (!url) { resolve(); return }
+    const img = new Image()
+    // No crossOrigin: must match the rendered <img> tags so the browser cache is reused.
+    img.onload  = () => {
+      // decode() makes the first paint of this image instant.
+      if (typeof img.decode === 'function') img.decode().then(() => resolve(), () => resolve())
+      else resolve()
+    }
+    img.onerror = () => resolve()
+    img.decoding = 'async'
+    img.src = url
+  })
+}
+
+function loadVideoReady(url: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (!url) { resolve(); return }
+    const video = document.createElement('video')
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      video.removeEventListener('canplay', finish)
+      video.removeEventListener('loadeddata', finish)
+      video.removeEventListener('error', finish)
+      // Release the connection; what was fetched stays in the HTTP cache.
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+      resolve()
+    }
+    video.addEventListener('canplay', finish)
+    video.addEventListener('loadeddata', finish)
+    video.addEventListener('error', finish)
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.crossOrigin = 'anonymous' // must match setVideoRef in HeroVideoSection
+    video.src = url
+    video.load()
+  })
+}
+
+export function preloadProjectForSwitch(opts: {
+  publicId?: string
+  logoUrls?: string[]
+  timeoutMs?: number
+}): Promise<void> {
+  if (typeof document === 'undefined') return Promise.resolve()
+  const { publicId, logoUrls = [], timeoutMs = 8000 } = opts
+  const key = `${publicId ?? ''}|${logoUrls.join(',')}`
+  const existing = _switchPreloads.get(key)
+  if (existing) return existing
+
+  const { isSlow, saveData } = getConnectionInfo()
+  const tasks: Promise<void>[] = []
+  if (publicId) {
+    tasks.push(loadImageReady(cloudinaryPosterUrl(publicId, 1920, 'good')))
+    // Never spend a slow/metered connection's data on the video up front.
+    if (!isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryMp4Url(publicId)))
+  }
+  logoUrls.forEach((u) => tasks.push(loadImageReady(u)))
+
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+  const p = Promise.race([Promise.all(tasks).then(() => undefined), timeout])
+  _switchPreloads.set(key, p)
+  return p
+}
+
 // ─── Cache busting ────────────────────────────────────────────────────────────
 
 const HERO_CACHE_NAME = 'hero-video-v1'
