@@ -66,35 +66,10 @@
     <link rel="preconnect" href="https://res.cloudinary.com" crossorigin="anonymous" />
     <link rel="dns-prefetch" href="https://res.cloudinary.com" />
 
-    <!-- Hero preloads — homepage only. __HERO_PUBLIC_ID exposed for heroPreload.ts. -->
-    <script>
-      window.__HERO_PUBLIC_ID = 'herovideo';
-      if (window.location.pathname === '/') {
-        var B = 'https://res.cloudinary.com/dq6jxbyrg/video/upload/';
-        var I = window.__HERO_PUBLIC_ID;
-        var h = document.head;
-
-        // Preload video (lower priority than image — append, don't prepend)
-        var v = document.createElement('link');
-        v.rel = 'preload'; v.as = 'video';
-        v.href = B+'vc_h264/f_mp4/q_auto:good/'+I+'.mp4';
-        v.setAttribute('fetchpriority', 'low');
-        h.appendChild(v);
-
-        // Preload poster image — this IS the LCP element, prepend so browser
-        // discovers it as early as possible (appears before video preload in DOM)
-        var p = document.createElement('link');
-        p.rel = 'preload'; p.as = 'image';
-        p.href = B+'c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/'+I+'.jpg';
-        p.setAttribute('imagesrcset',
-          B+'c_fill,g_auto,w_480,so_0/f_jpg/q_auto:eco/'+I+'.jpg 480w,'+
-          B+'c_fill,g_auto,w_960,so_0/f_jpg/q_auto:eco/'+I+'.jpg 960w,'+
-          B+'c_fill,g_auto,w_1920,so_0/f_jpg/q_auto:good/'+I+'.jpg 1920w');
-        p.setAttribute('imagesizes', '100vw');
-        p.setAttribute('fetchpriority', 'high');
-        h.prepend(p);
-      }
-    </script>
+    <!-- No hero video/poster preloads here on purpose. This block used to preload
+         the 'herovideo' MP4 + poster on every homepage visit, but the homepage
+         plays the CMS carousel's project video, so those bytes (billed by
+         Cloudinary) were never used. HeroVideoSection fetches the right ones. -->
 
     <!-- Preconnect to Supabase -->
     <link rel="preconnect" href="https://pbqeljimuerxatrtmgsn.supabase.co" crossorigin="anonymous" />

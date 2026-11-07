@@ -125,6 +125,7 @@ import {
   extractCloudinaryPublicId,
   cloudinaryHlsUrl,
   cloudinaryMp4Url,
+  cloudinaryHeroMp4Url,
   cloudinaryWebmUrl,
   cloudinaryPosterUrl,
 } from './cloudinaryUrls'
@@ -133,6 +134,7 @@ export {
   extractCloudinaryPublicId,
   cloudinaryHlsUrl,
   cloudinaryMp4Url,
+  cloudinaryHeroMp4Url,
   cloudinaryWebmUrl,
   cloudinaryPosterUrl,
 }
@@ -187,6 +189,16 @@ function injectConnectionHints(): void {
   }
 }
 
+// NOTE: this used to ALSO preload the MP4 (`<link rel="preload" as="video">`).
+// That was removed on purpose, for two reasons:
+//   1. A <video> element fetches by byte range; a preload is a plain full GET,
+//      so the browser frequently downloads the file twice (once for the preload,
+//      once for the element) — and every byte is billed by Cloudinary.
+//   2. The homepage no longer plays the 'herovideo' singleton at all (the
+//      carousel passes the CMS project's own public_id), so preloading
+//      'herovideo' on every visit downloaded a video nobody watched.
+// React mounts the <video> within a few hundred ms and the poster covers that
+// gap, so there is nothing worth buying with those bytes.
 export function injectPreloadHints(publicId = heroVideo.public_id, stamp = _posterStamp): void {
   if (typeof document === 'undefined') return
   const head = document.head
@@ -194,19 +206,6 @@ export function injectPreloadHints(publicId = heroVideo.public_id, stamp = _post
   head.querySelectorAll('link[data-hero-slot]').forEach(el => el.remove())
 
   const frag = document.createDocumentFragment()
-
-  // MP4 — primary source, preloaded at high priority.
-  // crossOrigin='anonymous' is required: without it the browser makes a no-CORS
-  // preload fetch, then when the <video> element (CORS) requests the same URL
-  // the cached response is rejected and a second request fires — wasting the preload.
-  const mp4Link = document.createElement('link')
-  mp4Link.rel         = 'preload'
-  mp4Link.as          = 'video'
-  mp4Link.href        = cloudinaryMp4Url(publicId)
-  mp4Link.crossOrigin = 'anonymous'
-  mp4Link.setAttribute('fetchpriority', 'high')
-  mp4Link.dataset.heroSlot = 'mp4'
-  frag.appendChild(mp4Link)
 
   // Poster — uses stamp so preload URL exactly matches <img> src.
   // imageSrcset/imagesizes must be set via setAttribute — assigning them as JS
@@ -250,38 +249,35 @@ export function injectPreloadHints(publicId = heroVideo.public_id, stamp = _post
 // type ("video") that Safari/Firefox don't reliably recognize under
 // rel="prefetch" — as="fetch" is the broadly-supported way to pre-warm an
 // arbitrary same-shape request regardless of what eventually consumes it.
-const _prefetchedProjectIds = new Set<string>()
+//
+// This is a FULL-file GET, billed in full by Cloudinary, so the caller must only
+// use it for the ONE video that is likely to play next (HomePage: the
+// auto-advance target, and only for visitors who have stayed a while). It uses
+// the same hero URL the <video> element will request, so the bytes are reused.
+// The poster is NOT fetched here — `prefetchProjectImages` already warms it with
+// the exact srcset the <img> uses (this used to also pull a separate 1920px
+// poster that no phone would ever display).
+const _prefetchedVideoUrls = new Set<string>()
 
 export function prefetchProjectVideo(publicId: string): void {
   if (typeof document === 'undefined' || !publicId) return
-  if (_prefetchedProjectIds.has(publicId)) return
   const { isSlow, saveData } = getConnectionInfo()
   // Never spend a slow/metered connection's data budget on a video the user
   // hasn't actually asked to see yet — same guard HeroVideoSection itself
   // uses (skipVideo) for the video that IS on screen.
   if (isSlow || saveData) return
-  _prefetchedProjectIds.add(publicId)
 
-  const head = document.head
-  const frag = document.createDocumentFragment()
+  const url = cloudinaryHeroMp4Url(publicId)
+  if (_prefetchedVideoUrls.has(url)) return
+  _prefetchedVideoUrls.add(url)
 
   const videoLink = document.createElement('link')
   videoLink.rel         = 'prefetch'
   videoLink.as          = 'fetch'
-  videoLink.href        = cloudinaryMp4Url(publicId)
+  videoLink.href        = url
   videoLink.crossOrigin = 'anonymous'
   videoLink.dataset.heroPrefetch = publicId
-  frag.appendChild(videoLink)
-
-  const posterLink = document.createElement('link')
-  posterLink.rel         = 'prefetch'
-  posterLink.as          = 'image'
-  posterLink.href        = cloudinaryPosterUrl(publicId, 1920, 'good')
-  posterLink.crossOrigin = 'anonymous'
-  posterLink.dataset.heroPrefetch = publicId
-  frag.appendChild(posterLink)
-
-  head.appendChild(frag)
+  document.head.appendChild(videoLink)
 }
 
 // ─── Load-before-switch (hero carousel) ───────────────────────────────────────
@@ -395,7 +391,7 @@ export function preloadProjectForSwitch(opts: {
     const { src, srcSet } = posterImageSources(publicId)
     tasks.push(loadImageReady(src, srcSet))
     // Never spend a slow/metered connection's data on the video up front.
-    if (waitForVideo && !isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryMp4Url(publicId)))
+    if (waitForVideo && !isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryHeroMp4Url(publicId)))
   }
   logoUrls.forEach((u) => tasks.push(loadImageReady(u)))
 
@@ -599,7 +595,10 @@ export function bustHeroCache(publicId: string = HERO_PUBLIC_ID): void {
 
 // ─── Module init ──────────────────────────────────────────────────────────────
 
+// Connection hints only. We deliberately do NOT call injectPreloadHints() here:
+// it would preload the 'herovideo' singleton's poster on every homepage visit,
+// but the homepage plays the CMS carousel's project video, so that poster is
+// never shown. HeroVideoSection renders (and fetches) the right poster itself.
 if (typeof document !== 'undefined') {
   injectConnectionHints()
-  injectPreloadHints()
 }

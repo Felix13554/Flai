@@ -1,5 +1,10 @@
 /**
- * HeroVideoSection — v19
+ * HeroVideoSection — v21
+ *
+ * v21 — COST: the video is now requested through cloudinaryHeroMp4Url — capped
+ * to 720 / 1280 / 1920 px wide depending on device + connection, with the
+ * (unused) audio track stripped — instead of the uncapped source-resolution
+ * URL. Playback behaviour is unchanged.
  *
  * v19 — ADMIN: while logged in as admin the hero does NOT autoplay. The
  * poster stays up with a play button and nothing calls play() (no automatic
@@ -59,7 +64,7 @@ import React, {
 } from 'react'
 import {
   getHeroVideo,
-  cloudinaryMp4Url,
+  cloudinaryHeroMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
@@ -409,7 +414,10 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   const preloadVal = autoplayBlocked ? 'metadata' : 'auto'
   const autoplayState = useMemo(getAutoplayState, [])
 
-  const videoSrc = useMemo(() => cloudinaryMp4Url(publicId), [publicId])
+  // ▶ v21: resolution-capped, audio-free delivery URL (see cloudinaryHeroMp4Url).
+  // Memoised on publicId only, so the URL — and therefore the cached bytes —
+  // stays stable across reconnects and layout changes for a given video.
+  const videoSrc = useMemo(() => cloudinaryHeroMp4Url(publicId), [publicId])
   videoSrcRef.current = videoSrc
 
   // ── Ref callback ────────────────────────────────────────────────────────

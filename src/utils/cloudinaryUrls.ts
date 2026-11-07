@@ -109,3 +109,64 @@ export function cloudinaryPosterUrl(
     `vc_h264/so_0/f_jpg/q_auto:${quality},w_${width}/${publicId}.jpg`
   return stamp > 0 ? `${base}?v=${stamp}` : base
 }
+
+// ─── Hero video delivery ──────────────────────────────────────────────────────
+//
+// The autoplaying hero is a muted, looping background — it never needs the
+// source resolution or an audio track. `cloudinaryMp4Url` above applies NO size
+// cap, so every device (a phone included) used to download the video at
+// whatever resolution was uploaded. That is the single biggest driver of
+// Cloudinary bandwidth credits, so the hero (and ONLY the hero — the product /
+// portfolio players keep `cloudinaryMp4Url`, they play with sound on demand)
+// uses this builder instead:
+//   • c_limit,w_N   → never wider than the tier below (and never upscales)
+//   • ac_none       → strips the audio track (the element is muted anyway)
+//   • q_auto:<q>    → eco on the small tier, good everywhere else
+//
+// Every tier is a separate derived asset on Cloudinary, so keep the tier list
+// short: each (video × tier) is transcoded once, on its first request.
+const HERO_TIERS = {
+  /** Portrait phones, Data Saver, 2g/3g — the vertical cut is 720×1280 here. */
+  small:  { width: 720,  quality: 'eco'  },
+  /** Phone landscape, tablets, laptops and most desktops. */
+  medium: { width: 1280, quality: 'good' },
+  /** Wide desktops (> 1600 CSS px). */
+  large:  { width: 1920, quality: 'good' },
+} as const
+
+export type HeroVideoTier = keyof typeof HERO_TIERS
+
+/**
+ * Picks the hero delivery tier from the CURRENT connection and viewport.
+ * Evaluated when a URL is built (never at import time, so this module stays
+ * side-effect-free). Playback, prefetch and the load-before-switch preload all
+ * go through `cloudinaryHeroMp4Url`, so they resolve to the same URL on the
+ * same device and share one cached response.
+ */
+export function heroVideoTier(): HeroVideoTier {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'medium'
+
+  const conn =
+    (navigator as any).connection ??
+    (navigator as any).mozConnection ??
+    (navigator as any).webkitConnection
+  const type = conn?.effectiveType
+  if (conn?.saveData === true || type === 'slow-2g' || type === '2g' || type === '3g') {
+    return 'small'
+  }
+
+  const w = window.innerWidth
+  const h = window.innerHeight
+  // Same test the app uses for "portrait phone" (see isPortraitMobileNow).
+  if (w < 768 && h > w) return 'small'
+
+  return w > 1600 ? 'large' : 'medium'
+}
+
+export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
+  const { width, quality } = HERO_TIERS[tier]
+  return (
+    `https://res.cloudinary.com/${CLOUD}/video/upload/` +
+    `vc_h264,ac_none/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
+  )
+}

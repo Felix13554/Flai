@@ -1338,39 +1338,48 @@ const HomePage: React.FC = () => {
     };
   }, [heroProjectItems]);
 
-  // Warm the cache for whichever project tab the visitor is most likely to
-  // land on next — the auto-advance target, and the tab on either side of
-  // the active one (numbered tabs invite clicking a neighbour) — so
-  // switching feels instant instead of every tab click/auto-advance
-  // triggering a cold video fetch. Deferred to idle time so it never
-  // competes with the currently-active video's own loading/playback, and
-  // prefetchProjectVideo itself skips slow/metered connections.
+  // Warm the cache for the ONE video the auto-advance will switch to next, so
+  // that switch is instant. This is a full-file download that Cloudinary bills
+  // in full, so it is deliberately narrow:
+  //   • only the next project (not both neighbours — a tap already shows the
+  //     poster instantly and the video loads behind it),
+  //   • only the variant that will play on THIS device (the vertical cut on a
+  //     portrait phone, otherwise the horizontal one — it used to fetch both),
+  //   • only once the visitor has stayed on the current project for a while,
+  //     so people who bounce after a few seconds never trigger it,
+  //   • never while the tab is hidden.
+  // prefetchProjectVideo itself also skips slow / Data Saver connections.
   useEffect(() => {
     if (heroProjectItems.length <= 1) return;
-    const neighborIds = new Set<string>();
-    [
-      (activeProjectIndex + 1) % heroProjectItems.length,
-      (activeProjectIndex - 1 + heroProjectItems.length) % heroProjectItems.length,
-    ].forEach((i) => {
-      const item = heroProjectItems[i];
-      if (!item) return;
-      const id = extractCloudinaryPublicId(item.cloudinaryVideoUrl);
-      if (id && id !== activeProjectPublicId) neighborIds.add(id);
-      // Also warm the mobile cut, if this project has one — whichever
-      // variant ends up playing (desktop or mobile) is then already cached.
-      if (item.cloudinaryVideoUrlMobile) {
-        const mobileId = extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile);
-        if (mobileId && mobileId !== activeProjectMobilePublicId) neighborIds.add(mobileId);
-      }
-    });
-    if (neighborIds.size === 0) return;
+    const next = heroProjectItems[(activeProjectIndex + 1) % heroProjectItems.length];
+    if (!next) return;
 
-    const run = () => neighborIds.forEach((id) => prefetchProjectVideo(id));
-    const ric = typeof requestIdleCallback === 'function' ? requestIdleCallback : null;
-    const idleId = ric ? ric(run, { timeout: 4000 }) : window.setTimeout(run, 1500);
+    const portraitPhone = isPortraitMobileNow();
+    const nextDesktopId = extractCloudinaryPublicId(next.cloudinaryVideoUrl);
+    const nextMobileId = next.cloudinaryVideoUrlMobile
+      ? extractCloudinaryPublicId(next.cloudinaryVideoUrlMobile)
+      : undefined;
+    const nextId = portraitPhone && nextMobileId ? nextMobileId : nextDesktopId;
+    const currentId =
+      portraitPhone && activeProjectMobilePublicId ? activeProjectMobilePublicId : activeProjectPublicId;
+    if (!nextId || nextId === currentId) return;
+
+    let idleId: number | undefined;
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'hidden') return;
+      const run = () => prefetchProjectVideo(nextId);
+      idleId =
+        typeof requestIdleCallback === 'function'
+          ? requestIdleCallback(run, { timeout: 4000 })
+          : window.setTimeout(run, 0);
+    }, 12000);
+
     return () => {
-      if (ric && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId as number);
-      else window.clearTimeout(idleId as number);
+      window.clearTimeout(timer);
+      if (idleId !== undefined) {
+        if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId);
+        else window.clearTimeout(idleId);
+      }
     };
   }, [activeProjectIndex, heroProjectItems, activeProjectPublicId, activeProjectMobilePublicId]);
 
