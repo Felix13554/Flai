@@ -1497,10 +1497,10 @@ const HomePage: React.FC = () => {
           <EditableContent contentKey="cta-title" as="h2" className="text-3xl md:text-4xl font-bold mb-8 text-white" fallback="Klar til en ny verden fra oven?" />
           <div className="flex flex-col sm:flex-row justify-center gap-4 mt-2">
             <button onClick={() => navigate('/products')} className="btn-primary text-lg px-8 py-4">
-              <EditableContent contentKey="hero-button-primary" fallback="Se Vores Tjenester" />
+              <EditableContent contentKey="hero-button-primary" fallback="Se Tjenester" />
             </button>
             <button onClick={() => navigate('/portfolio')} className="btn-secondary text-lg px-8 py-4 flex items-center justify-center">
-              <EditableContent contentKey="hero-button-secondary" fallback="Se Vores Arbejde" />
+              <EditableContent contentKey="hero-button-secondary" fallback="Se Projekter" />
             </button>
           </div>
         </div>

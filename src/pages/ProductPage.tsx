@@ -280,7 +280,7 @@ const ProductPage: React.FC = () => {
             <ArrowLeft size={20} className="mr-2" />
             <EditableContent
               contentKey="product-page-back-button"
-              fallback="Tilbage til produkter"
+              fallback="Tilbage"
             />
           </button>
 

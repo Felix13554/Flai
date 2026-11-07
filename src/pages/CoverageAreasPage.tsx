@@ -438,7 +438,7 @@ const CoverageAreasPage: React.FC = () => {
                 <div>
                   {validationResult.isValid ? (
                     <>
-                      <EditableContent contentKey="coverage-valid-title" as="p" className="font-medium" fallback="Vi dækker denne adresse" />
+                      <EditableContent contentKey="coverage-valid-title" as="p" className="font-medium" fallback="Jeg dækker denne adresse" />
                       <EditableContent contentKey="coverage-valid-subtitle" as="p" className="text-sm mt-1 opacity-80" fallback="Du kan nu gå videre til at booke din droneoptagelse" />
                     </>
                   ) : (

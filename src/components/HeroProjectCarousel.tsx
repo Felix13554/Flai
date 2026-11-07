@@ -273,7 +273,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           aria-label={`Se projektet ${active.project?.trim() || active.industry}`}
           className="btn-primary text-lg px-8 py-4 mb-8 md:mb-10 w-1/2 sm:w-auto whitespace-nowrap"
         >
-          <EditableContent contentKey="hero-project-carousel-se-mere" fallback="Se mere" />
+          <EditableContent contentKey="hero-project-carousel-se-mere" fallback="Se projekt" />
         </button>
       )}
 
