@@ -396,9 +396,12 @@ const ProductsManager: React.FC = () => {
     setSliderValues(prev => { const n = { ...prev }; delete n[productId]; return n; });
   };
 
+  // Functional updaters are required here: with multi-upload this is called once per
+  // file from inside an async loop, so a captured `editingProduct` would be stale
+  // and every upload would overwrite the previous one.
   const handleImageUpload = (url: string, isForEdit = false) => {
-    if (isForEdit && editingProduct) {
-      setEditingProduct({ ...editingProduct, images: [...toStringArray(editingProduct.images), url] });
+    if (isForEdit) {
+      setEditingProduct(p => p ? { ...p, images: [...toStringArray(p.images), url] } : p);
     } else {
       setNewProduct(p => ({ ...p, images: [...p.images, url] }));
     }
@@ -560,6 +563,7 @@ const ProductsManager: React.FC = () => {
               <ImageUpload
                 onImageUploaded={(url) => handleImageUpload(url)}
                 bucket="product-images"
+                allowMultiple
                 allow360
                 allowCloudinaryVideo
               />
@@ -671,6 +675,7 @@ const ProductsManager: React.FC = () => {
                     <ImageUpload
                       onImageUploaded={(url) => handleImageUpload(url, true)}
                       bucket="product-images"
+                      allowMultiple
                       allow360
                       allowCloudinaryVideo
                     />
