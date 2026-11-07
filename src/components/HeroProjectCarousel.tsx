@@ -1,19 +1,39 @@
 import EditableContent from './EditableContent';
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import AdaptiveShadowBox from './AdaptiveShadowBox'
 import { getHeroProjectLogos, type HeroProjectsContent } from '../content/heroProjects'
+import { heroProgress } from '../utils/heroProgress'
+
+/**
+ * The growing line under the active number. Subscribes to the hero progress
+ * store on its own, so the ~4 ticks/sec of `timeupdate` re-render only this
+ * tiny span — not the carousel, and not the whole homepage (which is what
+ * used to make taps on the numbers feel laggy on phones).
+ */
+const ProgressFill: React.FC = () => {
+  const progress = useSyncExternalStore(heroProgress.subscribe, heroProgress.get, () => 0)
+  const fill = Math.min(Math.max(progress, 0), 1)
+  return (
+    <span
+      className="absolute inset-y-0 left-0 bg-white rounded-full"
+      style={{
+        width: `${fill * 100}%`,
+        transition: 'width 150ms linear',
+      }}
+    />
+  )
+}
 
 export interface HeroProjectCarouselProps {
   data: HeroProjectsContent
   activeIndex: number
   onChangeIndex: (index: number) => void
   /**
-   * Playback progress of the active project's video, as a fraction (0–1).
-   * Drawn as a line beneath the active number that grows from left to
-   * right as the video plays — 0 at the start, 1 when it's finished.
-   * Ignored for inactive numbers, which show only the plain (empty) track.
+   * Index of the project the visitor just asked for but which isn't shown yet
+   * because its assets are still loading. Its number gets an immediate
+   * "loading" pulse so a tap never feels like nothing happened.
    */
-  progress?: number
+  pendingIndex?: number | null
   /**
    * Auto-advance interval, ms. Set to 0 to disable this fixed-timer
    * auto-advance entirely — the default, since HomePage now advances the
@@ -48,7 +68,7 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   data,
   activeIndex,
   onChangeIndex,
-  progress = 0,
+  pendingIndex = null,
   autoAdvanceMs = 0,
   onSeeMore,
 }) => {
@@ -149,7 +169,8 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
   }, [restartTimer])
 
   const handleSelect = (index: number) => {
-    if (index === activeIndex) return
+    // Tapping the already-active number still reports it, so the parent can
+    // cancel a switch that is pending to a different project.
     onChangeIndex(index)
   }
 
@@ -262,37 +283,45 @@ const HeroProjectCarousel: React.FC<HeroProjectCarouselProps> = ({
           progress line beneath it, which fills left→right as its video
           plays. Inactive numbers show the same line as an empty track, so
           the layout doesn't shift when the active index changes. */}
-      <div className="flex items-center gap-5 md:gap-7">
+      {/* Touch targets: every number is a ≥44×44px button (the size Apple/
+          Google recommend for fingers) instead of the old ~10×28px text-only
+          button, which was very hard to hit on a phone. The pitch between
+          numbers (44px mobile / 60px md+) equals the old width+gap, so the
+          VISUAL layout is unchanged: the row is pulled left/up/down with
+          negative margins to cancel the extra hit-area padding. Neighbouring
+          targets touch but never overlap. `touch-action: manipulation`
+          removes the double-tap-zoom delay on tap. */}
+      <div className="flex flex-wrap items-center -ml-2.5 md:-ml-3.5 -my-2">
         {items.map((item, index) => {
           const isActive = index === activeIndex
-          const fill = isActive ? Math.min(Math.max(progress, 0), 1) : 0
+          const isPending = !isActive && pendingIndex === index
           return (
             <button
               key={item.number}
               type="button"
               onClick={() => handleSelect(index)}
               aria-current={isActive}
+              aria-busy={isPending}
               aria-label={`Vis projekt ${item.number}`}
-              className="appearance-none bg-transparent border-0 p-0 cursor-pointer flex flex-col items-center gap-1.5"
+              className="appearance-none bg-transparent border-0 p-0 cursor-pointer flex flex-col items-center justify-center gap-1.5 min-w-[44px] md:min-w-[60px] min-h-[44px] [touch-action:manipulation] [-webkit-tap-highlight-color:transparent]"
             >
               <AdaptiveShadowBox as="span" kind="text" className="text-sm md:text-base font-medium text-white">
                 {item.number}
               </AdaptiveShadowBox>
               {/* Reserve the same vertical space for every number so they
                   don't jump when the active one changes — only the active
-                  number's line is actually visible. */}
+                  number's line is actually visible. A number that was just
+                  tapped but is still loading shows a pulsing line, so the
+                  tap gets instant feedback. */}
               <span className="relative block w-6 md:w-8 h-[2px] rounded-full overflow-hidden">
                 {isActive && (
                   <>
                     <span className="absolute inset-0 bg-white/30 rounded-full" />
-                    <span
-                      className="absolute inset-y-0 left-0 bg-white rounded-full"
-                      style={{
-                        width: `${fill * 100}%`,
-                        transition: 'width 150ms linear',
-                      }}
-                    />
+                    <ProgressFill />
                   </>
+                )}
+                {isPending && (
+                  <span className="absolute inset-0 bg-white/80 rounded-full animate-pulse" />
                 )}
               </span>
             </button>

@@ -1,6 +1,7 @@
 import '../utils/heroPreload'
 import { initHeroSync } from '../utils/heroSync'
-import { extractCloudinaryPublicId, prefetchProjectVideo, preloadProjectForSwitch, isPortraitMobileNow } from '../utils/heroPreload'
+import { extractCloudinaryPublicId, prefetchProjectVideo, prefetchProjectImages, preloadProjectForSwitch, isPortraitMobileNow } from '../utils/heroPreload'
+import { heroProgress } from '../utils/heroProgress'
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SEO from '../components/SEO';
 import { useNavigate } from 'react-router-dom';
@@ -1177,14 +1178,20 @@ const HomePage: React.FC = () => {
   // sits as a sibling wrapper around the carousel.
   const [activeProjectIndex, setActiveProjectIndex] = useState(0);
 
-  // Playback progress (0–1) of the active project's video, used to draw the
-  // growing line under its number in the carousel. Reset whenever the active
+  // Playback progress (0–1) of the active project's video lives in an external
+  // store (utils/heroProgress), NOT in React state here: it ticks ~4×/sec, and
+  // as state it re-rendered this whole page on every tick, which made the hero
+  // (and taps on the project numbers) laggy on phones. Only the small progress
+  // line under the active number subscribes to it. Reset whenever the active
   // project changes so the new video's tab doesn't briefly show the old
   // video's leftover progress before its own timeupdate ticks arrive.
-  const [heroVideoProgress, setHeroVideoProgress] = useState(0);
   useEffect(() => {
-    setHeroVideoProgress(0);
+    heroProgress.set(0);
   }, [activeProjectIndex]);
+
+  // Project the visitor has asked for but that isn't shown yet (still loading).
+  // Drives an immediate "loading" pulse on the tapped number.
+  const [pendingProjectIndex, setPendingProjectIndex] = useState<number | null>(null);
 
   // If the CMS content reloads with fewer projects than before (e.g. admin
   // trims 3 down to 1), clamp back to a valid index instead of pointing at
@@ -1267,13 +1274,20 @@ const HomePage: React.FC = () => {
   activeProjectIndexRef.current = activeProjectIndex;
   const switchTokenRef = useRef(0);
 
-  const requestProject = useCallback((index: number) => {
+  // `waitForVideo` is false for a visitor's tap (see preloadProjectForSwitch):
+  // the switch then waits only for the poster + logos (short timeout) and the
+  // video loads behind the poster, instead of the tap doing nothing for
+  // seconds. The automatic advance after a video ends still waits for the
+  // video's first chunk, since nobody is waiting on that one.
+  const requestProject = useCallback((index: number, opts?: { waitForVideo?: boolean }) => {
     const item = heroProjectItems[index];
     if (!item || index === activeProjectIndexRef.current) {
       switchTokenRef.current += 1; // cancel any pending switch to elsewhere
+      setPendingProjectIndex(null);
       return;
     }
     const token = ++switchTokenRef.current;
+    setPendingProjectIndex(index); // instant feedback on the tapped number
     const desktopId = extractCloudinaryPublicId(item.cloudinaryVideoUrl);
     const mobileId = item.cloudinaryVideoUrlMobile
       ? extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile)
@@ -1283,16 +1297,46 @@ const HomePage: React.FC = () => {
     preloadProjectForSwitch({
       publicId: videoId || undefined,
       logoUrls: getHeroProjectLogos(item).map((l) => l.url),
+      waitForVideo: opts?.waitForVideo ?? false,
     }).then(() => {
-      if (switchTokenRef.current === token) setActiveProjectIndex(index);
+      if (switchTokenRef.current === token) {
+        setActiveProjectIndex(index);
+        setPendingProjectIndex(null);
+      }
     });
   }, [heroProjectItems]);
 
   const handleProjectVideoEnded = useCallback(() => {
     if (heroProjectItems.length > 1) {
-      requestProject((activeProjectIndexRef.current + 1) % heroProjectItems.length);
+      requestProject((activeProjectIndexRef.current + 1) % heroProjectItems.length, { waitForVideo: true });
     }
   }, [heroProjectItems.length, requestProject]);
+
+  // Warm the poster + logos of EVERY project once the hero content is known,
+  // at idle time. Images are tiny next to the videos, and (unlike the video
+  // <link rel="prefetch"> below) this works on Safari/iOS too, so tapping any
+  // number finds its poster already cached and the switch is near-instant.
+  useEffect(() => {
+    if (heroProjectItems.length <= 1) return;
+    const run = () => {
+      heroProjectItems.forEach((item) => {
+        const desktopId = extractCloudinaryPublicId(item.cloudinaryVideoUrl);
+        const mobileId = item.cloudinaryVideoUrlMobile
+          ? extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile)
+          : undefined;
+        prefetchProjectImages({
+          publicId: (isPortraitMobileNow() && mobileId ? mobileId : desktopId) || undefined,
+          logoUrls: getHeroProjectLogos(item).map((l) => l.url),
+        });
+      });
+    };
+    const ric = typeof requestIdleCallback === 'function' ? requestIdleCallback : null;
+    const idleId = ric ? ric(run, { timeout: 3000 }) : window.setTimeout(run, 1200);
+    return () => {
+      if (ric && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId as number);
+      else window.clearTimeout(idleId as number);
+    };
+  }, [heroProjectItems]);
 
   // Warm the cache for whichever project tab the visitor is most likely to
   // land on next — the auto-advance target, and the tab on either side of
@@ -1365,7 +1409,7 @@ const HomePage: React.FC = () => {
           // Only wired up with 2+ projects — with a single project (or
           // none) the video should keep looping forever, same as before.
           onEnded={heroProjectItems.length > 1 ? handleProjectVideoEnded : undefined}
-          onProgress={setHeroVideoProgress}
+          onProgress={heroProgress.set}
           // Pauset, mens portfolio-kortet er åbent oven på hero'en.
           paused={projectModalOpen}
         >
@@ -1375,7 +1419,7 @@ const HomePage: React.FC = () => {
               data={{ content: heroProjectItems }}
               activeIndex={activeProjectIndex}
               onChangeIndex={requestProject}
-              progress={heroVideoProgress}
+              pendingIndex={pendingProjectIndex}
               onSeeMore={handleSeeProject}
             />
           </div>

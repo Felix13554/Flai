@@ -300,7 +300,24 @@ export function isPortraitMobileNow(): boolean {
   return window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches
 }
 
-function loadImageReady(url: string): Promise<void> {
+/**
+ * The exact src/srcset the hero <img> poster renders for a project
+ * (see HeroVideoSection: 480w/960w 'eco' + 1920w 'good', sizes="100vw").
+ * Preloading through THESE sources makes the browser pick the very same
+ * candidate the rendered <img> will ask for (a phone gets the small file),
+ * so the preload actually fills the cache the poster reads from. The old
+ * preload always fetched the 1920w file — wasted bytes on phones, and a cache
+ * miss when the <img> then requested the smaller one.
+ */
+function posterImageSources(publicId: string): { src: string; srcSet: string } {
+  const stamp = _posterStamp
+  const p480  = cloudinaryPosterUrl(publicId,  480, 'eco',  stamp)
+  const p960  = cloudinaryPosterUrl(publicId,  960, 'eco',  stamp)
+  const p1920 = cloudinaryPosterUrl(publicId, 1920, 'good', stamp)
+  return { src: p1920, srcSet: `${p480} 480w, ${p960} 960w, ${p1920} 1920w` }
+}
+
+function loadImageReady(url: string, srcset?: string): Promise<void> {
   return new Promise<void>((resolve) => {
     if (!url) { resolve(); return }
     const img = new Image()
@@ -312,6 +329,11 @@ function loadImageReady(url: string): Promise<void> {
     }
     img.onerror = () => resolve()
     img.decoding = 'async'
+    // sizes/srcset must be set BEFORE src so the right candidate is chosen.
+    if (srcset) {
+      img.sizes  = '100vw'
+      img.srcset = srcset
+    }
     img.src = url
   })
 }
@@ -348,20 +370,32 @@ function loadVideoReady(url: string): Promise<void> {
 export function preloadProjectForSwitch(opts: {
   publicId?: string
   logoUrls?: string[]
+  /**
+   * Also wait for the first chunk of the video (default true — used by the
+   * automatic advance after a video ends, where nobody is waiting).
+   * Pass false for a visitor's tap: the switch then only waits for the poster
+   * and logos, and the video keeps loading behind the poster via
+   * HeroVideoSection. Waiting for the video made a tap feel dead for seconds
+   * (and the throwaway <video> fetch was thrown away and re-downloaded).
+   */
+  waitForVideo?: boolean
   timeoutMs?: number
 }): Promise<void> {
   if (typeof document === 'undefined') return Promise.resolve()
-  const { publicId, logoUrls = [], timeoutMs = 8000 } = opts
-  const key = `${publicId ?? ''}|${logoUrls.join(',')}`
+  const { publicId, logoUrls = [], waitForVideo = true } = opts
+  // A tap should never wait long; the auto-advance can afford to.
+  const timeoutMs = opts.timeoutMs ?? (waitForVideo ? 8000 : 1500)
+  const key = `${publicId ?? ''}|${logoUrls.join(',')}|${waitForVideo ? 'v' : 'p'}`
   const existing = _switchPreloads.get(key)
   if (existing) return existing
 
   const { isSlow, saveData } = getConnectionInfo()
   const tasks: Promise<void>[] = []
   if (publicId) {
-    tasks.push(loadImageReady(cloudinaryPosterUrl(publicId, 1920, 'good')))
+    const { src, srcSet } = posterImageSources(publicId)
+    tasks.push(loadImageReady(src, srcSet))
     // Never spend a slow/metered connection's data on the video up front.
-    if (!isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryMp4Url(publicId)))
+    if (waitForVideo && !isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryMp4Url(publicId)))
   }
   logoUrls.forEach((u) => tasks.push(loadImageReady(u)))
 
@@ -369,6 +403,39 @@ export function preloadProjectForSwitch(opts: {
   const p = Promise.race([Promise.all(tasks).then(() => undefined), timeout])
   _switchPreloads.set(key, p)
   return p
+}
+
+// ─── Poster + logo prefetch for EVERY project ─────────────────────────────────
+// The video prefetch above only covers the neighbouring projects, and uses
+// <link rel="prefetch">, which Safari/iOS doesn't support at all. Posters and
+// logos are small images, so warm them for ALL projects at idle time through
+// plain Image() objects (works everywhere): tapping any number then finds its
+// poster and logos already cached, and the switch is near-instant.
+const _prefetchedImages = new Map<string, HTMLImageElement>()
+
+function prefetchImage(url: string, srcset?: string): void {
+  const key = srcset ? `${url}|${srcset}` : url
+  if (!url || _prefetchedImages.has(key)) return
+  const img = new Image()
+  img.decoding = 'async'
+  if (srcset) {
+    img.sizes  = '100vw'
+    img.srcset = srcset
+  }
+  img.src = url
+  // Keep a reference so the request isn't dropped by garbage collection.
+  _prefetchedImages.set(key, img)
+}
+
+export function prefetchProjectImages(opts: { publicId?: string; logoUrls?: string[] }): void {
+  if (typeof document === 'undefined') return
+  const { saveData } = getConnectionInfo()
+  if (saveData) return
+  if (opts.publicId) {
+    const { src, srcSet } = posterImageSources(opts.publicId)
+    prefetchImage(src, srcSet)
+  }
+  opts.logoUrls?.forEach((u) => prefetchImage(u))
 }
 
 // ─── Cache busting ────────────────────────────────────────────────────────────
