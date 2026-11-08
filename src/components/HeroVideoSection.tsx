@@ -1,5 +1,12 @@
 /**
- * HeroVideoSection — v21
+ * HeroVideoSection — v22
+ *
+ * v22 — COST: on a portrait phone a LANDSCAPE video is requested as a variant
+ * that Cloudinary has already cropped to the strip object-fit:cover shows, so
+ * the hidden left/right parts are never downloaded. The format is picked in
+ * code (no f_auto) so every variant can be pre-created after upload. If the
+ * browser can't load a URL, the next fallback is used automatically: same crop
+ * in H.264 → uncropped → uncropped H.264 (see cloudinaryHeroSources).
  *
  * v21 — COST: the video is now requested through cloudinaryHeroMp4Url — capped
  * to 720 / 1280 / 1920 px wide depending on device + connection, with the
@@ -64,9 +71,9 @@ import React, {
 } from 'react'
 import {
   getHeroVideo,
-  cloudinaryHeroMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
+import { cloudinaryHeroSources } from '../utils/cloudinaryUrls'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
 import { useAdminHeroAutoplayOff } from '../utils/adminHeroAutoplay'
 
@@ -417,8 +424,40 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // ▶ v21: resolution-capped, audio-free delivery URL (see cloudinaryHeroMp4Url).
   // Memoised on publicId only, so the URL — and therefore the cached bytes —
   // stays stable across reconnects and layout changes for a given video.
-  const videoSrc = useMemo(() => cloudinaryHeroMp4Url(publicId), [publicId])
+  //
+  // v22: on a portrait phone, a landscape video is cropped by Cloudinary to the
+  // visible strip. The dedicated vertical cut (controlledMobilePublicId) is
+  // already vertical, so it is never cropped.
+  const cropVideo =
+    isPortraitMobile && !(controlledMobilePublicId && publicId === controlledMobilePublicId)
+  const videoSources = useMemo(
+    () => cloudinaryHeroSources(publicId, undefined, { crop: cropVideo }),
+    [publicId, cropVideo]
+  )
+  // Which entry of `videoSources` is in use. Moves forward when a URL fails to
+  // load; resets whenever the list itself changes.
+  const sourceIndexRef   = useRef(0)
+  const sourcesKeyRef    = useRef('')
+  const videoSourcesRef  = useRef<string[]>(videoSources)
+  const sourcesKey = videoSources.join('|')
+  if (sourcesKeyRef.current !== sourcesKey) {
+    sourcesKeyRef.current = sourcesKey
+    sourceIndexRef.current = 0
+  }
+  videoSourcesRef.current = videoSources
+  const videoSrc = videoSources[Math.min(sourceIndexRef.current, videoSources.length - 1)]
   videoSrcRef.current = videoSrc
+
+  // Rotating a phone with a single (landscape) video switches between the
+  // cropped and uncropped variant — reload once so the right one plays.
+  const prevCropRef = useRef(cropVideo)
+  useEffect(() => {
+    if (prevCropRef.current === cropVideo) return
+    prevCropRef.current = cropVideo
+    setVideoReady(false)
+    setShowPlayButton(false)
+    setVideoKey((k) => k + 1)
+  }, [cropVideo])
 
   // ── Ref callback ────────────────────────────────────────────────────────
   // Intentionally stable (no deps). Reads src from videoSrcRef to avoid the
@@ -488,6 +527,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       if (newId) {
         setVideoReady(false)
         setShowPlayButton(false)
+        sourceIndexRef.current = 0 // a fresh upload deserves the best variant again
         if (newId !== publicId) setPublicId(newId)
         else                    setVideoKey((k) => k + 1)
       }
@@ -786,12 +826,32 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     ;(video as any).__heroAttemptPlay = attemptPlay
     ;(video as any).__heroReconnect   = reconnect
 
-    const onPlaying    = () => { captureFrameToCanvas(); markReady(); resetReconnect(); window.clearTimeout(stalledGraceTimer) }
+    // v22: fallback chain. Before the first frame has ever played, a failing
+    // URL (crop rejected, codec unplayable, variant missing) moves to the next
+    // entry of videoSources instead of retrying the same dead URL.
+    let everPlayed = false
+    const advanceSource = () => {
+      const list = videoSourcesRef.current
+      if (sourceIndexRef.current >= list.length - 1) return false
+      sourceIndexRef.current += 1
+      const next = list[sourceIndexRef.current]
+      console.warn('[HeroVideo] source failed — falling back to', next)
+      videoSrcRef.current = next
+      video.pause()
+      video.src = next
+      video.load()
+      attemptPlay()
+      return true
+    }
+    const onPlaying    = () => { everPlayed = true; captureFrameToCanvas(); markReady(); resetReconnect(); window.clearTimeout(stalledGraceTimer) }
     const onLoadedData = () => { if (!destroyed && video.paused) attemptPlay() }
     const onCanPlay    = () => { if (!destroyed && video.paused && !video.ended) attemptPlay() }
     const onError      = () => {
       if (destroyed || !video.error) return
       console.warn('[HeroVideo] error', video.error.code, video.error.message)
+      // 3 = decode error, 4 = source unsupported / not found / still processing
+      const code = video.error.code
+      if ((!everPlayed || code === 3 || code === 4) && advanceSource()) return
       reconnect('error')
     }
     const onStalled = () => armStallGrace('stalled')

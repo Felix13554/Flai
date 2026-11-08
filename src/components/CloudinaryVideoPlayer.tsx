@@ -23,7 +23,7 @@
 import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
-import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
+import { cloudinaryPlayerSources, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
 
 const RECONNECT_MAX_ATTEMPTS = 4;
 const RECONNECT_STALL_GRACE_MS = 6000;
@@ -61,6 +61,8 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
   const playerId = useRef(`cld-${++_playerCounter}`).current;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
+  startedRef.current = started;
   const [failed, setFailed] = useState(false);
 
   // Bandwidth: fetch NOTHING until the visitor presses play. The poster covers
@@ -69,9 +71,21 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
   // a short wait for the first bytes after pressing play.
   const preloadVal = 'none';
 
-  const videoSrc = useMemo(() => cloudinaryPlayerVideoUrl(publicId), [publicId]);
+  // Best URL first, H.264 as fallback if the browser can't load it (a codec it
+  // can't play, or a variant that is missing).
+  const videoSources = useMemo(() => cloudinaryPlayerSources(publicId), [publicId]);
+  const videoSourcesRef = useRef(videoSources);
+  videoSourcesRef.current = videoSources;
+  const sourceIndexRef = useRef(0);
+  const sourcesKeyRef = useRef('');
+  const sourcesKey = videoSources.join('|');
+  if (sourcesKeyRef.current !== sourcesKey) {
+    sourcesKeyRef.current = sourcesKey;
+    sourceIndexRef.current = 0;
+  }
+  const videoSrc = videoSources[0];
   const videoSrcRef = useRef(videoSrc);
-  videoSrcRef.current = videoSrc;
+  videoSrcRef.current = videoSources[Math.min(sourceIndexRef.current, videoSources.length - 1)];
 
   const posterUrl = useMemo(() => cloudinaryPosterUrl(publicId, 1920, 'good'), [publicId]);
   const poster480 = useMemo(() => cloudinaryPosterUrl(publicId, 480, 'eco'), [publicId]);
@@ -174,10 +188,26 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       }, RECONNECT_STALL_GRACE_MS);
     };
 
-    const onError = () => { if (video.error) reconnect(); };
+    let everPlayed = false;
+    const onError = () => {
+      if (!video.error) return;
+      // Before the first frame ever played: try the next URL in the list.
+      const list = videoSourcesRef.current;
+      if (!everPlayed && sourceIndexRef.current < list.length - 1) {
+        sourceIndexRef.current += 1;
+        videoSrcRef.current = list[sourceIndexRef.current];
+        video.src = videoSrcRef.current;
+        video.load();
+        if (startedRef.current) video.play().catch(() => {});
+        return;
+      }
+      reconnect();
+    };
+    const markPlayed = () => { everPlayed = true; };
     const clearStall = () => { window.clearTimeout(stallTimer); attempts = 0; };
 
     video.addEventListener('error', onError);
+    video.addEventListener('playing', markPlayed);
     video.addEventListener('stalled', armStall);
     video.addEventListener('waiting', armStall);
     video.addEventListener('playing', clearStall);
@@ -188,6 +218,7 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       window.clearTimeout(reconnectTimer);
       window.clearTimeout(stallTimer);
       video.removeEventListener('error', onError);
+      video.removeEventListener('playing', markPlayed);
       video.removeEventListener('stalled', armStall);
       video.removeEventListener('waiting', armStall);
       video.removeEventListener('playing', clearStall);

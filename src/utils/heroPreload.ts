@@ -259,7 +259,7 @@ export function injectPreloadHints(publicId = heroVideo.public_id, stamp = _post
 // poster that no phone would ever display).
 const _prefetchedVideoUrls = new Set<string>()
 
-export function prefetchProjectVideo(publicId: string): void {
+export function prefetchProjectVideo(publicId: string, opts: { crop?: boolean } = {}): void {
   if (typeof document === 'undefined' || !publicId) return
   const { isSlow, saveData } = getConnectionInfo()
   // Never spend a slow/metered connection's data budget on a video the user
@@ -267,7 +267,9 @@ export function prefetchProjectVideo(publicId: string): void {
   // uses (skipVideo) for the video that IS on screen.
   if (isSlow || saveData) return
 
-  const url = cloudinaryHeroMp4Url(publicId)
+  // `crop` must match what HeroVideoSection will request, or the prefetched
+  // bytes are never reused (see HeroVideoSection / cloudinaryHeroSources).
+  const url = cloudinaryHeroMp4Url(publicId, undefined, { crop: opts.crop })
   if (_prefetchedVideoUrls.has(url)) return
   _prefetchedVideoUrls.add(url)
 
@@ -365,6 +367,8 @@ function loadVideoReady(url: string): Promise<void> {
 
 export function preloadProjectForSwitch(opts: {
   publicId?: string
+  /** Landscape video on a portrait phone → preload the cropped variant (same as the hero). */
+  crop?: boolean
   logoUrls?: string[]
   /**
    * Also wait for the first chunk of the video (default true — used by the
@@ -378,10 +382,10 @@ export function preloadProjectForSwitch(opts: {
   timeoutMs?: number
 }): Promise<void> {
   if (typeof document === 'undefined') return Promise.resolve()
-  const { publicId, logoUrls = [], waitForVideo = true } = opts
+  const { publicId, logoUrls = [], waitForVideo = true, crop = false } = opts
   // A tap should never wait long; the auto-advance can afford to.
   const timeoutMs = opts.timeoutMs ?? (waitForVideo ? 8000 : 1500)
-  const key = `${publicId ?? ''}|${logoUrls.join(',')}|${waitForVideo ? 'v' : 'p'}`
+  const key = `${publicId ?? ''}|${logoUrls.join(',')}|${waitForVideo ? 'v' : 'p'}|${crop ? 'c' : 'f'}`
   const existing = _switchPreloads.get(key)
   if (existing) return existing
 
@@ -391,7 +395,7 @@ export function preloadProjectForSwitch(opts: {
     const { src, srcSet } = posterImageSources(publicId)
     tasks.push(loadImageReady(src, srcSet))
     // Never spend a slow/metered connection's data on the video up front.
-    if (waitForVideo && !isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryHeroMp4Url(publicId)))
+    if (waitForVideo && !isSlow && !saveData) tasks.push(loadVideoReady(cloudinaryHeroMp4Url(publicId, undefined, { crop })))
   }
   logoUrls.forEach((u) => tasks.push(loadImageReady(u)))
 
