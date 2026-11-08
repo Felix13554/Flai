@@ -5,7 +5,7 @@
  * Viser i terminalen hvor meget mindre dine Cloudinary-videoer fylder med den
  * nye levering (c_limit + f_auto + q_auto) sammenlignet med den gamle.
  *
- *   node scripts/video-savings.mjs <public_id> [<public_id> ...] [--tiers=small,medium,large]
+ *   node scripts/video-savings.mjs <public_id> [<public_id> ...] [--devices=phone,laptop,wide]
  *   npm run video:savings -- mappe/min_video
  *
  * public_id er det samme som i admin (uden "cloudinary:" foran og uden filendelse).
@@ -15,7 +15,7 @@
  * videoen, så det koster næsten ingen bandwidth. MEN: hvis en variant ikke er
  * lavet endnu, starter forespørgslen selve transkodningen hos Cloudinary
  * (koster transformations-credits én gang, og kan tage lidt tid). Derfor er
- * standard kun small + medium; tilføj large med --tiers=small,medium,large.
+ * standard kun telefon + laptop; tilføj bred skærm med --devices=phone,laptop,wide.
  *
  * Kræver Node 18+. Ingen pakker.
  *
@@ -25,10 +25,26 @@
 
 const CLOUD = 'dq6jxbyrg'
 
+// NYE tiers (skal følge HERO_TIERS i src/utils/cloudinaryUrls.ts)
 const TIERS = {
-  small:  { width: 720,  quality: 'eco',  label: 'Telefon (lodret)' },
-  medium: { width: 1280, quality: 'good', label: 'Laptop / tablet' },
-  large:  { width: 1920, quality: 'good', label: 'Bred skærm' },
+  small:  { width: 720,  quality: 'eco'  },
+  mobile: { width: 1080, quality: 'good' },
+  medium: { width: 1280, quality: 'good' },
+  large:  { width: 1920, quality: 'good' },
+}
+// GAMLE tiers (før telefon-tieren kom til) – bruges kun til "Før"-kolonnen.
+const OLD_TIERS = {
+  small:  { width: 720,  quality: 'eco'  },
+  medium: { width: 1280, quality: 'good' },
+  large:  { width: 1920, quality: 'good' },
+}
+
+// Hvilken tier får hvilken enhed? Hero giver lodrette telefoner den skarpe
+// 'mobile'; afspillerne bliver på den lette 'small'.
+const DEVICES = {
+  phone:  { label: 'Telefon (lodret)', hero: 'mobile', player: 'small',  oldHero: 'small' },
+  laptop: { label: 'Laptop / tablet',  hero: 'medium', player: 'medium', oldHero: 'medium' },
+  wide:   { label: 'Bred skærm',       hero: 'large',  player: 'large',  oldHero: 'large' },
 }
 
 // f_auto vælger format ud fra browseren, så vi spørger som to forskellige.
@@ -47,7 +63,7 @@ const BROWSERS = {
 const base = `https://res.cloudinary.com/${CLOUD}/video/upload/`
 
 // GAMMELT (før ændringen)
-const oldHero   = (id, t) => `${base}vc_h264,ac_none/c_limit,w_${TIERS[t].width}/f_mp4/q_auto:${TIERS[t].quality}/${id}.mp4`
+const oldHero   = (id, t) => `${base}vc_h264,ac_none/c_limit,w_${OLD_TIERS[t].width}/f_mp4/q_auto:${OLD_TIERS[t].quality}/${id}.mp4`
 const oldPlayer = (id)    => `${base}vc_h264/f_mp4/q_auto:good/${id}.mp4`
 // NYT
 const newHero   = (id, t) => `${base}c_limit,w_${TIERS[t].width}/ac_none/f_auto/q_auto:${TIERS[t].quality}/${id}.mp4`
@@ -111,12 +127,12 @@ async function fileSize(url, ua) {
 
 // ─── Kør ───────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2)
-const tierArg = args.find((a) => a.startsWith('--tiers='))
-const tiers = (tierArg ? tierArg.slice(8) : 'small,medium').split(',').filter((t) => TIERS[t])
+const devArg = args.find((a) => a.startsWith('--devices='))
+const devices = (devArg ? devArg.slice(10) : 'phone,laptop').split(',').filter((d) => DEVICES[d])
 const ids = args.filter((a) => !a.startsWith('--')).map(extractPublicId)
 
-if (ids.length === 0 || tiers.length === 0) {
-  console.log('Brug: node scripts/video-savings.mjs <public_id> [<public_id> ...] [--tiers=small,medium,large]')
+if (ids.length === 0 || devices.length === 0) {
+  console.log('Brug: node scripts/video-savings.mjs <public_id> [<public_id> ...] [--devices=phone,laptop,wide]')
   process.exit(1)
 }
 
@@ -132,8 +148,10 @@ for (const id of ids) {
     console.log('\n  ' + bold(kind === 'Hero' ? 'Hero (uden lyd, auto-loop)' : 'Produkt / portfolio / preview (med lyd)'))
     console.log(dim('  ' + 'Enhed'.padEnd(18) + 'Før'.padStart(10) + '   ' + 'Nu i Chrome'.padEnd(28) + 'Nu i Safari'))
 
-    for (const t of tiers) {
-      const oldUrl = kind === 'Hero' ? oldHero(id, t) : oldPlayer(id)
+    for (const d of devices) {
+      const dev = DEVICES[d]
+      const t = kind === 'Hero' ? dev.hero : dev.player
+      const oldUrl = kind === 'Hero' ? oldHero(id, dev.oldHero) : oldPlayer(id)
       const newUrl = kind === 'Hero' ? newHero(id, t) : newPlayer(id, t)
 
       const old = await fileSize(oldUrl, BROWSERS.chrome.ua)
@@ -149,7 +167,7 @@ for (const id of ids) {
       }
 
       console.log(
-        '  ' + TIERS[t].label.padEnd(18) +
+        '  ' + dev.label.padEnd(18) +
         (old.error ? red('fejl'.padStart(10)) : mb(old.bytes).padStart(10)) + '   ' +
         cell(nowChrome) + ' ' + cell(nowSafari),
       )

@@ -126,8 +126,14 @@ export function cloudinaryPosterUrl(
 // Every tier is a separate derived asset on Cloudinary, so keep the tier list
 // short: each (video × tier) is transcoded once, on its first request.
 const HERO_TIERS = {
-  /** Portrait phones, Data Saver, 2g/3g — the vertical cut is 720×1280 here. */
+  /** Data Saver and 2g/3g connections only — deliberately small and soft. */
   small:  { width: 720,  quality: 'eco'  },
+  /**
+   * Portrait phones. A phone screen is ~1170 physical pixels wide, so 720 was
+   * stretched ~1.6x and `eco` added blockiness on top — the hero looked soft.
+   * 1080 wide at `good` is sharp on a phone without paying for a 1920 file.
+   */
+  mobile: { width: 1080, quality: 'good' },
   /** Phone landscape, tablets, laptops and most desktops. */
   medium: { width: 1280, quality: 'good' },
   /** Wide desktops (> 1600 CSS px). */
@@ -158,7 +164,7 @@ export function heroVideoTier(): HeroVideoTier {
   const w = window.innerWidth
   const h = window.innerHeight
   // Same test the app uses for "portrait phone" (see isPortraitMobileNow).
-  if (w < 768 && h > w) return 'small'
+  if (w < 768 && h > w) return 'mobile'
 
   return w > 1600 ? 'large' : 'medium'
 }
@@ -198,6 +204,15 @@ export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = her
  * Product / portfolio / preview players: same tiers and auto-format as the
  * hero, but WITH audio — the visitor starts these videos themselves, with sound.
  */
-export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
+export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = playerVideoTier()): string {
   return optimizedVideoUrl(publicId, tier, true)
+}
+
+/**
+ * Players sit in a small 16:9 box and start on a tap, so portrait phones keep
+ * the lighter 720 tier (only the full-screen hero gets the sharper `mobile` one).
+ */
+export function playerVideoTier(): HeroVideoTier {
+  const tier = heroVideoTier()
+  return tier === 'mobile' ? 'small' : tier
 }
