@@ -14,17 +14,20 @@
  *  1. UPLOAD PRESET (Cloudinary Dashboard → Settings → Upload → Herovideo):
  *       `eager`, `eager_async` and `overwrite` are NOT allowed in unsigned
  *       upload requests — configure them once in the preset's Transform tab:
+ *         Eager: sp_hd/f_m3u8         ← HLS (pre-generation for repeat visitors)
+ *         Eager: f_mp4,q_auto:good,vc_h264
+ *         Eager: f_webm,q_auto:good,vc_vp9
+ *         Eager: vc_h264/so_0/f_jpg,q_auto:good,w_1280
  *         eager_async: true   ← prevents timeouts on large videos
  *         overwrite:   true   ← required for the replace flow
- *       Leave the Eager list EMPTY — variants are created by /api/cloudinary-eager.
  *
- *  2. POST-UPLOAD PRE-CREATION via the Vercel function /api/cloudinary-eager:
- *     After every upload/replace the client calls it (and the "Opret alle
- *     kombinationer" buttons call it on demand). It signs a Cloudinary
- *     `explicit` request with eager_async=true for EVERY variant the site can
- *     request (see utils/cloudinaryVariantSpec.js — the same list that builds
- *     the delivery URLs). The old preset eagers (HLS / full-size MP4 / WebM)
- *     are no longer used by the site and should be removed from the preset.
+ *       Delivery URLs use sp_auto (works on first request without pre-generation).
+ *       Eager uses sp_hd so repeat visitors get a pre-cached multi-bitrate HLS.
+ *
+ *  2. POST-UPLOAD EXPLICIT via Supabase edge function (signed):
+ *     After each upload the client fires POST ?eager=1&id=<public_id> to the
+ *     edge function, which calls Cloudinary's signed `explicit` endpoint to
+ *     pre-warm all derivatives — belt-and-suspenders on top of the preset.
  *
  *  3. DELIVERY URLs always carry q_auto and format/codec params so every
  *     video is served optimally regardless of when it was uploaded.
@@ -43,7 +46,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Video, Upload, Trash2, Edit3, Save, X, Search, Link, Play,
   RefreshCw, ChevronDown, ChevronUp, ExternalLink, AlertCircle,
-  CheckCircle, Loader2, Copy, Tag, FileVideo, UploadCloud, Zap, Layers,
+  CheckCircle, Loader2, Copy, Tag, FileVideo, UploadCloud, Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSiteContent } from '../../hooks/useSiteContent';
@@ -55,9 +58,7 @@ import {
   cloudinaryWebmUrl,
   bustHeroCache,
 } from '../../utils/heroPreload';
-import { cloudinaryHeroMp4Url } from '../../utils/cloudinaryUrls';
 import { broadcastHeroUpdate } from '../../utils/heroSync';
-import { supabase } from '../../utils/supabase';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,13 @@ const EDGE_KEY = 't4fr3ZXEo_duMoZiGY_FqtFWUfw';
 
 /** Chunk size for chunked uploads — 6 MB is well within Cloudinary's limits */
 const CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
+
+const EAGER_ALL = [
+  'sp_hd/f_m3u8',
+  'f_mp4,q_auto:good,vc_h264',
+  'f_webm,q_auto:good,vc_vp9',
+  'vc_h264/so_0/f_jpg,q_auto:good,w_1280',
+].join('|');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,34 +118,9 @@ const edgeFetch = async (path: string, init: RequestInit = {}) => {
   return json;
 };
 
-// ─── Variant pre-creation (Vercel function) ───────────────────────────────────
-//
-// Asks /api/cloudinary-eager to create every delivery variant in the background
-// (eager_async), so the first visitor never waits for a transcode. Admin-only:
-// the function checks the Supabase session. Resolves with how many variants
-// were requested.
-
-const createAllVariants = async (
-  publicId: string,
-  dims?: { width?: number; height?: number },
-): Promise<{ requested: number; landscape: boolean }> => {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error('Du er ikke logget ind');
-
-  const res = await fetch('/api/cloudinary-eager', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ publicId, width: dims?.width, height: dims?.height }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-  return json;
-};
-
 // ─── Chunked upload ───────────────────────────────────────────────────────────
 
-interface UploadResult { public_id: string; width?: number; height?: number }
+interface UploadResult { public_id: string }
 
 async function cldUpload(
   file: File,
@@ -210,7 +193,7 @@ async function cldUpload(
   return result as UploadResult;
 }
 
-// ─── EagerBadge — polls until the delivery variants are ready ────────────────
+// ─── EagerBadge — polls until HLS manifest is ready ──────────────────────────
 
 const EagerBadge: React.FC<{ publicId: string }> = ({ publicId }) => {
   const [ready, setReady] = useState(false);
@@ -218,9 +201,7 @@ const EagerBadge: React.FC<{ publicId: string }> = ({ publicId }) => {
   useEffect(() => {
     let attempts = 0;
     const maxAttempts = 36;
-    // The largest hero variant is the last-requested heavy one; once it answers,
-    // the variants have been created (HLS is no longer pre-created).
-    const url = cloudinaryHeroMp4Url(publicId, 'large');
+    const url = cloudinaryHlsUrl(publicId);
 
     const check = async () => {
       try {
@@ -445,14 +426,11 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
       setStage('done');
       toast.success('Video uploadet — Cloudinary optimerer nu i baggrunden…');
 
-      // Fire-and-forget: ask Cloudinary to create every delivery variant in the
-      // background so the first visitor never waits for a transcode.
-      createAllVariants(result.public_id, { width: result.width, height: result.height })
-        .then((r) => toast.success(`Opretter ${r.requested} videoversioner i baggrunden…`))
-        .catch((e) => {
-          console.warn('Variant pre-creation failed (non-fatal):', e.message);
-          toast.error('Kunne ikke oprette videoversioner automatisk — brug "Opret alle kombinationer"');
-        });
+      // Fire-and-forget: pre-warm eager derivatives server-side.
+      edgeFetch(
+        `?eager=1&id=${encodeURIComponent(result.public_id)}`,
+        { method: 'POST' }
+      ).catch((e) => console.warn('Eager pre-warm failed (non-fatal):', e.message));
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately — updates poster stamp + dispatches
@@ -601,7 +579,7 @@ const ReplaceVideoModal: React.FC<{
       );
 
       // Step 2 — re-upload to same public_id
-      const replaced = await cldUpload(file, {
+      await cldUpload(file, {
         publicId:   savedBareId,
         onProgress: setPct,
         signal:     abort.current.signal,
@@ -609,13 +587,11 @@ const ReplaceVideoModal: React.FC<{
         alt:        savedAlt,
       });
 
-      // Step 3 — fire-and-forget: re-create every delivery variant
-      createAllVariants(savedPublicId, { width: replaced.width, height: replaced.height })
-        .then((r) => toast.success(`Opretter ${r.requested} videoversioner i baggrunden…`))
-        .catch((e) => {
-          console.warn('Variant pre-creation failed (non-fatal):', e.message);
-          toast.error('Kunne ikke oprette videoversioner automatisk — brug "Opret alle kombinationer"');
-        });
+      // Step 3 — fire-and-forget: pre-warm eager derivatives
+      edgeFetch(
+        `?eager=1&id=${encodeURIComponent(savedPublicId)}`,
+        { method: 'POST' }
+      ).catch((e) => console.warn('Eager pre-warm failed (non-fatal):', e.message));
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately.
@@ -736,7 +712,6 @@ const VideoRow: React.FC<{
   const [saving, setSaving]               = useState(false);
   const [deleting, setDeleting]           = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [creating, setCreating]           = useState(false);
 
   const hlsUrl  = cloudinaryHlsUrl(video.public_id);
   const mp4Url  = cloudinaryMp4Url(video.public_id);
@@ -768,18 +743,6 @@ const VideoRow: React.FC<{
       console.warn('Cloudinary context update failed:', e.message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleCreateAll = async () => {
-    setCreating(true);
-    try {
-      const r = await createAllVariants(video.public_id, { width: video.width, height: video.height });
-      toast.success(`Opretter ${r.requested} videoversioner i baggrunden — klar om nogle minutter`);
-    } catch (e: any) {
-      toast.error(e.message ?? 'Kunne ikke oprette videoversioner');
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -850,10 +813,6 @@ const VideoRow: React.FC<{
               <button onClick={() => { setEditing(true); setExpanded(true); }}
                 className="p-1.5 bg-neutral-700 text-neutral-400 rounded-lg hover:bg-neutral-600 transition-colors" title="Rediger metadata">
                 <Edit3 size={14} />
-              </button>
-              <button onClick={handleCreateAll} disabled={creating}
-                className="p-1.5 bg-emerald-500/10 text-emerald-400/80 rounded-lg hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors disabled:opacity-50" title="Opret alle kombinationer (alle størrelser, formater og beskårne mobilversioner)">
-                {creating ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
               </button>
               <button onClick={() => onReplace(video)}
                 className="p-1.5 bg-amber-500/10 text-amber-500/70 rounded-lg hover:bg-amber-500/20 hover:text-amber-400 transition-colors" title="Erstat videofil">
@@ -935,28 +894,6 @@ const VideoManager: React.FC = () => {
   const [assignTarget, setAssignTarget]   = useState<CldVideo | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<CldVideo | null>(null);
 
-  const [bulkRunning, setBulkRunning] = useState(false);
-
-  const handleCreateAllForAll = async () => {
-    if (!videos.length) return;
-    if (!window.confirm(`Opret alle videoversioner for ${videos.length} video(er)? Hver version er en engangs-transkodning hos Cloudinary og koster credits.`)) return;
-    setBulkRunning(true);
-    let ok = 0;
-    let failed = 0;
-    for (const v of videos) {
-      try {
-        await createAllVariants(v.public_id, { width: v.width, height: v.height });
-        ok += 1;
-      } catch (e: any) {
-        failed += 1;
-        console.warn('Variant creation failed for', v.public_id, e.message);
-      }
-    }
-    setBulkRunning(false);
-    if (failed) toast.error(`${ok} videoer startet, ${failed} fejlede`);
-    else toast.success(`Opretter versioner for ${ok} video(er) i baggrunden`);
-  };
-
   const fetchVideos = async () => {
     setLoading(true); setError(null);
     try {
@@ -1006,12 +943,6 @@ const VideoManager: React.FC = () => {
         <div className="flex items-center gap-2">
           <button onClick={fetchVideos} disabled={loading} className="p-2 bg-neutral-700 text-neutral-400 rounded-lg hover:bg-neutral-600 transition-colors" title="Opdater">
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button onClick={handleCreateAllForAll} disabled={bulkRunning || !videos.length}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-500/15 text-emerald-300 text-sm font-medium rounded-lg hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
-            title="Opret alle størrelser, formater og beskårne mobilversioner for alle videoer, så første besøgende ikke venter">
-            {bulkRunning ? <Loader2 size={16} className="animate-spin" /> : <Layers size={16} />}
-            Opret alle kombinationer
           </button>
           <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/80 transition-colors">
             <Upload size={16} />

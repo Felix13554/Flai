@@ -1296,8 +1296,6 @@ const HomePage: React.FC = () => {
     const videoId = isPortraitMobileNow() && mobileId ? mobileId : desktopId;
     preloadProjectForSwitch({
       publicId: videoId || undefined,
-      // A landscape video on a portrait phone is played cropped (see HeroVideoSection).
-      crop: isPortraitMobileNow() && videoId === desktopId,
       logoUrls: getHeroProjectLogos(item).map((l) => l.url),
       waitForVideo: opts?.waitForVideo ?? false,
     }).then(() => {
@@ -1369,7 +1367,7 @@ const HomePage: React.FC = () => {
     let idleId: number | undefined;
     const timer = window.setTimeout(() => {
       if (document.visibilityState === 'hidden') return;
-      const run = () => prefetchProjectVideo(nextId, { crop: portraitPhone && nextId === nextDesktopId });
+      const run = () => prefetchProjectVideo(nextId);
       idleId =
         typeof requestIdleCallback === 'function'
           ? requestIdleCallback(run, { timeout: 4000 })
