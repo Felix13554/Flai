@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProvider } from './contexts/LoadingContext';
 import { DataProvider } from './contexts/DataContext';
-import ColorSystemProvider from './components/ColorSystemProvider';
+import ColorSystemProvider from './components/ColorSystemProvider'; 
 import NavBar from './components/NavBar';
 import { HeroFrameContext, type HeroFrameContextValue } from './contexts/HeroFrameContext';
 import { useAppInitialization } from './hooks/useAppInitialization';
