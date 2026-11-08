@@ -23,7 +23,7 @@
 import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
-import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
+import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl, reportVideoStall } from '../utils/cloudinaryUrls';
 
 const RECONNECT_MAX_ATTEMPTS = 4;
 const RECONNECT_STALL_GRACE_MS = 6000;
@@ -128,7 +128,7 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
     let reconnectTimer: number | undefined;
     let stallTimer: number | undefined;
 
-    const reconnect = () => {
+    const reconnect = (stall = false) => {
       if (destroyed || reconnecting) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       if (attempts >= RECONNECT_MAX_ATTEMPTS) {
@@ -137,6 +137,10 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       }
       reconnecting = true;
       attempts += 1;
+      // A stall (not a hard error) means this connection can't keep up with the
+      // current tier. Two of them downgrade the whole session to the small tier
+      // (downgrade-only — see reportVideoStall in cloudinaryUrls.ts).
+      if (stall) reportVideoStall();
       const delay = Math.min(500 * 2 ** (attempts - 1), 8000);
       window.clearTimeout(reconnectTimer);
       reconnectTimer = window.setTimeout(() => {
@@ -160,7 +164,10 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
         video.addEventListener('loadedmetadata', onMeta, { once: true });
         video.addEventListener('loadeddata', onData, { once: true });
         video.pause();
-        video.src = videoSrcRef.current;
+        // Rebuilt fresh so the retry also picks up a connection that got slower.
+        const retrySrc = cloudinaryPlayerVideoUrl(publicId);
+        videoSrcRef.current = retrySrc;
+        video.src = retrySrc;
         video.load();
       }, delay);
     };
@@ -170,7 +177,7 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       window.clearTimeout(stallTimer);
       stallTimer = window.setTimeout(() => {
         if (destroyed || video.paused || video.ended) return;
-        reconnect();
+        reconnect(true);
       }, RECONNECT_STALL_GRACE_MS);
     };
 
@@ -201,6 +208,16 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
     setStarted(true);
+    // Nothing has been downloaded yet (preload="none"), so this is the cheapest
+    // moment to re-check the connection: if it got slower since the page
+    // loaded (or earlier stalls downgraded the session), start on the lighter file.
+    if (video.readyState === 0) {
+      const fresh = cloudinaryPlayerVideoUrl(publicId);
+      if (video.getAttribute('src') !== fresh) {
+        videoSrcRef.current = fresh;
+        video.src = fresh;
+      }
+    }
     // A click is a user gesture, so playing with sound is allowed.
     video.muted = false;
     video.volume = 1;
@@ -211,7 +228,7 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       video.muted = true;
       video.play().catch(() => setStarted(false));
     });
-  }, [playerId]);
+  }, [playerId, publicId]);
 
   const radius = rounded ? 'rounded-lg' : '';
   const sizing = fill ? 'w-full h-full' : 'w-full aspect-video';

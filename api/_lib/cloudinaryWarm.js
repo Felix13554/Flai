@@ -20,7 +20,7 @@ export const CLOUD = 'dq6jxbyrg'
 
 export const TIERS = {
   small:  { width: 720,  quality: 'eco'  },
-  mobile: { width: 1080, quality: 'good' },
+  mobile: { width: 810,  quality: 'good' },
   medium: { width: 1280, quality: 'good' },
   large:  { width: 1920, quality: 'good' },
 }

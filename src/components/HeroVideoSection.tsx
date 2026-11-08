@@ -67,6 +67,7 @@ import {
   cloudinaryHeroMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
+import { reportVideoStall } from '../utils/cloudinaryUrls'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
 import { useAdminHeroAutoplayOff } from '../utils/adminHeroAutoplay'
 
@@ -417,7 +418,11 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // ▶ v21: resolution-capped, audio-free delivery URL (see cloudinaryHeroMp4Url).
   // Memoised on publicId only, so the URL — and therefore the cached bytes —
   // stays stable across reconnects and layout changes for a given video.
-  const videoSrc = useMemo(() => cloudinaryHeroMp4Url(publicId), [publicId])
+  // ▶ v22: `tierEpoch` bumps once, when repeated stalls tip the session over to
+  // the small tier (see reportVideoStall) — it makes this memo rebuild the URL
+  // with the lighter tier. It only ever moves toward LOWER bandwidth.
+  const [tierEpoch, setTierEpoch] = useState(0)
+  const videoSrc = useMemo(() => cloudinaryHeroMp4Url(publicId), [publicId, tierEpoch])
   videoSrcRef.current = videoSrc
 
   // ── Ref callback ────────────────────────────────────────────────────────
@@ -724,6 +729,15 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
       reconnecting = true
       reconnectAttempts += 1
       const attempt = reconnectAttempts
+      // ▶ v22: a reconnect caused by a STALL (not a hard error) means this
+      // connection can't keep up with the current tier. After two of them the
+      // whole session drops to the small tier — retry included.
+      if (
+        (reason === 'stalled' || reason === 'waiting' || reason === 'watchdog-frozen') &&
+        reportVideoStall()
+      ) {
+        setTierEpoch((n) => n + 1)
+      }
       const delay = Math.min(500 * 2 ** (attempt - 1), 8000)
       console.warn(`[HeroVideo] reconnecting (${reason}) — attempt ${attempt}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms`)
       window.clearTimeout(reconnectTimer)
@@ -757,7 +771,11 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         video.addEventListener('loadedmetadata', onReloadMetadata, { once: true })
         video.addEventListener('loadeddata',      onReloadedData,  { once: true })
         video.pause()
-        video.src = videoSrcRef.current
+        // ▶ v22: rebuilt fresh (not read from the ref) so the retry also picks
+        // up a connection that has gotten slower since the first load.
+        const retrySrc = cloudinaryHeroMp4Url(publicIdRef.current)
+        videoSrcRef.current = retrySrc
+        video.src = retrySrc
         video.load()
       }, delay)
     }

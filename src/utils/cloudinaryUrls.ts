@@ -129,11 +129,14 @@ const HERO_TIERS = {
   /** Data Saver and 2g/3g connections only — deliberately small and soft. */
   small:  { width: 720,  quality: 'eco'  },
   /**
-   * Portrait phones. A phone screen is ~1170 physical pixels wide, so 720 was
-   * stretched ~1.6x and `eco` added blockiness on top — the hero looked soft.
-   * 1080 wide at `good` is sharp on a phone without paying for a 1920 file.
+   * Portrait phones (these play the vertical cut, so width 810 means an
+   * 810x1440 frame). 1080 wide was a full 1080x1920 = 2.07 MP frame — as many
+   * pixels as 1080p — for a muted background loop on a small screen. 810 keeps
+   * ~44 % fewer pixels, still only ~1.4x upscaled on a 1170 px-wide phone, and
+   * stays at `good` (not `eco`, which looked blocky when 720 was tried).
+   * Tune this one number to trade sharpness for bytes (720 = another ~20 % less).
    */
-  mobile: { width: 1080, quality: 'good' },
+  mobile: { width: 810, quality: 'good' },
   /** Phone landscape, tablets, laptops and most desktops. */
   medium: { width: 1280, quality: 'good' },
   /** Wide desktops (> 1600 CSS px). */
@@ -141,6 +144,38 @@ const HERO_TIERS = {
 } as const
 
 export type HeroVideoTier = keyof typeof HERO_TIERS
+
+// ─── Stall-driven downgrade (downgrade-only, per page session) ────────────────
+//
+// The Network Information API only exists in Chromium (iPhones/Safari and
+// Firefox report nothing), and `effectiveType` is a coarse guess. The reliable
+// signal that a connection can't keep up with the chosen tier is the video
+// itself stalling and having to reconnect. After STALLS_BEFORE_DOWNGRADE such
+// reconnects, every URL built from then on (the current video's retry, the
+// next carousel video, prefetches, the product/portfolio players) uses the
+// small tier.
+//
+// This can ONLY move toward lower bandwidth: a fast connection never raises a
+// tier, so a phone on 5G still gets its phone-sized file, never a bigger one.
+// It resets on a full page reload, so a one-off bad moment isn't permanent.
+const STALLS_BEFORE_DOWNGRADE = 2
+let _stallReconnects = 0
+let _forceSmallTier = false
+
+/**
+ * Call when playback had to reconnect because of a stall (not a hard error).
+ * Returns true the moment this tips the session over to the small tier, so the
+ * caller can reload with the lighter URL.
+ */
+export function reportVideoStall(): boolean {
+  if (_forceSmallTier) return false
+  _stallReconnects += 1
+  if (_stallReconnects >= STALLS_BEFORE_DOWNGRADE) {
+    _forceSmallTier = true
+    return true
+  }
+  return false
+}
 
 /**
  * Picks the hero delivery tier from the CURRENT connection and viewport.
@@ -151,6 +186,7 @@ export type HeroVideoTier = keyof typeof HERO_TIERS
  */
 export function heroVideoTier(): HeroVideoTier {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'medium'
+  if (_forceSmallTier) return 'small'
 
   const conn =
     (navigator as any).connection ??
