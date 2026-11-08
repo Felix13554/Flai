@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "video:savings": "node scripts/video-savings.mjs"
+    "video:savings": "node scripts/video-savings.mjs",
+    "video:warm": "node scripts/warm-videos.mjs"
   },
   "dependencies": {
     "@microsoft/clarity": "^1.0.2",
