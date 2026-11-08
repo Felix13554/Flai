@@ -163,10 +163,41 @@ export function heroVideoTier(): HeroVideoTier {
   return w > 1600 ? 'large' : 'medium'
 }
 
-export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
+// ─── Optimized delivery (hero + product/portfolio/preview players) ───────────
+//
+// Both builders below share ONE pipeline:
+//   • c_limit,w_N  → never wider than the device tier (and never upscales)
+//   • f_auto       → Cloudinary picks the most efficient codec the requesting
+//                    browser can play (VP9 WebM / AV1 / HEVC MP4 on Safari, with
+//                    H.264 MP4 as the fallback) instead of forcing H.264 for
+//                    everybody. This is typically 30-50 % smaller at the same
+//                    visual quality. f_auto and q_auto must be separate
+//                    slash-delimited components (not comma-joined).
+//   • q_auto:<q>   → eco on the small tier, good everywhere else
+//
+// No vc_h264 any more: pinning the codec is exactly what blocked f_auto.
+// Each (video × tier × delivered format) is transcoded once, on its first
+// request, and cached on Cloudinary's CDN afterwards.
+
+function optimizedVideoUrl(publicId: string, tier: HeroVideoTier, audio: boolean): string {
   const { width, quality } = HERO_TIERS[tier]
   return (
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `vc_h264,ac_none/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
+    `c_limit,w_${width}/` +
+    (audio ? '' : 'ac_none/') +
+    `f_auto/q_auto:${quality}/${publicId}.mp4`
   )
+}
+
+/** Hero loop: tiered, auto-format, audio stripped (the element is muted). */
+export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
+  return optimizedVideoUrl(publicId, tier, false)
+}
+
+/**
+ * Product / portfolio / preview players: same tiers and auto-format as the
+ * hero, but WITH audio — the visitor starts these videos themselves, with sound.
+ */
+export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
+  return optimizedVideoUrl(publicId, tier, true)
 }

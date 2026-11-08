@@ -5,14 +5,15 @@
  * the product cards, PreviewPage and the home sections.
  *
  * It plays video EXACTLY the way HeroVideoSection does:
- *   • source  = cloudinaryMp4Url(publicId)   (vc_h264 / f_mp4 / q_auto:good)
+ *   • source  = cloudinaryPlayerVideoUrl(publicId)  (device-tiered c_limit width,
+ *               f_auto codec, q_auto — same pipeline as the hero, but with audio)
  *   • poster  = cloudinaryPosterUrl(...)     (480 / 960 / 1920 srcSet, derived
  *               from the same processed asset so the crop always matches)
  *   • src is assigned imperatively in a stable ref callback, together with the
  *     same muted / playsinline / webkit-playsinline / crossOrigin attributes
  *   • same error / stall recovery: reload the src with capped exponential
  *     backoff and resume from where playback was
- *   • honours slow connections / data-saver (preload none)
+ *   • preload="none": nothing is fetched until the visitor presses play
  *
  * The one difference from the hero: NO AUTOPLAY. The poster is shown with a
  * play button; the visitor starts the video themselves (with sound and the
@@ -22,25 +23,11 @@
 import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
-import { cloudinaryMp4Url, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
+import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl } from '../utils/cloudinaryUrls';
 
 const RECONNECT_MAX_ATTEMPTS = 4;
 const RECONNECT_STALL_GRACE_MS = 6000;
 const PLAY_EVENT = 'flai-cloudinary-video-play';
-
-// Same connection heuristics as heroPreload.getConnectionInfo (copied so this
-// component doesn't import heroPreload, whose module init injects hero preloads).
-function getConnectionInfo(): { isSlow: boolean; saveData: boolean } {
-  if (typeof navigator === 'undefined') return { isSlow: false, saveData: false };
-  const conn =
-    (navigator as any).connection ??
-    (navigator as any).mozConnection ??
-    (navigator as any).webkitConnection;
-  return {
-    isSlow: conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g',
-    saveData: conn?.saveData === true,
-  };
-}
 
 let _playerCounter = 0;
 
@@ -76,12 +63,13 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
   const [started, setStarted] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const { isSlow, saveData } = useMemo(getConnectionInfo, []);
-  // Never pre-fetch more than metadata, and nothing at all on slow / data-saver
-  // connections — the visitor hasn't asked for this video yet.
-  const preloadVal = isSlow || saveData ? 'none' : 'metadata';
+  // Bandwidth: fetch NOTHING until the visitor presses play. The poster covers
+  // the box meanwhile, and several players on one page (product carousels)
+  // would otherwise each pull metadata for videos nobody asked for. The cost is
+  // a short wait for the first bytes after pressing play.
+  const preloadVal = 'none';
 
-  const videoSrc = useMemo(() => cloudinaryMp4Url(publicId), [publicId]);
+  const videoSrc = useMemo(() => cloudinaryPlayerVideoUrl(publicId), [publicId]);
   const videoSrcRef = useRef(videoSrc);
   videoSrcRef.current = videoSrc;
 
