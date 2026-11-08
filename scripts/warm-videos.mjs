@@ -31,62 +31,12 @@
  * Scriptet henter aldrig hele videoer (kun 1 byte pr. forespørgsel).
  * Kræver Node 18+. Ingen pakker.
  *
- * NB: tier-tabellen og URL-opskrifterne skal følge src/utils/cloudinaryUrls.ts
- * (HERO_TIERS, optimizedVideoUrl, playerVideoTier). Ændrer du dem dér, så ret
- * dem her også – ellers varmer scriptet de forkerte URL'er op.
+ * Opskrifterne (tiers, URL'er, browsere) ligger i api/_lib/cloudinaryWarm.js og
+ * deles med webhook'en api/cloudinary-webhook.js. De skal følge
+ * src/utils/cloudinaryUrls.ts – ændrer du dem dér, så ret dem i lib'en også.
  */
 
-const CLOUD = 'dq6jxbyrg'
-
-// Skal følge HERO_TIERS i src/utils/cloudinaryUrls.ts
-const TIERS = {
-  small:  { width: 720,  quality: 'eco'  },
-  mobile: { width: 1080, quality: 'good' },
-  medium: { width: 1280, quality: 'good' },
-  large:  { width: 1920, quality: 'good' },
-}
-
-// Hero bruger alle fire tiers. Afspillerne bruger playerVideoTier(), som
-// aldrig vælger 'mobile' (den bliver til 'small').
-const KINDS = {
-  hero:   { label: 'Hero',      tiers: ['small', 'mobile', 'medium', 'large'], audio: false },
-  player: { label: 'Afspiller', tiers: ['small', 'medium', 'large'],           audio: true  },
-}
-
-// f_auto vælger format ud fra browseren, så vi spørger som flere forskellige.
-const BROWSERS = {
-  chrome: {
-    label: 'Chrome',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  },
-  firefox: {
-    label: 'Firefox',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
-  },
-  'safari-ios': {
-    label: 'Safari iPhone',
-    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-  },
-  'safari-mac': {
-    label: 'Safari Mac',
-    ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
-  },
-  android: {
-    label: 'Chrome Android',
-    ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
-  },
-}
-
-// ─── URL'er (samme opskrift som optimizedVideoUrl i cloudinaryUrls.ts) ──────
-function variantUrl(publicId, tier, audio) {
-  const { width, quality } = TIERS[tier]
-  return (
-    `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `c_limit,w_${width}/` +
-    (audio ? '' : 'ac_none/') +
-    `f_auto/q_auto:${quality}/${publicId}.mp4`
-  )
-}
+import { CLOUD, KINDS, BROWSERS, buildJobs, warmUrl, runPool } from '../api/_lib/cloudinaryWarm.js'
 
 // ─── Hjælpere ───────────────────────────────────────────────────────────────
 const c = (n, s) => (process.stdout.isTTY ? `\x1b[${n}m${s}\x1b[0m` : s)
@@ -142,56 +92,6 @@ async function listAllVideoIds() {
   return ids
 }
 
-/**
- * Beder om varianten (1 byte) og venter til Cloudinary er færdig med at lave
- * den. 423/202 = "ved at blive lavet".
- */
-async function warm(url, ua, maxWaitMs) {
-  const started = Date.now()
-  let waited = false
-  while (Date.now() - started < maxWaitMs) {
-    let res
-    try {
-      res = await fetch(url, {
-        headers: { 'User-Agent': ua, Range: 'bytes=0-0' },
-        signal: AbortSignal.timeout(120_000),
-      })
-    } catch (err) {
-      if (err.name === 'TimeoutError') { waited = true; continue } // Cloudinary arbejder stadig
-      return { error: String(err.message || err) }
-    }
-    res.body?.cancel().catch(() => {})
-
-    if (res.status === 423 || res.status === 202) {
-      waited = true
-      await sleep(5000)
-      continue
-    }
-    if (res.status !== 200 && res.status !== 206) {
-      const why = res.headers.get('x-cld-error')
-      return { error: `HTTP ${res.status}${why ? ' – ' + why : ''}` }
-    }
-    const range = res.headers.get('content-range')
-    const total = range ? Number(range.split('/')[1]) : Number(res.headers.get('content-length'))
-    const type = (res.headers.get('content-type') || '').split(';')[0].replace('video/', '')
-    return { bytes: Number.isFinite(total) ? total : 0, type, waited, ms: Date.now() - started }
-  }
-  return { error: 'blev ikke færdig i tide – kør scriptet igen om lidt' }
-}
-
-/** Kører opgaver med begrænset parallelitet. */
-async function runPool(tasks, concurrency) {
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
-      while (next < tasks.length) {
-        const i = next++
-        await tasks[i]()
-      }
-    }),
-  )
-}
-
 // ─── Kør ────────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2)
 const flag = (name) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -200,7 +100,7 @@ const kinds = (flag('kinds') || 'hero,player').split(',').filter((k) => KINDS[k]
 const browsers = (flag('browsers') || Object.keys(BROWSERS).join(',')).split(',').filter((b) => BROWSERS[b])
 const concurrency = Math.max(1, Number(flag('concurrency')) || 3)
 const dry = args.includes('--dry')
-const maxWaitMs = 10 * 60 * 1000
+const deadline = () => Date.now() + 10 * 60 * 1000
 
 let ids = args.filter((a) => !a.startsWith('--')).map(extractPublicId)
 if (args.includes('--all')) ids = [...new Set([...ids, ...(await listAllVideoIds())])]
@@ -210,17 +110,7 @@ if (ids.length === 0 || kinds.length === 0 || browsers.length === 0) {
   process.exit(1)
 }
 
-// Alle (video × slags × størrelse). Samme URL bliver kun lavet én gang pr. browser.
-const jobs = []
-for (const id of ids) {
-  for (const k of kinds) {
-    for (const t of KINDS[k].tiers) {
-      for (const b of browsers) {
-        jobs.push({ id, kind: k, tier: t, browser: b, url: variantUrl(id, t, KINDS[k].audio) })
-      }
-    }
-  }
-}
+const jobs = buildJobs(ids, kinds, browsers)
 
 console.log(bold(`Varmer op: ${ids.length} video(er) × ${kinds.length} slags × størrelser × ${browsers.length} browsere = ${jobs.length} forespørgsler`))
 console.log(dim('Første gang kan hver ny variant tage lidt at lave. Cloudinary gemmer dem bagefter.\n'))
@@ -236,7 +126,7 @@ const failures = []
 const typesSeen = new Map() // "video/slags/tier" → Set(formater)
 
 const tasks = jobs.map((j) => async () => {
-  const r = await warm(j.url, BROWSERS[j.browser].ua, maxWaitMs)
+  const r = await warmUrl(j.url, BROWSERS[j.browser].ua, deadline())
   done++
   const tag = `[${String(done).padStart(String(jobs.length).length)}/${jobs.length}]`
   const where = `${j.id}  ${KINDS[j.kind].label} ${j.tier}  ${BROWSERS[j.browser].label}`
