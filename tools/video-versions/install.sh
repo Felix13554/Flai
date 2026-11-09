@@ -173,10 +173,28 @@ sed -i '' \
   "$WF/Contents/document.wflow"
 
 plutil -lint "$WF/Contents/Info.plist" "$WF/Contents/document.wflow"
+# Finder viser kun en Quick Action i højreklik-menuen, når systemet har en visningsindstilling
+# for den (det samme som at sætte hak under System Settings → Extensions → Finder).
+# PlistBuddy bruges, fordi nøglen starter med "(" og `defaults` tolker den som en liste.
+PB=/usr/libexec/PlistBuddy
+PBS="$HOME/Library/Preferences/pbs.plist"
+KEY="(null) - Flai Videoversioner - runWorkflowAsService"
+KEYP=${KEY// /\\ }
+if [[ -x $PB ]]; then
+  $PB -c "Add :NSServicesStatus dict" "$PBS" >/dev/null 2>&1 || true
+  $PB -c "Delete :NSServicesStatus:$KEYP" "$PBS" >/dev/null 2>&1 || true
+  $PB -c "Add :NSServicesStatus:$KEYP dict" "$PBS" >/dev/null 2>&1 || true
+  $PB -c "Add :NSServicesStatus:$KEYP:presentation_modes dict" "$PBS" >/dev/null 2>&1 || true
+  for m in ContextMenu FinderPreview ServicesMenu; do
+    $PB -c "Add :NSServicesStatus:$KEYP:presentation_modes:$m bool true" "$PBS" >/dev/null 2>&1 || true
+  done
+  killall cfprefsd >/dev/null 2>&1 || true
+fi
+/System/Library/CoreServices/pbs -flush >/dev/null 2>&1 || true
 /System/Library/CoreServices/pbs -update >/dev/null 2>&1 || true
 
 print "✅ Installeret:"
 print "   Script:       $DEST/flai-video-versions.sh"
 print "   Quick Action: $WF"
 print "   Brug: højreklik en video i Finder → Hurtighandlinger → Flai Videoversioner"
-print "   (Mangler den i menuen: System Settings → Privacy & Security → Extensions → Finder → slå den til.)"
+print "   (Mangler den stadig i menuen: genstart Finder med  killall Finder  eller sæt hak under System Settings → Extensions → Finder.)"
