@@ -78,9 +78,10 @@ export function extractCloudinaryPublicId(url: string): string {
 // delivered in its own format with NO transformation is not a derived asset, so
 // it costs no transformation credits — only storage and bandwidth.
 //
-// A video is a "set" when its public_id ends in VIDEO_SET_MARKER. The id alone
-// tells every player which files exist, so no lookup is needed, and ids without
-// the marker keep using the transformation URLs further down (legacy videos).
+// EVERY video on the site is a set: its public_id ends in VIDEO_SET_MARKER, and the
+// id alone tells every player which files exist, so no lookup is needed. There is no
+// fallback for videos without a zip (no f_auto / vc_h264 transformation URLs): an id
+// without the marker is simply treated as the root of a set (ensureVideoSetRoot).
 //
 // Naming (dynamic folder mode: bare ids, no slashes):
 //   <slug>--fs                 = the 1920 H.264 file (also the admin library entry)
@@ -105,6 +106,12 @@ export function isVideoSetDerivedId(publicId: string): boolean {
   return VIDEO_SET_DERIVED_RE.test(publicId || '')
 }
 
+/** Root id of the set a stored id belongs to. Idempotent; never changes the characters of the id. */
+export function ensureVideoSetRoot(publicId: string): string {
+  const id = (publicId || '').trim().replace(/-+$/, '')
+  return id.endsWith(VIDEO_SET_MARKER) ? id : `${id}${VIDEO_SET_MARKER}`
+}
+
 /** "my clip" → "my_clip--fs" (idempotent). */
 export function videoSetRootId(slug: string): string {
   const clean = slug.trim().replace(/[^A-Za-z0-9_-]/g, '_').replace(/-+$/, '') || 'video'
@@ -120,11 +127,11 @@ export function videoSetPosterId(root: string, width: number): string {
 }
 
 export function videoSetVideoUrl(root: string, width: number, codec: VideoSetCodec): string {
-  return `https://res.cloudinary.com/${CLOUD}/video/upload/${videoSetFileId(root, width, codec)}.${VIDEO_SET_EXT[codec]}`
+  return `https://res.cloudinary.com/${CLOUD}/video/upload/${videoSetFileId(ensureVideoSetRoot(root), width, codec)}.${VIDEO_SET_EXT[codec]}`
 }
 
 export function videoSetPosterUrl(root: string, width: number, stamp = 0): string {
-  const base = `https://res.cloudinary.com/${CLOUD}/image/upload/${videoSetPosterId(root, width)}.jpg`
+  const base = `https://res.cloudinary.com/${CLOUD}/image/upload/${videoSetPosterId(ensureVideoSetRoot(root), width)}.jpg`
   return stamp > 0 ? `${base}?v=${stamp}` : base
 }
 
@@ -190,86 +197,41 @@ export function reportVideoFormatError(video?: { error?: { code?: number } | nul
   return true
 }
 
+// Sets have no HLS stream: the best plain file stands in (admin preview/copy).
 export function cloudinaryHlsUrl(publicId: string): string {
-  // Sets have no HLS stream: the best plain file stands in (used for admin preview/copy).
-  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'h264')
-  return `https://res.cloudinary.com/${CLOUD}/video/upload/sp_auto/${publicId}.m3u8`
+  return videoSetVideoUrl(publicId, 1920, 'h264')
 }
 
 export function cloudinaryMp4Url(publicId: string): string {
-  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'h264')
-  return `https://res.cloudinary.com/${CLOUD}/video/upload/vc_h264/f_mp4/q_auto:good/${publicId}.mp4`
+  return videoSetVideoUrl(publicId, 1920, 'h264')
 }
 
 export function cloudinaryWebmUrl(publicId: string): string {
-  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'vp9')
-  return `https://res.cloudinary.com/${CLOUD}/video/upload/vc_vp9/f_webm/q_auto:good/${publicId}.webm`
+  return videoSetVideoUrl(publicId, 1920, 'vp9')
 }
 
+/**
+ * Poster of a video set: a plain image asset, no transformation. Whatever width is
+ * requested is snapped to one of the TWO posters the zip contains: 960 (phones, admin
+ * thumbnails, srcset candidates up to 960w) and 1920 (everything wider). `_quality` is
+ * kept only so existing call sites compile.
+ */
 export function cloudinaryPosterUrl(
   publicId: string,
   requestedWidth = 1920,
   _quality       = 'good',
   stamp          = 0,
 ): string {
-  // COST: every distinct poster URL is its own derived asset on Cloudinary
-  // (and, because it starts from `vc_h264`, a video transformation). Callers
-  // used to ask for 320 / 480 / 960 / 1920 wide, i.e. up to four posters per
-  // video. Whatever width is requested is now snapped to one of TWO sizes, so a
-  // video never has more than two posters: 960 eco (phones, admin thumbnails,
-  // srcset candidates up to 960w) and 1920 good (everything wider). `_quality`
-  // is kept only so existing call sites compile; the bucket decides it.
-  const small   = requestedWidth <= 960
-  const width   = small ? 960 : 1920
-  // Video sets carry their two posters as plain image assets: no transformation.
-  if (isVideoSetId(publicId)) return videoSetPosterUrl(publicId, width, stamp)
-  const quality = small ? 'eco' : 'good'
-  // Root cause of the poster/video crop mismatch: this used to extract the
-  // still directly from the RAW source (`c_fill,g_auto,w_${width},so_0`),
-  // a completely separate transformation pipeline from the one the <video>
-  // element actually plays (`vc_h264/f_mp4/...` in cloudinaryMp4Url). Two
-  // independent pipelines can apply the source's rotation/orientation
-  // metadata differently, so the still and the video ended up with
-  // different effective aspect ratios — which then get object-fit:cover'd
-  // differently, producing a visible jump when the video takes over.
-  //
-  // Also, `c_fill,g_auto` was a no-op the whole time: Cloudinary's `fill`
-  // crop mode only actually crops when BOTH width and height are given —
-  // with only a width it silently falls back to a plain aspect-preserving
-  // resize, so no gravity-based cropping was ever happening.
-  //
-  // Fix: derive the still from the SAME processed asset the video plays
-  // (`vc_h264` first), so orientation/aspect ratio are guaranteed to match
-  // pixel-for-pixel, then extract the frame and resize by width only.
-  const base =
-    `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `vc_h264/so_0/f_jpg/q_auto:${quality},w_${width}/${publicId}.jpg`
-  return stamp > 0 ? `${base}?v=${stamp}` : base
+  return videoSetPosterUrl(publicId, requestedWidth <= 960 ? 960 : 1920, stamp)
 }
 
 // ─── Video delivery (hero + product/portfolio/preview players) ───────────────
 //
-// Two different costs are in play, and they pull in opposite directions:
-//   • bandwidth credits  → smaller files per view (resolution cap, codec, q_auto)
-//   • transformation credits → FEWER DISTINCT URLs per video, because every
-//     distinct (video × transformation chain × delivered format) is a separate
-//     derived asset that Cloudinary transcodes — and bills — once.
-//
-// This file is tuned to keep the second number as small as possible while still
-// capping the first:
-//   • ONE delivered format (H.264 MP4, plays everywhere). `f_auto` used to be
-//     here; it makes Cloudinary build a separate asset per browser family
-//     (WebM/VP9 for Chrome+Firefox, HEVC or H.264 for Safari, AV1 …), so each
-//     size below was really 2–4 transcodes.
-//   • ONE URL per size, shared by hero and players. The hero used `ac_none`
-//     (no audio) and the players kept audio, which made every size two assets.
-//     The audio track of a short loop is a few percent of the bytes, so the
-//     hero now just plays the same file as the players (the element is muted).
-//   • THREE sizes (720 / 1280 / 1920). The old `mobile` (810) and the
-//     `eco` quality on `small` are folded into the 720 `good` asset.
-//
-// So a video is at most 3 derived assets (it was up to ~20), plus 2 posters.
-// Tune a width here → also change TIERS in api/_lib/cloudinaryWarm.js.
+// Every video is a pre-made set (see above), so delivery involves no Cloudinary
+// transformations at all: only storage and bandwidth are billed. Bandwidth is kept
+// down by serving the smallest width that suits the device and the smallest codec
+// its browser plays. Tune a width here → also change tools/video-versions and
+// VIDEO_SET_WIDTHS.
 const HERO_TIERS = {
   /** Portrait phones, Data Saver and 2g/3g. 720 wide = a 720x1280 vertical frame. */
   small:  { width: 720,  quality: 'good' },
@@ -286,18 +248,6 @@ const HERO_TIERS = {
 } as const
 
 export type HeroVideoTier = keyof typeof HERO_TIERS
-
-/**
- * Widths/qualities of the f_auto URLs that were warmed up before the cost cut
- * (see git history of this file before e8774bc). Used ONLY for videos that have no
- * Flai-versions set. Video sets use HERO_TIERS above.
- */
-const LEGACY_TIERS: Record<HeroVideoTier, { width: number; quality: string }> = {
-  small:  { width: 720,  quality: 'eco'  },
-  mobile: { width: 810,  quality: 'good' },
-  medium: { width: 1280, quality: 'good' },
-  large:  { width: 1920, quality: 'good' },
-}
 
 // ─── Stall-driven downgrade (downgrade-only, per page session) ────────────────
 //
@@ -361,46 +311,21 @@ export function heroVideoTier(): HeroVideoTier {
 
 // ─── Optimized delivery (hero + product/portfolio/preview players) ───────────
 //
-// Both builders below return the SAME URL for the same tier, built as:
-//   • vc_h264      → pinned codec, f_mp4 → pinned container: one delivered format
-//   • c_limit,w_N  → never wider than the device tier (and never upscales)
-//   • q_auto:<q>   → quality (all tiers are `good`, see HERO_TIERS)
-//
-// Each (video × tier) is transcoded once, on its first request, and cached on
-// Cloudinary's CDN afterwards. Keep this chain identical to variantUrl() in
-// api/_lib/cloudinaryWarm.js, or the warm-up builds assets nobody requests.
+// Both builders return the SAME URL for the same tier, so playback, prefetch and
+// the load-before-switch preload share one cached response.
 
-function optimizedVideoUrl(publicId: string, tier: HeroVideoTier, audio: boolean): string {
-  // Video set: the pre-made file for this width in this browser's best codec.
-  // No transformation involved, so nothing is billed on delivery.
-  if (isVideoSetId(publicId)) {
-    return videoSetVideoUrl(publicId, HERO_TIERS[tier].width, pickVideoCodec())
-  }
-  // No set (older upload, or a single file): the f_auto URLs this site used before
-  // the cost cut. Cloudinary picks the format per browser (VP9 WebM / HEVC / H.264),
-  // and these exact URLs are the ones that were already warmed up for old videos, so
-  // they are served from the CDN instead of being transcoded again. Keep the chain
-  // byte-for-byte identical to the old one, or it becomes a new (billed) asset.
-  const { width, quality } = LEGACY_TIERS[tier]
-  return (
-    `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `c_limit,w_${width}/` +
-    (audio ? '' : 'ac_none/') +
-    `f_auto/q_auto:${quality}/${publicId}.mp4`
-  )
+function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
+  return videoSetVideoUrl(publicId, HERO_TIERS[tier].width, pickVideoCodec())
 }
 
-/** Hero loop: video sets use the pre-made file; older videos the audio-free f_auto URL. */
+/** Hero loop: the pre-made file for this device's width tier in its best codec. */
 export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier, false)
+  return optimizedVideoUrl(publicId, tier)
 }
 
-/**
- * Product / portfolio / preview players: video sets use the pre-made file; older
- * videos the f_auto URL WITH audio (the visitor starts these with sound).
- */
+/** Product / portfolio / preview players: same pre-made file as the hero. */
 export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = playerVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier, true)
+  return optimizedVideoUrl(publicId, tier)
 }
 
 /**

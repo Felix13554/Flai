@@ -61,7 +61,7 @@ import {
   cloudinaryWebmUrl,
   bustHeroCache,
 } from '../../utils/heroPreload';
-import { cloudinaryPlayerVideoUrl, isVideoSetId, isVideoSetDerivedId, videoSetRootId } from '../../utils/cloudinaryUrls';
+import { ensureVideoSetRoot, isVideoSetDerivedId, videoSetRootId } from '../../utils/cloudinaryUrls';
 import { isZipFile, planVideoSet, uploadVideoSet, deleteVideoSet, type VideoSetPlan, type UploadOneOpts } from '../../utils/videoSetUpload';
 import { broadcastHeroUpdate } from '../../utils/heroSync';
 
@@ -209,42 +209,12 @@ const deleteSet = async (root: string) => {
   return failed;
 };
 
-// ─── EagerBadge — polls until the 1280 MP4 (warmed by the webhook) is ready ──
-// Deliberately NOT the HLS manifest: asking for sp_auto makes Cloudinary build a
-// whole multi-rendition stream that nothing on the site ever plays. The 1280
-// size is one of the 3 variants the webhook warms anyway, so polling it adds no
-// derived asset of its own.
+// ─── EagerBadge — every video is a finished zip set, so it is always ready ────
 
-const EagerBadge: React.FC<{ publicId: string }> = ({ publicId }) => {
-  const isSet = isVideoSetId(publicId);
-  const [ready, setReady] = useState(isSet);
-
-  useEffect(() => {
-    if (isSet) return;
-    let attempts = 0;
-    const maxAttempts = 36;
-    const url = cloudinaryPlayerVideoUrl(publicId, 'medium');
-
-    const check = async () => {
-      try {
-        const r = await fetch(url, { method: 'HEAD' });
-        if (r.ok) { setReady(true); return; }
-      } catch {}
-      if (++attempts < maxAttempts) setTimeout(check, 5000);
-    };
-
-    const t = setTimeout(check, 4000);
-    return () => clearTimeout(t);
-  }, [publicId, isSet]);
-
-  return ready ? (
-    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-      <Zap size={9} /> <EditableContent contentKey="video-manager-optimeret" fallback="Optimeret" /></span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 animate-pulse">
-      <Loader2 size={9} className="animate-spin" /> <EditableContent contentKey="video-manager-optimerer" fallback="Optimerer…" /></span>
-  );
-};
+const EagerBadge: React.FC<{ publicId: string }> = () => (
+  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+    <Zap size={9} /> <EditableContent contentKey="video-manager-optimeret" fallback="Optimeret" /></span>
+);
 
 // ─── CompressionInfoPanel ─────────────────────────────────────────────────────
 
@@ -257,7 +227,7 @@ const CompressionInfoPanel: React.FC<{ isHeroVideo?: boolean }> = ({ isHeroVideo
       <li>• <strong><EditableContent contentKey="video-manager-zip-11-versions" fallback="Flai-versions-zip" /></strong> <EditableContent contentKey="video-manager-zip-11-versions-text" fallback="— 3 størrelser (720 · 1280 · 1920) × 3 formater (WebM/VP9 · HEVC · H.264) + 2 posters" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-zip-best-format" fallback="Mindste fil pr. enhed" /></strong> <EditableContent contentKey="video-manager-zip-best-format-text" fallback="— Chrome, Edge, Firefox og Android får VP9, Safari og iOS får HEVC, alt andet får H.264" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-zip-no-transform" fallback="Ingen transformationer" /></strong> <EditableContent contentKey="video-manager-zip-no-transform-text" fallback="— filerne er lavet på din Mac og leveres direkte fra Cloudinary (kun lager og båndbredde)" /></li>
-      <li>• <strong><EditableContent contentKey="video-manager-zip-how" fallback="Lav zip'en" /></strong> <EditableContent contentKey="video-manager-zip-how-text" fallback="— højreklik en video i Finder → Quick Actions → Flai Videoversioner. En enkelt videofil virker stadig, men bruger så de gamle f_auto-versioner (Cloudinary laver dem første gang)" /></li>
+      <li>• <strong><EditableContent contentKey="video-manager-zip-how" fallback="Lav zip'en" /></strong> <EditableContent contentKey="video-manager-zip-how-text" fallback="— højreklik en video i Finder → Quick Actions → Flai Videoversioner. Der kan kun uploades zip'en; enkeltstående videofiler understøttes ikke" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-chunked-upload" fallback="Chunked upload" /></strong> <EditableContent contentKey="video-manager-filer-opdeles-i-6-mb" fallback="— filer opdeles i 6 MB bidder for pålidelig overførsel" /></li>
     </ul>
   </div>
@@ -358,7 +328,7 @@ const Dropzone: React.FC<DropzoneProps> = ({ file, onChange, disabled }) => {
 
   return (
     <>
-      <input ref={ref} type="file" accept="video/*,.zip,application/zip" className="hidden"
+      <input ref={ref} type="file" accept=".zip,application/zip" className="hidden"
         onChange={(e) => { onChange(e.target.files?.[0] ?? null); e.target.value = ''; }} />
       <div
         onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
@@ -389,7 +359,7 @@ const Dropzone: React.FC<DropzoneProps> = ({ file, onChange, disabled }) => {
               <EditableContent contentKey="video-upload-dropzone-click" as="span" className="text-primary font-medium" fallback="Klik for at vælge" />{' '}
               <EditableContent contentKey="video-upload-dropzone-or-drop" as="span" fallback="eller træk og slip" />
             </p>
-            <EditableContent contentKey="video-upload-dropzone-formats" as="p" className="text-xs text-neutral-500 mt-1" fallback="Flai-versions-zip (anbefalet) eller en enkelt video" />
+            <EditableContent contentKey="video-upload-dropzone-formats" as="p" className="text-xs text-neutral-500 mt-1" fallback="Flai-versions-zip (lavet med Flai Videoversioner)" />
           </div>
         )}
       </div>
@@ -462,8 +432,9 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
 
   const handleUpload = async () => {
     if (!videoTitle.trim()) { toast.error('Titel er påkrævet'); return; }
-    if (!file)              { toast.error('Vælg venligst en videofil'); return; }
-    if (zip && (!plan || plan.missing.length)) { toast.error('Zip-filen er ikke komplet'); return; }
+    if (!file)              { toast.error('Vælg venligst en Flai-versions-zip'); return; }
+    if (!zip)               { toast.error('Upload zip-filen fra Flai Videoversioner – enkeltstående videoer understøttes ikke'); return; }
+    if (!plan || plan.missing.length) { toast.error('Zip-filen er ikke komplet'); return; }
 
     setErr(null); setStage('uploading'); setPct(0);
     abort.current = new AbortController();
@@ -471,34 +442,21 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
     try {
       const safe = videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
 
-      let result: UploadResult;
-      if (zip && plan) {
-        const root = videoSetRootId(safe);
-        await uploadVideoSet(plan, root, {
-          upload:     uploadSetFile,
-          caption:    videoTitle.trim(),
-          alt:        description.trim(),
-          signal:     abort.current.signal,
-          onProgress: (p, l) => { setPct(p); setStepLabel(l); },
-        });
-        result = { public_id: root };
-      } else {
-        result = await cldUpload(file, {
-          publicId:   safe,
-          onProgress: setPct,
-          signal:     abort.current.signal,
-          caption:    videoTitle.trim(),
-          alt:        description.trim(),
-        });
-      }
+      const root = videoSetRootId(safe);
+      await uploadVideoSet(plan, root, {
+        upload:     uploadSetFile,
+        caption:    videoTitle.trim(),
+        alt:        description.trim(),
+        signal:     abort.current.signal,
+        onProgress: (p, l) => { setPct(p); setStepLabel(l); },
+      });
+      const result: UploadResult = { public_id: root };
 
       setNewPublicId(result.public_id);
       setStage('done');
-      toast.success(zip ? 'Video uploadet — alle versioner er klar' : 'Video uploadet — Cloudinary optimerer nu i baggrunden…');
+      toast.success('Video uploadet — alle versioner er klar');
 
-      // No client-side pre-warm: the Cloudinary upload webhook
-      // (api/cloudinary-webhook.js) already warms the 3 sizes the site uses.
-      // The old `?eager=1` edge-function call ordered extra derived assets.
+      // No pre-warm: the files of a set are finished uploads, nothing is transcoded.
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately — updates poster stamp + dispatches
@@ -552,7 +510,7 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
               className="w-full bg-neutral-900 border border-neutral-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary placeholder-neutral-500 disabled:opacity-50" />
             {videoTitle.trim() && (
               <p className="text-xs text-neutral-500 mt-1">
-                <EditableContent contentKey="video-manager-cloudinary-id" fallback="Cloudinary ID:" /><span className="font-mono text-primary">{zip ? videoSetRootId(videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')) : videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}</span>
+                <EditableContent contentKey="video-manager-cloudinary-id" fallback="Cloudinary ID:" /><span className="font-mono text-primary">{videoSetRootId(videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_'))}</span>
               </p>
             )}
           </div>
@@ -565,7 +523,7 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
           </div>
 
           <div>
-            <EditableContent contentKey="video-upload-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Flai-versions-zip eller videofil *" />
+            <EditableContent contentKey="video-upload-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Flai-versions-zip *" />
             <Dropzone file={file} onChange={setFile} disabled={isBusy || isDone} />
             {zip && !isDone && <VideoSetSummary plan={plan} planErr={planErr} />}
           </div>
@@ -575,7 +533,7 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
           {(isBusy || isDone) && (
             <ProgressBar
               pct={isDone ? 100 : pct}
-              label={isDone ? (zip ? 'Alle versioner uploadet' : 'Overført — Cloudinary optimerer nu i baggrunden…') : (zip && stepLabel ? `${stepLabel} · ${pct}%` : `Uploader… ${pct}%`)}
+              label={isDone ? 'Alle versioner uploadet' : (stepLabel ? `${stepLabel} · ${pct}%` : `Uploader… ${pct}%`)}
               done={isDone}
             />
           )}
@@ -583,7 +541,7 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
           {isDone && newPublicId && (
             <div className="flex items-center gap-2 text-xs text-neutral-400">
               <EagerBadge publicId={newPublicId} />
-              <span><EditableContent contentKey="video-manager-set-ready" fallback={zip ? 'Alle 11 versioner er klar på Cloudinary' : 'Ingen zip – bruger f_auto-versioner (laves ved første afspilning)'} /></span>
+              <span><EditableContent contentKey="video-manager-set-ready" fallback="Alle 11 versioner er klar på Cloudinary" /></span>
             </div>
           )}
 
@@ -629,14 +587,12 @@ const ReplaceVideoModal: React.FC<{
   const [stepLabel, setStepLabel] = useState('');
   const abort = useRef<AbortController | null>(null);
   const hero  = isHero(video);
-  const isSet = isVideoSetId(video.public_id);
   const { plan, planErr, zip, blocked } = useVideoSetPlan(file);
 
   const handleReplace = async () => {
-    if (!file) { toast.error('Vælg venligst en videofil'); return; }
-    if (isSet && !zip) { setErr('Denne video består af en Flai-versions-zip, så den skal erstattes med en ny zip.'); return; }
-    if (!isSet && zip) { setErr('Denne video er en enkelt fil. Slet den og upload zip-filen som en ny video.'); return; }
-    if (zip && (!plan || plan.missing.length)) { setErr('Zip-filen er ikke komplet'); return; }
+    if (!file) { toast.error('Vælg venligst en Flai-versions-zip'); return; }
+    if (!zip) { setErr('Videoer består af en Flai-versions-zip, så den skal erstattes med en ny zip.'); return; }
+    if (!plan || plan.missing.length) { setErr('Zip-filen er ikke komplet'); return; }
 
     setErr(null); setStage('uploading'); setPct(0);
     abort.current = new AbortController();
@@ -644,37 +600,22 @@ const ReplaceVideoModal: React.FC<{
     const savedPublicId = video.public_id;
     const savedCaption  = title(video);
     const savedAlt      = video.context?.custom?.alt ?? '';
-    const savedBareId   = savedPublicId.replace(/^.*\//, '');
+    const savedBareId   = ensureVideoSetRoot(savedPublicId.replace(/^.*\//, ''));
 
     try {
       // Step 1 — hard-delete existing asset + all derived assets from CDN
-      if (isSet) await deleteSet(savedPublicId);
-      else await edgeFetch(
-        `?id=${encodeURIComponent(savedPublicId)}&invalidate=true`,
-        { method: 'DELETE' }
-      );
+      await deleteSet(savedBareId);
 
       // Step 2 — re-upload to same public_id
-      if (isSet && plan) {
-        await uploadVideoSet(plan, savedBareId, {
-          upload:     uploadSetFile,
-          caption:    savedCaption,
-          alt:        savedAlt,
-          signal:     abort.current.signal,
-          onProgress: (p, l) => { setPct(p); setStepLabel(l); },
-        });
-      } else {
-        await cldUpload(file, {
-          publicId:   savedBareId,
-          onProgress: setPct,
-          signal:     abort.current.signal,
-          caption:    savedCaption,
-          alt:        savedAlt,
-        });
-      }
+      await uploadVideoSet(plan, savedBareId, {
+        upload:     uploadSetFile,
+        caption:    savedCaption,
+        alt:        savedAlt,
+        signal:     abort.current.signal,
+        onProgress: (p, l) => { setPct(p); setStepLabel(l); },
+      });
 
-      // Step 3 — no client-side pre-warm (the upload webhook re-warms the 3
-      // sizes after the overwrite; see the note in the upload handler above).
+      // Step 3 — nothing to warm: the files of a set are finished uploads.
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately.
@@ -687,7 +628,7 @@ const ReplaceVideoModal: React.FC<{
 
       setReplacedId(savedPublicId);
       setStage('done');
-      toast.success(isSet ? 'Video erstattet — alle versioner er klar' : 'Video erstattet — Cloudinary optimerer nu i baggrunden…');
+      toast.success('Video erstattet — alle versioner er klar');
 
       setTimeout(
         () => onReplaced({ ...video, bytes: file.size, created_at: new Date().toISOString() }),
@@ -731,7 +672,7 @@ const ReplaceVideoModal: React.FC<{
           {!isBusy && !isDone && <CompressionInfoPanel isHeroVideo={hero} />}
 
           <div>
-            <EditableContent contentKey="video-replace-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback={isSet ? 'Ny Flai-versions-zip *' : 'Ny videofil *'} />
+            <EditableContent contentKey="video-replace-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Ny Flai-versions-zip *" />
             <Dropzone file={file} onChange={setFile} disabled={isBusy || isDone} />
             {zip && !isDone && <VideoSetSummary plan={plan} planErr={planErr} />}
           </div>
@@ -739,7 +680,7 @@ const ReplaceVideoModal: React.FC<{
           {(isBusy || isDone) && (
             <ProgressBar
               pct={isDone ? 100 : pct}
-              label={isDone ? (isSet ? 'Alle versioner uploadet' : 'Overført — Cloudinary optimerer nu i baggrunden…') : (isSet && stepLabel ? `${stepLabel} · ${pct}%` : `Uploader… ${pct}%`)}
+              label={isDone ? 'Alle versioner uploadet' : (stepLabel ? `${stepLabel} · ${pct}%` : `Uploader… ${pct}%`)}
               done={isDone}
             />
           )}
@@ -747,7 +688,7 @@ const ReplaceVideoModal: React.FC<{
           {isDone && replacedId && (
             <div className="flex items-center gap-2 text-xs text-neutral-400">
               <EagerBadge publicId={replacedId} />
-              <span><EditableContent contentKey="video-manager-set-ready-2" fallback={isSet ? 'Alle 11 versioner er klar på Cloudinary' : 'Ingen zip – bruger f_auto-versioner (laves ved første afspilning)'} /></span>
+              <span><EditableContent contentKey="video-manager-set-ready-2" fallback="Alle 11 versioner er klar på Cloudinary" /></span>
             </div>
           )}
 
@@ -833,8 +774,7 @@ const VideoRow: React.FC<{
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      if (isVideoSetId(video.public_id)) await deleteSet(video.public_id);
-      else await edgeFetch(`?id=${encodeURIComponent(video.public_id)}&invalidate=true`, { method: 'DELETE' });
+      await deleteSet(ensureVideoSetRoot(video.public_id));
       onDeleted(video.public_id);
       toast.success(hero ? 'Hero-video slettet — hjemmesiden viser nu en sort baggrund' : 'Slettet');
     } catch (e: any) {
@@ -954,7 +894,7 @@ const VideoRow: React.FC<{
 
           <p className="text-xs text-neutral-500 flex items-center gap-1.5">
             <Zap size={10} className="text-amber-400" />
-            <EditableContent contentKey="video-manager-alle-url-er-anvender" fallback="Zip-videoer leveres uden transformation; andre bruger" /><span className="font-mono text-amber-400/80"><EditableContent contentKey="video-manager-q-auto-2" fallback="q_auto" /></span> · <span className="font-mono text-amber-400/80"><EditableContent contentKey="video-manager-sp-hd" fallback="sp_hd" /></span> <EditableContent contentKey="video-manager-adaptiv-hls-1080p-loft" fallback="adaptiv HLS · 1080p loft" /></p>
+            <EditableContent contentKey="video-manager-alle-url-er-anvender" fallback="Alle videoer leveres uden transformation (kun zip-sæt)" /><span className="font-mono text-amber-400/80"><EditableContent contentKey="video-manager-q-auto-2" fallback="q_auto" /></span> · <span className="font-mono text-amber-400/80"><EditableContent contentKey="video-manager-sp-hd" fallback="sp_hd" /></span> <EditableContent contentKey="video-manager-adaptiv-hls-1080p-loft" fallback="adaptiv HLS · 1080p loft" /></p>
 
           <p className="text-xs text-neutral-500">
             <span className="font-mono text-neutral-400">{video.public_id}</span>

@@ -1,63 +1,29 @@
 /**
  * api/cloudinary-webhook.js — Vercel Serverless Function
  *
- * Varmer automatisk de tre størrelser (720/1280/1920, H.264 MP4) op, når en
- * video bliver uploadet eller erstattet i Cloudinary, så første besøgende ikke
- * venter på en transkodning. Det er bevidst KUN disse tre: hver ekstra variant
- * koster transformations-credits.
+ * Alle videoer på Flai er færdige Flai-versions-zip-sæt (11 filer lavet lokalt med
+ * Quick Action'en "Flai Videoversioner"). Filerne leveres uden transformation, så der
+ * er intet at varme op. Webhook'en gør derfor ingenting ved uploads – den findes kun
+ * så en allerede oprettet webhook i Cloudinary Console stadig får et gyldigt svar
+ * (og kan fjernes der, når det passer).
  *
  *   POST /api/cloudinary-webhook      (kaldes af Cloudinary, ikke af browseren)
  *
- * ─── OPSÆTNING (én gang) ─────────────────────────────────────────────────────
- *  1. Vercel → Project → Environment Variables: CLOUDINARY_API_SECRET skal
- *     findes (den er der allerede). Bruges til at tjekke Cloudinarys underskrift.
- *  2. Cloudinary Console → Settings → Webhooks → Add Webhook Notification URL:
- *       URL:           https://flai.dk/api/cloudinary-webhook
- *       Notifications: Upload   (dækker både ny video og erstat/overwrite)
- *  3. Upload en testvideo og se Vercel → Logs: "[webhook] varmer op …".
- *  4. Fjern ALLE "Eager"-transformationer fra upload-presetet "Herovideo"
- *     (Cloudinary Console → Settings → Upload → Upload presets → Herovideo →
- *     Transform). Presetet bestiller ellers HLS, MP4, WebM og et poster
- *     for hver upload, som siden slet ikke bruger – og det koster credits
- *     hver gang. Webhook'en her varmer de tre varianter, der bruges.
+ * Der forventes aldrig videoer uden zip-version, og der laves aldrig transformationer
+ * af videoer herfra.
  *
- * ─── SIKKERHED ───────────────────────────────────────────────────────────────
- * Cloudinary underskriver hver besked: SHA-1/SHA-256 af (rå body + timestamp +
- * API secret) i headeren X-Cld-Signature. Uden gyldig underskrift (eller hvis
- * den er over 2 timer gammel) svarer vi 401 og gør ingenting, så ingen udefra
- * kan få os til at lave betalte transkodninger.
+ * Sikkerhed: Cloudinary underskriver hver besked (SHA-1/SHA-256 af rå body + timestamp
+ * + API secret i X-Cld-Signature). Uden gyldig underskrift svarer vi 401.
+ * CLOUDINARY_API_SECRET skal være sat i Vercel (Project → Environment Variables).
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { buildJobs, warmUrl, runPool } from './_lib/cloudinaryWarm.js'
 
 const API_SECRET = process.env.CLOUDINARY_API_SECRET || ''
 
-// Hobby-planen tillader op til 60 s.
-export const config = { maxDuration: 60 }
+export const config = { maxDuration: 10 }
 
 const MAX_AGE_SECONDS = 2 * 60 * 60 // Cloudinary: signaturen gælder i 2 timer
-const BUDGET_MS = 55_000
-const CONCURRENCY = 8
-
-/**
- * Lader opvarmningen køre videre efter vi har svaret Cloudinary. Vercel stiller
- * waitUntil til rådighed via request-konteksten (det samme @vercel/functions
- * bruger indeni), så vi slipper for en ekstra pakke. Findes den ikke, returnerer
- * vi false, og så venter handleren selv.
- */
-function keepAlive(promise) {
-  try {
-    const ctx = globalThis[Symbol.for('@vercel/request-context')]?.get?.()
-    if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(promise)
-      return true
-    }
-  } catch {
-    /* falder tilbage nedenfor */
-  }
-  return false
-}
 
 async function readRawBody(req) {
   const chunks = []
@@ -82,30 +48,6 @@ export function isValidSignature(rawBody, timestamp, signature, secret = API_SEC
   )
 }
 
-export async function warmVideo(publicId, budgetMs = BUDGET_MS) {
-  const deadline = Date.now() + budgetMs
-  // Kun de tre størrelser siderne bruger, i ét format – se cloudinaryWarm.js.
-  const jobs = buildJobs([publicId])
-  const stats = { ready: 0, built: 0, failed: 0 }
-  const formats = new Set()
-
-  await runPool(
-    jobs.map((j) => async () => {
-      const r = await warmUrl(j.url, undefined, deadline)
-      if (r.error) { stats.failed++; return }
-      if (r.waited) stats.built++
-      else stats.ready++
-      if (r.type) formats.add(r.type)
-    }),
-    CONCURRENCY,
-  )
-  console.log(
-    `[webhook] ${publicId}: ${jobs.length} forespørgsler – ${stats.ready} klar, ${stats.built} lavet, ` +
-      `${stats.failed} ikke færdig i tide. Formater: ${[...formats].join(', ') || '–'}`,
-  )
-  return stats
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -125,27 +67,6 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid signature' })
   }
 
-  let event
-  try {
-    event = JSON.parse(raw)
-  } catch {
-    return res.status(400).json({ error: 'Invalid JSON' })
-  }
-
-  // Kun nye/erstattede videoer. Alt andet (billeder, delete, eager …) ignoreres.
-  if (event.notification_type !== 'upload' || event.resource_type !== 'video' || !event.public_id) {
-    return res.status(200).json({ ok: true, ignored: true })
-  }
-
-  // Videoer fra en Flai-versions-zip er færdige filer (ingen transformation at varme op).
-  // De kendes på tagget eller på id'et (<slug>--fs, <slug>--fs_<bredde>_<codec>).
-  const tags = Array.isArray(event.tags) ? event.tags : []
-  if (tags.includes('flai-versions') || /--fs(_\d+_(vp9|hevc|h264))?$/.test(String(event.public_id))) {
-    return res.status(200).json({ ok: true, ignored: 'video-set' })
-  }
-
-  // Videoer uden zip bruger de gamle f_auto-URL'er (browseren vælger format). At varme dem
-  // op ville igen lave ét asset pr. browser-familie, så de varmes ikke op automatisk.
-  // Upload en Flai-versions-zip, hvis videoen skal være klar uden ventetid.
-  return res.status(200).json({ ok: true, ignored: 'no-set-no-warm' })
+  // Zip-sæt er færdige filer: ingen opvarmning, ingen transformationer.
+  return res.status(200).json({ ok: true, ignored: 'video-sets-need-no-warmup' })
 }
