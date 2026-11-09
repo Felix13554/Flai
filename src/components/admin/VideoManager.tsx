@@ -7,7 +7,7 @@
  * of the public_id or the delivery URL. The upload API response always returns
  * the bare public_id (e.g. 'herovideo'), never a folder-prefixed path.
  * Delivery URLs therefore use just the bare public_id, e.g.:
- *   https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/herovideo.m3u8
+ *   https://res.cloudinary.com/epjomksm/video/upload/sp_auto/herovideo.m3u8
  *
  * ─── Compression strategy ─────────────────────────────────────────────────────
  *
@@ -67,7 +67,7 @@ import { broadcastHeroUpdate } from '../../utils/heroSync';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const CLOUD         = 'dq6jxbyrg';
+const CLOUD         = 'epjomksm';
 const UPLOAD_PRESET = 'Herovideo';
 const uploadUrl     = (rt: 'video' | 'image' = 'video') => `https://api.cloudinary.com/v1_1/${CLOUD}/${rt}/upload`;
 

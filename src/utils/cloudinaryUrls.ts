@@ -11,7 +11,7 @@
  * heroPreload.ts, whose module-init injects hero <link rel="preload"> hints.
  */
 
-export const CLOUD = 'dq6jxbyrg'
+export const CLOUD = 'epjomksm'
 
 /**
  * extractCloudinaryPublicId(url)

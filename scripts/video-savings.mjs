@@ -24,7 +24,7 @@
  * src/utils/cloudinaryUrls.ts. Ændrer du dem dér, så ret dem her også.
  */
 
-const CLOUD = 'dq6jxbyrg'
+const CLOUD = 'epjomksm'
 
 // NYE tiers (skal følge HERO_TIERS i src/utils/cloudinaryUrls.ts).
 // 'mobile' har med vilje samme tal som 'small' = samme URL = samme asset.
