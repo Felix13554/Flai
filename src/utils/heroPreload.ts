@@ -128,6 +128,7 @@ import {
   cloudinaryHeroMp4Url,
   cloudinaryWebmUrl,
   cloudinaryPosterUrl,
+  reportVideoFormatError,
 } from './cloudinaryUrls'
 
 export {
@@ -353,6 +354,8 @@ function loadVideoReady(url: string): Promise<void> {
     }
     video.addEventListener('canplay', finish)
     video.addEventListener('loadeddata', finish)
+    // A codec this browser cannot decode: pin the device to H.264 (see reportVideoFormatError).
+    video.addEventListener('error', () => { reportVideoFormatError(video) })
     video.addEventListener('error', finish)
     video.muted = true
     video.playsInline = true

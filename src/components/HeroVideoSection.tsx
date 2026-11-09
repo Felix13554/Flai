@@ -67,7 +67,7 @@ import {
   cloudinaryHeroMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
-import { reportVideoStall } from '../utils/cloudinaryUrls'
+import { reportVideoStall, reportVideoFormatError } from '../utils/cloudinaryUrls'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
 import { useAdminHeroAutoplayOff } from '../utils/adminHeroAutoplay'
 
@@ -810,6 +810,8 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     const onError      = () => {
       if (destroyed || !video.error) return
       console.warn('[HeroVideo] error', video.error.code, video.error.message)
+      // VP9/HEVC the browser cannot decode → the retry below builds an H.264 URL.
+      reportVideoFormatError(video)
       reconnect('error')
     }
     const onStalled = () => armStallGrace('stalled')

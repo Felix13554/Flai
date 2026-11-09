@@ -25,7 +25,7 @@
 import EditableContent from './EditableContent';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
-import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl, reportVideoStall } from '../utils/cloudinaryUrls';
+import { cloudinaryPlayerVideoUrl, cloudinaryPosterUrl, reportVideoStall, reportVideoFormatError } from '../utils/cloudinaryUrls';
 
 const RECONNECT_MAX_ATTEMPTS = 4;
 const RECONNECT_STALL_GRACE_MS = 6000;
@@ -183,7 +183,12 @@ const CloudinaryVideoPlayer: React.FC<CloudinaryVideoPlayerProps> = ({
       }, RECONNECT_STALL_GRACE_MS);
     };
 
-    const onError = () => { if (video.error) reconnect(); };
+    const onError = () => {
+      if (!video.error) return;
+      // VP9/HEVC the browser cannot decode → every URL from now on is H.264.
+      reportVideoFormatError(video);
+      reconnect();
+    };
     const clearStall = () => { window.clearTimeout(stallTimer); attempts = 0; };
 
     video.addEventListener('error', onError);

@@ -137,6 +137,13 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ignored: true })
   }
 
+  // Videoer fra en Flai-versions-zip er færdige filer (ingen transformation at varme op).
+  // De kendes på tagget eller på id'et (<slug>--fs, <slug>--fs_<bredde>_<codec>).
+  const tags = Array.isArray(event.tags) ? event.tags : []
+  if (tags.includes('flai-versions') || /--fs(_\d+_(vp9|hevc|h264))?$/.test(String(event.public_id))) {
+    return res.status(200).json({ ok: true, ignored: 'video-set' })
+  }
+
   const publicId = String(event.public_id)
   console.log(`[webhook] varmer op: ${publicId}${event.overwritten ? ' (erstattet)' : ' (ny)'}`)
 

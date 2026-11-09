@@ -69,15 +69,140 @@ export function extractCloudinaryPublicId(url: string): string {
   return idSegments.join('/')
 }
 
+
+// ─── Video sets (made locally, uploaded from a zip) ───────────────────────────
+//
+// tools/video-versions makes every version on the Mac and packs it in a zip:
+// 3 widths × 3 codecs = 9 videos (+ 2 posters). Admin unpacks the zip in the
+// browser and uploads each file as a plain Cloudinary asset. A plain asset
+// delivered in its own format with NO transformation is not a derived asset, so
+// it costs no transformation credits — only storage and bandwidth.
+//
+// A video is a "set" when its public_id ends in VIDEO_SET_MARKER. The id alone
+// tells every player which files exist, so no lookup is needed, and ids without
+// the marker keep using the transformation URLs further down (legacy videos).
+//
+// Naming (dynamic folder mode: bare ids, no slashes):
+//   <slug>--fs                 = the 1920 H.264 file (also the admin library entry)
+//   <slug>--fs_<w>_<codec>     = every other video, w ∈ 720|1280|1920, codec ∈ vp9|hevc|h264
+//   <slug>--fs_poster_<w>      = poster JPG (image asset), w ∈ 960|1920
+// Keep this in sync with tools/video-versions/flai-video-versions.sh.
+export const VIDEO_SET_MARKER = '--fs'
+export type VideoSetCodec = 'vp9' | 'hevc' | 'h264'
+export const VIDEO_SET_CODECS: readonly VideoSetCodec[] = ['vp9', 'hevc', 'h264']
+export const VIDEO_SET_WIDTHS = [720, 1280, 1920] as const
+export const VIDEO_SET_POSTER_WIDTHS = [960, 1920] as const
+const VIDEO_SET_EXT: Record<VideoSetCodec, string> = { vp9: 'webm', hevc: 'mp4', h264: 'mp4' }
+const VIDEO_SET_DERIVED_RE = /--fs_(?:\d+_(?:vp9|hevc|h264)|poster_\d+)$/
+
+/** True for the root id of a video set (what the site stores as the video's id). */
+export function isVideoSetId(publicId: string): boolean {
+  return !!publicId && publicId.endsWith(VIDEO_SET_MARKER)
+}
+
+/** True for the helper assets of a set (every file except the root). */
+export function isVideoSetDerivedId(publicId: string): boolean {
+  return VIDEO_SET_DERIVED_RE.test(publicId || '')
+}
+
+/** "my clip" → "my_clip--fs" (idempotent). */
+export function videoSetRootId(slug: string): string {
+  const clean = slug.trim().replace(/[^A-Za-z0-9_-]/g, '_').replace(/-+$/, '') || 'video'
+  return clean.endsWith(VIDEO_SET_MARKER) ? clean : `${clean}${VIDEO_SET_MARKER}`
+}
+
+export function videoSetFileId(root: string, width: number, codec: VideoSetCodec): string {
+  return width === 1920 && codec === 'h264' ? root : `${root}_${width}_${codec}`
+}
+
+export function videoSetPosterId(root: string, width: number): string {
+  return `${root}_poster_${width}`
+}
+
+export function videoSetVideoUrl(root: string, width: number, codec: VideoSetCodec): string {
+  return `https://res.cloudinary.com/${CLOUD}/video/upload/${videoSetFileId(root, width, codec)}.${VIDEO_SET_EXT[codec]}`
+}
+
+export function videoSetPosterUrl(root: string, width: number, stamp = 0): string {
+  const base = `https://res.cloudinary.com/${CLOUD}/image/upload/${videoSetPosterId(root, width)}.jpg`
+  return stamp > 0 ? `${base}?v=${stamp}` : base
+}
+
+/** Every public_id a set consists of (videos first, posters last) — for delete. */
+export function videoSetAllIds(root: string): { videos: string[]; posters: string[] } {
+  const videos: string[] = []
+  for (const w of VIDEO_SET_WIDTHS) for (const c of VIDEO_SET_CODECS) videos.push(videoSetFileId(root, w, c))
+  return { videos, posters: VIDEO_SET_POSTER_WIDTHS.map((w) => videoSetPosterId(root, w)) }
+}
+
+// ─── Codec choice (per browser, decided once) ─────────────────────────────────
+//
+// Smallest file the browser can play well:
+//   • Safari / every iOS browser → HEVC (hardware decoded on Apple silicon, ~half the bytes of H.264)
+//   • everything else that plays VP9 → VP9 WebM (Chrome, Edge, Firefox, Android)
+//   • anything else → H.264, which plays everywhere
+// This is the choice Cloudinary's f_auto made, now made in the browser.
+//
+// If a file of the chosen codec then fails to decode or load, reportVideoFormatError()
+// pins this device to H.264 for good (localStorage), so a broken codec never costs
+// a visitor more than one failed attempt.
+const CODEC_FLOOR_KEY = 'flai:video-codec-floor'
+let _codec: VideoSetCodec | null = null
+
+function isAppleWebKit(): boolean {
+  const ua = navigator.userAgent || ''
+  if (/iP(hone|ad|od)/.test(ua)) return true                                   // all iOS browsers use WebKit
+  if (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1) return true  // iPadOS asking for desktop
+  return /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android/.test(ua)
+}
+
+function detectVideoCodec(): VideoSetCodec {
+  if (typeof document === 'undefined' || typeof navigator === 'undefined') return 'h264'
+  try {
+    if (localStorage.getItem(CODEC_FLOOR_KEY) === 'h264') return 'h264'
+  } catch { /* storage blocked — fine */ }
+  try {
+    const v = document.createElement('video')
+    const can = (type: string) => v.canPlayType(type) === 'probably'
+    if (isAppleWebKit() && can('video/mp4; codecs="hvc1"')) return 'hevc'
+    if (can('video/webm; codecs="vp9"')) return 'vp9'
+  } catch { /* fall through */ }
+  return 'h264'
+}
+
+export function pickVideoCodec(): VideoSetCodec {
+  if (_codec === null) _codec = detectVideoCodec()
+  return _codec
+}
+
+/**
+ * Call from a <video> `error` handler BEFORE rebuilding the URL. If the file was a
+ * VP9/HEVC one and the browser could not decode/load it (MEDIA_ERR_DECODE or
+ * MEDIA_ERR_SRC_NOT_SUPPORTED), every URL built from now on is H.264.
+ * Returns true when it switched, so the caller can retry straight away.
+ */
+export function reportVideoFormatError(video?: { error?: { code?: number } | null }): boolean {
+  const code = video?.error?.code
+  if (code !== undefined && code !== 3 && code !== 4) return false  // network errors are not codec errors
+  if (pickVideoCodec() === 'h264') return false
+  _codec = 'h264'
+  try { localStorage.setItem(CODEC_FLOOR_KEY, 'h264') } catch { /* ignore */ }
+  return true
+}
+
 export function cloudinaryHlsUrl(publicId: string): string {
+  // Sets have no HLS stream: the best plain file stands in (used for admin preview/copy).
+  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'h264')
   return `https://res.cloudinary.com/${CLOUD}/video/upload/sp_auto/${publicId}.m3u8`
 }
 
 export function cloudinaryMp4Url(publicId: string): string {
+  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'h264')
   return `https://res.cloudinary.com/${CLOUD}/video/upload/vc_h264/f_mp4/q_auto:good/${publicId}.mp4`
 }
 
 export function cloudinaryWebmUrl(publicId: string): string {
+  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, 1920, 'vp9')
   return `https://res.cloudinary.com/${CLOUD}/video/upload/vc_vp9/f_webm/q_auto:good/${publicId}.webm`
 }
 
@@ -96,6 +221,8 @@ export function cloudinaryPosterUrl(
   // is kept only so existing call sites compile; the bucket decides it.
   const small   = requestedWidth <= 960
   const width   = small ? 960 : 1920
+  // Video sets carry their two posters as plain image assets: no transformation.
+  if (isVideoSetId(publicId)) return videoSetPosterUrl(publicId, width, stamp)
   const quality = small ? 'eco' : 'good'
   // Root cause of the poster/video crop mismatch: this used to extract the
   // still directly from the RAW source (`c_fill,g_auto,w_${width},so_0`),
@@ -233,6 +360,8 @@ export function heroVideoTier(): HeroVideoTier {
 
 function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
   const { width, quality } = HERO_TIERS[tier]
+  // Video set: the pre-made file for this width in this browser's best codec.
+  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, width, pickVideoCodec())
   return (
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
     `vc_h264/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
