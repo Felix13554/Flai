@@ -18,22 +18,42 @@ Kan også køres direkte: `zsh tools/video-versions/flai-video-versions.sh film.
 Du får en notifikation ved start og når den er færdig. Zip'en lægges ved siden af
 originalen som `<navn>.flai-versions.zip` og vises i Finder. Log: `~/Library/Logs/FlaiVideoVersions.log`.
 
-## Hvad der kommer i zip'en
+## Hvor mange versioner: 11 filer pr. video
 
-Det samme sæt sitet bruger i dag (`src/utils/cloudinaryUrls.ts`, `api/_lib/cloudinaryWarm.js`):
-ét format, tre størrelser, lyd på alle. Bredden er `c_limit` (aldrig opskaleret).
+**3 størrelser × 3 formater = 9 videoer (alle med lyd), + 2 posters.**
+
+Størrelserne er de tre `heroVideoTier()` i `src/utils/cloudinaryUrls.ts` vælger mellem
+(`c_limit`, aldrig opskaleret; `mobile` har samme tal som `small`):
+
+| Størrelse | Bredde | Bruges af                                                        |
+| --------- | ------ | ---------------------------------------------------------------- |
+| small     | 720    | portrætmobil, Data Saver, 2g/3g, og efter gentagne hakker        |
+| medium    | 1280   | mobil i landskab, tablets, laptops og de fleste skærme           |
+| large     | 1920   | brede skærme (over 1600 CSS-px)                                  |
+
+Formaterne er dem Cloudinarys `f_auto` vælger mellem til video, afhængigt af browseren:
+
+| Codec | Fil     | Gives af f_auto til                       |
+| ----- | ------- | ----------------------------------------- |
+| vp9   | `.webm` | Chrome og andre Chromium-browsere         |
+| hevc  | `.mp4`  | Safari (macOS og iOS), mærket `hvc1`      |
+| h264  | `.mp4`  | alle andre browsere (fallback)            |
+
+AV1 er ikke med: Cloudinarys dokumentation nævner det ikke som en del af `f_auto` til video.
 
 ```
 <navn>/
-  video_720_h264.mp4     small   (portrætmobil, Data Saver, 2g/3g)
-  video_1280_h264.mp4    medium  (de fleste skærme)
-  video_1920_h264.mp4    large   (brede skærme)
-  poster_960.jpg         960 bred, eco
-  poster_1920.jpg        1920 bred, good
-  manifest.json          én post pr. fil: slags, størrelse, kvalitet, codec, lyd, mime, bytes
+  video_720_vp9.webm    video_720_hevc.mp4    video_720_h264.mp4
+  video_1280_vp9.webm   video_1280_hevc.mp4   video_1280_h264.mp4
+  video_1920_vp9.webm   video_1920_hevc.mp4   video_1920_h264.mp4
+  poster_960.jpg        960 bred, eco
+  poster_1920.jpg       1920 bred, good
+  manifest.json
 ```
 
-`publicId` i manifestet er filnavnet uden endelse (mellemrum → `_`, kun `A-Z a-z 0-9 _ - .`).
+`manifest.json` har én post pr. fil: slags, størrelse, kvalitet, codec, lyd, mime, bytes,
+`audience` (hvem f_auto ville have givet den til) og `canPlayType` (til valg i browseren).
+`publicId` er filnavnet uden endelse (mellemrum → `_`, kun `A-Z a-z 0-9 _ - .`).
 Er originalen smallere end en størrelse, bliver den ikke opskaleret, så to filer kan være ens.
 
 ## Flag
@@ -41,11 +61,11 @@ Er originalen smallere end en størrelse, bliver den ikke opskaleret, så to fil
 ```sh
 FLAI_DRY=1  zsh tools/video-versions/flai-video-versions.sh film.mp4   # vis kun planen
 FLAI_FAST=1 zsh tools/video-versions/flai-video-versions.sh film.mp4   # grove/hurtige indstillinger, kun til test
-FLAI_CODECS="h264 hevc vp9" zsh tools/video-versions/flai-video-versions.sh film.mp4   # flere formater
+FLAI_CODECS="h264" zsh tools/video-versions/flai-video-versions.sh film.mp4   # kun nogle formater
 ```
 
-Standard er kun `h264`, fordi det er det eneste format sitet leverer. `hevc` (Safari) og `vp9`
-(WebM) er med til hvis sitet en dag skifter tilbage til flere formater. HEVC og VP9 er langsomme.
+HEVC og VP9 er langsomme at lave. En 4 sekunders 1080p-testvideo tog ca. 10 sekunder for hele
+sættet; rigtigt optagelsesmateriale tager længere, så lad den køre i baggrunden.
 
 ## Status
 

@@ -8,20 +8,23 @@
 #
 #   flai-video-versions.sh <video> [<video> ...]
 #
-# Sættet svarer til det sitet bruger i dag (src/utils/cloudinaryUrls.ts og
-# api/_lib/cloudinaryWarm.js): ét format, tre størrelser, lyd på alle.
+# Sættet dækker alle enheder og browsere, som f_auto ville have gjort:
 #
-#   video_720_h264.mp4    small   (c_limit, aldrig opskaleret)
-#   video_1280_h264.mp4   medium
-#   video_1920_h264.mp4   large
-#   poster_960.jpg        960 bred, eco
-#   poster_1920.jpg       1920 bred, good
-#   manifest.json         beskriver hver fil præcist
+#   3 størrelser  (heroVideoTier i cloudinaryUrls.ts):  720 · 1280 · 1920 bred
+#   × 3 formater  (det f_auto vælger ud fra browseren):
+#        vp9   .webm   Chrome og andre Chromium-browsere
+#        hevc  .mp4    Safari (macOS og iOS)
+#        h264  .mp4    alle andre browsere (fallback)
+#   = 9 videoer (alle med lyd)  +  2 posters  +  manifest.json
+#
+#   video_<bredde>_<codec>.<ext>     fx video_1280_hevc.mp4
+#   poster_960.jpg                   960 bred, eco
+#   poster_1920.jpg                  1920 bred, good
 #
 # Resultat: <navn>.flai-versions.zip ved siden af originalen, med mappen <navn>/ indeni.
 #
 # Miljøvariabler:
-#   FLAI_CODECS="h264 vp9 hevc"   flere formater (standard: kun h264, som sitet bruger)
+#   FLAI_CODECS="h264"            kun nogle formater (standard: h264 hevc vp9)
 #   FLAI_FAST=1                   hurtige/grove encoder-indstillinger (kun til test)
 #   FLAI_DRY=1                    vis kun planen, lav ingenting
 #
@@ -30,7 +33,7 @@
 set -u
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-GENERATOR_VERSION=2
+GENERATOR_VERSION=3
 LOG="$HOME/Library/Logs/FlaiVideoVersions.log"
 mkdir -p "$HOME/Library/Logs"
 
@@ -38,7 +41,7 @@ typeset -A TIER_W
 TIER_W=(small 720 medium 1280 large 1920)
 TIERS=(small medium large)
 POSTERS=(960:eco:5 1920:good:3)          # bredde:kvalitet:jpeg-q (lavere q = bedre)
-CODECS=(${=FLAI_CODECS:-h264})
+CODECS=(${=FLAI_CODECS:-h264 hevc vp9})
 
 for c in $CODECS; do
   [[ $c == (h264|hevc|vp9) ]] || { print "Ukendt codec: $c (brug h264, hevc eller vp9)" >&2; exit 1 }
@@ -148,6 +151,11 @@ import json, os, subprocess, sys, datetime
 work, slug, src_name, gen_version, src_path = sys.argv[1:6]
 out = os.path.join(work, slug)
 mimes = {"webm": "video/webm", "mp4": "video/mp4", "jpg": "image/jpeg"}
+# Hvem f_auto ville have givet formatet til, og hvad browseren selv svarer på canPlayType.
+audience = {"vp9": "Chrome og andre Chromium-browsere", "hevc": "Safari (macOS og iOS)",
+            "h264": "Alle andre browsere (fallback)", "jpeg": None}
+can_play = {"vp9": 'video/webm; codecs="vp9"', "hevc": 'video/mp4; codecs="hvc1"',
+            "h264": 'video/mp4; codecs="avc1.42E01E"', "jpeg": None}
 files = []
 with open(os.path.join(work, "files.tsv")) as fh:
     for line in fh:
@@ -162,6 +170,8 @@ with open(os.path.join(work, "files.tsv")) as fh:
             "codec": codec,                     # h264 | hevc | vp9 | jpeg
             "audio": audio == "true",
             "mime": mimes[ext],
+            "audience": audience.get(codec),
+            "canPlayType": can_play.get(codec),
             "bytes": os.path.getsize(os.path.join(out, f)),
         })
 probe = {}
