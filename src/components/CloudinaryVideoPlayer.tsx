@@ -6,9 +6,11 @@
  *
  * It plays video EXACTLY the way HeroVideoSection does:
  *   • source  = cloudinaryPlayerVideoUrl(publicId)  (device-tiered c_limit width,
- *               f_auto codec, q_auto — same pipeline as the hero, but with audio)
- *   • poster  = cloudinaryPosterUrl(...)     (480 / 960 / 1920 srcSet, derived
- *               from the same processed asset so the crop always matches)
+ *               H.264 MP4, q_auto — the very same URL/asset as the hero, so a
+ *               video used in both places is only transcoded once per size)
+ *   • poster  = cloudinaryPosterUrl(...)     (srcSet; widths snap to just two
+ *               poster files, 960 / 1920, derived from the same processed
+ *               asset so the crop always matches)
  *   • src is assigned imperatively in a stable ref callback, together with the
  *     same muted / playsinline / webkit-playsinline / crossOrigin attributes
  *   • same error / stall recovery: reload the src with capped exponential

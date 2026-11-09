@@ -4,13 +4,15 @@
  *
  * Varmer Cloudinary op, så ingen besøgende venter på en transkodning.
  *
- * Hvorfor: med f_auto vælger Cloudinary selv format (WebM/VP9, HEVC, H.264 …)
- * ud fra browseren. Hver kombination af (video × størrelse × format) bliver
- * først lavet, når nogen beder om den første gang – og den første besøgende
- * får ventetiden. Dette script beder selv om alle kombinationerne, ved at
- * spørge som flere forskellige browsere, og venter til Cloudinary er færdig.
- * Cloudinary gemmer det, den har valgt, på sit CDN, så rigtige besøgende
- * får det med det samme bagefter.
+ * Hvorfor: hver kombination af (video × størrelse) bliver først lavet hos
+ * Cloudinary, når nogen beder om den første gang – og den første besøgende
+ * får ventetiden. Dette script beder selv om dem og venter til Cloudinary er
+ * færdig. Cloudinary gemmer resultatet på sit CDN, så rigtige besøgende får det
+ * med det samme bagefter.
+ *
+ * Det er bevidst kun TRE varianter pr. video (720 / 1280 / 1920, H.264 MP4,
+ * samme URL til hero og afspillere). Hver ekstra variant er en ekstra
+ * transformation, du betaler for. Se api/_lib/cloudinaryWarm.js.
  *
  *   node scripts/warm-videos.mjs <public_id> [<public_id> ...]
  *   node scripts/warm-videos.mjs --all            (alle videoer i Cloudinary)
@@ -20,8 +22,7 @@
  *   --all              find alle videoer via Cloudinary Admin API
  *                      (kræver CLOUDINARY_API_KEY og CLOUDINARY_API_SECRET som
  *                      miljøvariabler i terminalen)
- *   --kinds=hero,player   hvilke afspillere der varmes op (standard: begge)
- *   --browsers=chrome,firefox,safari-ios,safari-mac,android   (standard: alle)
+ *   --tiers=small,medium,large   hvilke størrelser der varmes op (standard: alle tre)
  *   --concurrency=3    antal samtidige forespørgsler (standard 3)
  *   --dry              vis kun de URL'er der ville blive bedt om
  *
@@ -31,12 +32,12 @@
  * Scriptet henter aldrig hele videoer (kun 1 byte pr. forespørgsel).
  * Kræver Node 18+. Ingen pakker.
  *
- * Opskrifterne (tiers, URL'er, browsere) ligger i api/_lib/cloudinaryWarm.js og
- * deles med webhook'en api/cloudinary-webhook.js. De skal følge
- * src/utils/cloudinaryUrls.ts – ændrer du dem dér, så ret dem i lib'en også.
+ * Opskrifterne (tiers, URL'er) ligger i api/_lib/cloudinaryWarm.js og deles med
+ * webhook'en api/cloudinary-webhook.js. De skal følge src/utils/cloudinaryUrls.ts
+ * – ændrer du dem dér, så ret dem i lib'en også.
  */
 
-import { CLOUD, KINDS, BROWSERS, buildJobs, warmUrl, runPool } from '../api/_lib/cloudinaryWarm.js'
+import { CLOUD, TIERS, buildJobs, warmUrl, runPool } from '../api/_lib/cloudinaryWarm.js'
 
 // ─── Hjælpere ───────────────────────────────────────────────────────────────
 const c = (n, s) => (process.stdout.isTTY ? `\x1b[${n}m${s}\x1b[0m` : s)
@@ -96,8 +97,7 @@ async function listAllVideoIds() {
 const args = process.argv.slice(2)
 const flag = (name) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 
-const kinds = (flag('kinds') || 'hero,player').split(',').filter((k) => KINDS[k])
-const browsers = (flag('browsers') || Object.keys(BROWSERS).join(',')).split(',').filter((b) => BROWSERS[b])
+const tiers = (flag('tiers') || Object.keys(TIERS).join(',')).split(',').filter((t) => TIERS[t])
 const concurrency = Math.max(1, Number(flag('concurrency')) || 3)
 const dry = args.includes('--dry')
 const deadline = () => Date.now() + 10 * 60 * 1000
@@ -105,31 +105,31 @@ const deadline = () => Date.now() + 10 * 60 * 1000
 let ids = args.filter((a) => !a.startsWith('--')).map(extractPublicId)
 if (args.includes('--all')) ids = [...new Set([...ids, ...(await listAllVideoIds())])]
 
-if (ids.length === 0 || kinds.length === 0 || browsers.length === 0) {
-  console.log('Brug: node scripts/warm-videos.mjs <public_id> [<public_id> ...] | --all  [--kinds=hero,player] [--browsers=...] [--dry]')
+if (ids.length === 0 || tiers.length === 0) {
+  console.log('Brug: node scripts/warm-videos.mjs <public_id> [<public_id> ...] | --all  [--tiers=small,medium,large] [--dry]')
   process.exit(1)
 }
 
-const jobs = buildJobs(ids, kinds, browsers)
+const jobs = buildJobs(ids, tiers)
 
-console.log(bold(`Varmer op: ${ids.length} video(er) × ${kinds.length} slags × størrelser × ${browsers.length} browsere = ${jobs.length} forespørgsler`))
+console.log(bold(`Varmer op: ${ids.length} video(er) × ${tiers.length} størrelser = ${jobs.length} forespørgsler (= højst ${jobs.length} transformationer)`))
 console.log(dim('Første gang kan hver ny variant tage lidt at lave. Cloudinary gemmer dem bagefter.\n'))
 
 if (dry) {
-  for (const j of jobs) console.log(`${BROWSERS[j.browser].label.padEnd(15)} ${j.url}`)
+  for (const j of jobs) console.log(`${j.tier.padEnd(7)} ${j.url}`)
   process.exit(0)
 }
 
 let done = 0
 const stats = { ready: 0, built: 0, failed: 0 }
 const failures = []
-const typesSeen = new Map() // "video/slags/tier" → Set(formater)
+const typesSeen = new Map() // "video/tier" → Set(formater)
 
 const tasks = jobs.map((j) => async () => {
-  const r = await warmUrl(j.url, BROWSERS[j.browser].ua, deadline())
+  const r = await warmUrl(j.url, undefined, deadline())
   done++
   const tag = `[${String(done).padStart(String(jobs.length).length)}/${jobs.length}]`
-  const where = `${j.id}  ${KINDS[j.kind].label} ${j.tier}  ${BROWSERS[j.browser].label}`
+  const where = `${j.id}  ${j.tier}`
   if (r.error) {
     stats.failed++
     failures.push(`${where}: ${r.error}`)
@@ -138,7 +138,7 @@ const tasks = jobs.map((j) => async () => {
   }
   if (r.waited) stats.built++
   else stats.ready++
-  const key = `${j.id} ${KINDS[j.kind].label} ${j.tier}`
+  const key = `${j.id} ${j.tier}`
   if (!typesSeen.has(key)) typesSeen.set(key, new Set())
   typesSeen.get(key).add(r.type)
   console.log(

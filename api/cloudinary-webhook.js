@@ -1,9 +1,10 @@
 /**
  * api/cloudinary-webhook.js — Vercel Serverless Function
  *
- * Varmer automatisk alle f_auto-varianter op, når en video bliver uploadet
- * eller erstattet i Cloudinary, så første besøgende ikke venter på en
- * transkodning.
+ * Varmer automatisk de tre størrelser (720/1280/1920, H.264 MP4) op, når en
+ * video bliver uploadet eller erstattet i Cloudinary, så første besøgende ikke
+ * venter på en transkodning. Det er bevidst KUN disse tre: hver ekstra variant
+ * koster transformations-credits.
  *
  *   POST /api/cloudinary-webhook      (kaldes af Cloudinary, ikke af browseren)
  *
@@ -14,6 +15,11 @@
  *       URL:           https://flai.dk/api/cloudinary-webhook
  *       Notifications: Upload   (dækker både ny video og erstat/overwrite)
  *  3. Upload en testvideo og se Vercel → Logs: "[webhook] varmer op …".
+ *  4. Fjern ALLE "Eager"-transformationer fra upload-presetet "Herovideo"
+ *     (Cloudinary Console → Settings → Upload → Upload presets → Herovideo →
+ *     Transform). Presetet bestiller ellers HLS, MP4, WebM og et poster
+ *     for hver upload, som siden slet ikke bruger – og det koster credits
+ *     hver gang. Webhook'en her varmer de tre varianter, der bruges.
  *
  * ─── SIKKERHED ───────────────────────────────────────────────────────────────
  * Cloudinary underskriver hver besked: SHA-1/SHA-256 af (rå body + timestamp +
@@ -23,7 +29,7 @@
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { buildJobs, warmUrl, runPool, BROWSERS, KINDS } from './_lib/cloudinaryWarm.js'
+import { buildJobs, warmUrl, runPool } from './_lib/cloudinaryWarm.js'
 
 const API_SECRET = process.env.CLOUDINARY_API_SECRET || ''
 
@@ -78,13 +84,14 @@ export function isValidSignature(rawBody, timestamp, signature, secret = API_SEC
 
 export async function warmVideo(publicId, budgetMs = BUDGET_MS) {
   const deadline = Date.now() + budgetMs
-  const jobs = buildJobs([publicId], Object.keys(KINDS), Object.keys(BROWSERS))
+  // Kun de tre størrelser siderne bruger, i ét format – se cloudinaryWarm.js.
+  const jobs = buildJobs([publicId])
   const stats = { ready: 0, built: 0, failed: 0 }
   const formats = new Set()
 
   await runPool(
     jobs.map((j) => async () => {
-      const r = await warmUrl(j.url, BROWSERS[j.browser].ua, deadline)
+      const r = await warmUrl(j.url, undefined, deadline)
       if (r.error) { stats.failed++; return }
       if (r.waited) stats.built++
       else stats.ready++

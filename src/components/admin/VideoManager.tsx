@@ -11,26 +11,29 @@
  *
  * ─── Compression strategy ─────────────────────────────────────────────────────
  *
+ *  Every distinct delivery URL is a separate derived asset that Cloudinary
+ *  transcodes (and bills as a transformation) once. The goal here is the
+ *  FEWEST derived assets per video: 3 sizes of one H.264 MP4 (+ 2 posters),
+ *  shared by the hero and all players — see utils/cloudinaryUrls.ts.
+ *
  *  1. UPLOAD PRESET (Cloudinary Dashboard → Settings → Upload → Herovideo):
- *       `eager`, `eager_async` and `overwrite` are NOT allowed in unsigned
- *       upload requests — configure them once in the preset's Transform tab:
- *         Eager: sp_hd/f_m3u8         ← HLS (pre-generation for repeat visitors)
- *         Eager: f_mp4,q_auto:good,vc_h264
- *         Eager: f_webm,q_auto:good,vc_vp9
- *         Eager: vc_h264/so_0/f_jpg,q_auto:good,w_1280
- *         eager_async: true   ← prevents timeouts on large videos
- *         overwrite:   true   ← required for the replace flow
+ *       Keep the Transform tab's EAGER list EMPTY. It used to order an HLS
+ *       package (sp_hd/f_m3u8 = several renditions), an MP4, a WebM and a
+ *       poster on every upload, none of which the site plays any more, so
+ *       every upload paid for assets nobody requested.
+ *       Only `overwrite: true` is needed (the replace flow re-uploads to the
+ *       same public_id).
  *
- *       Delivery URLs use sp_auto (works on first request without pre-generation).
- *       Eager uses sp_hd so repeat visitors get a pre-cached multi-bitrate HLS.
+ *  2. PRE-WARM = the Vercel webhook api/cloudinary-webhook.js (Cloudinary
+ *     "Upload" notification). It requests exactly the 3 sizes the site uses so
+ *     the first visitor doesn't wait. The client no longer calls the Supabase
+ *     edge function's `?eager=1` (explicit) endpoint after an upload — that
+ *     only created more derived assets on top of the webhook's.
  *
- *  2. POST-UPLOAD EXPLICIT via Supabase edge function (signed):
- *     After each upload the client fires POST ?eager=1&id=<public_id> to the
- *     edge function, which calls Cloudinary's signed `explicit` endpoint to
- *     pre-warm all derivatives — belt-and-suspenders on top of the preset.
- *
- *  3. DELIVERY URLs always carry q_auto and format/codec params so every
- *     video is served optimally regardless of when it was uploaded.
+ *  3. NO HLS: nothing on the site plays .m3u8 (it is reduced to a public_id
+ *     and served as MP4). Requesting a sp_auto/sp_hd manifest makes Cloudinary
+ *     build a multi-rendition stream, so this screen must not request one —
+ *     the "Optimerer…" badge below polls the 1280 MP4 instead.
  *
  *  4. CHUNKED upload (6 MB chunks) — reliable for any file size.
  *
@@ -58,6 +61,7 @@ import {
   cloudinaryWebmUrl,
   bustHeroCache,
 } from '../../utils/heroPreload';
+import { cloudinaryPlayerVideoUrl } from '../../utils/cloudinaryUrls';
 import { broadcastHeroUpdate } from '../../utils/heroSync';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -71,13 +75,6 @@ const EDGE_KEY = 't4fr3ZXEo_duMoZiGY_FqtFWUfw';
 
 /** Chunk size for chunked uploads — 6 MB is well within Cloudinary's limits */
 const CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
-
-const EAGER_ALL = [
-  'sp_hd/f_m3u8',
-  'f_mp4,q_auto:good,vc_h264',
-  'f_webm,q_auto:good,vc_vp9',
-  'vc_h264/so_0/f_jpg,q_auto:good,w_1280',
-].join('|');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,7 +190,11 @@ async function cldUpload(
   return result as UploadResult;
 }
 
-// ─── EagerBadge — polls until HLS manifest is ready ──────────────────────────
+// ─── EagerBadge — polls until the 1280 MP4 (warmed by the webhook) is ready ──
+// Deliberately NOT the HLS manifest: asking for sp_auto makes Cloudinary build a
+// whole multi-rendition stream that nothing on the site ever plays. The 1280
+// size is one of the 3 variants the webhook warms anyway, so polling it adds no
+// derived asset of its own.
 
 const EagerBadge: React.FC<{ publicId: string }> = ({ publicId }) => {
   const [ready, setReady] = useState(false);
@@ -201,7 +202,7 @@ const EagerBadge: React.FC<{ publicId: string }> = ({ publicId }) => {
   useEffect(() => {
     let attempts = 0;
     const maxAttempts = 36;
-    const url = cloudinaryHlsUrl(publicId);
+    const url = cloudinaryPlayerVideoUrl(publicId, 'medium');
 
     const check = async () => {
       try {
@@ -232,8 +233,8 @@ const CompressionInfoPanel: React.FC<{ isHeroVideo?: boolean }> = ({ isHeroVideo
       <Zap size={12} className={isHeroVideo ? 'text-primary' : 'text-amber-400'} />
       <EditableContent contentKey="video-manager-automatisk-cloudinary-optimering-ved-upload" fallback="Automatisk Cloudinary optimering ved upload" /></p>
     <ul className={`space-y-1 pl-0.5 ${isHeroVideo ? 'text-primary/70' : 'text-neutral-400'}`}>
-      <li>• <strong><EditableContent contentKey="video-manager-hls-adaptiv-stream" fallback="HLS adaptiv stream" /></strong> <EditableContent contentKey="video-manager-serverer-rigtig-bitrate-til-brugerens" fallback="— serverer rigtig bitrate til brugerens forbindelseshastighed" /></li>
-      <li>• <strong><EditableContent contentKey="video-manager-mp4-webm" fallback="MP4 + WebM" /></strong> <EditableContent contentKey="video-manager-forudgenereres-straks-ingen-ventetid-for" fallback="forudgenereres straks — ingen ventetid for første besøgende" /></li>
+      <li>• <strong><EditableContent contentKey="video-manager-hls-adaptiv-stream" fallback="3 størrelser" /></strong> <EditableContent contentKey="video-manager-serverer-rigtig-bitrate-til-brugerens" fallback="— 720, 1280 og 1920 px; hver enhed får den mindste der er skarp nok" /></li>
+      <li>• <strong><EditableContent contentKey="video-manager-mp4-webm" fallback="Kun MP4 (H.264)" /></strong> <EditableContent contentKey="video-manager-forudgenereres-straks-ingen-ventetid-for" fallback="de tre størrelser forberedes straks — ingen ventetid for første besøgende, og så få transformationer som muligt" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-q-auto" fallback="q_auto" /></strong> <EditableContent contentKey="video-manager-intelligent-komprimering-typisk-60-80" fallback="intelligent komprimering — typisk 60–80 % lavere filstørrelse" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-1080p-max" fallback="1080p max" /></strong> <EditableContent contentKey="video-manager-resolutionsloft-til-web-c-limit" fallback="— resolutionsloft til web (c_limit)" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-chunked-upload" fallback="Chunked upload" /></strong> <EditableContent contentKey="video-manager-filer-opdeles-i-6-mb" fallback="— filer opdeles i 6 MB bidder for pålidelig overførsel" /></li>
@@ -426,11 +427,9 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
       setStage('done');
       toast.success('Video uploadet — Cloudinary optimerer nu i baggrunden…');
 
-      // Fire-and-forget: pre-warm eager derivatives server-side.
-      edgeFetch(
-        `?eager=1&id=${encodeURIComponent(result.public_id)}`,
-        { method: 'POST' }
-      ).catch((e) => console.warn('Eager pre-warm failed (non-fatal):', e.message));
+      // No client-side pre-warm: the Cloudinary upload webhook
+      // (api/cloudinary-webhook.js) already warms the 3 sizes the site uses.
+      // The old `?eager=1` edge-function call ordered extra derived assets.
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately — updates poster stamp + dispatches
@@ -587,11 +586,8 @@ const ReplaceVideoModal: React.FC<{
         alt:        savedAlt,
       });
 
-      // Step 3 — fire-and-forget: pre-warm eager derivatives
-      edgeFetch(
-        `?eager=1&id=${encodeURIComponent(savedPublicId)}`,
-        { method: 'POST' }
-      ).catch((e) => console.warn('Eager pre-warm failed (non-fatal):', e.message));
+      // Step 3 — no client-side pre-warm (the upload webhook re-warms the 3
+      // sizes after the overwrite; see the note in the upload handler above).
 
       // ── Cache invalidation ──────────────────────────────────────────────────
       // A) Bust the current tab immediately.

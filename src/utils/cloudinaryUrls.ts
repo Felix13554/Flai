@@ -83,10 +83,20 @@ export function cloudinaryWebmUrl(publicId: string): string {
 
 export function cloudinaryPosterUrl(
   publicId: string,
-  width    = 1920,
-  quality  = 'good',
-  stamp    = 0,
+  requestedWidth = 1920,
+  _quality       = 'good',
+  stamp          = 0,
 ): string {
+  // COST: every distinct poster URL is its own derived asset on Cloudinary
+  // (and, because it starts from `vc_h264`, a video transformation). Callers
+  // used to ask for 320 / 480 / 960 / 1920 wide, i.e. up to four posters per
+  // video. Whatever width is requested is now snapped to one of TWO sizes, so a
+  // video never has more than two posters: 960 eco (phones, admin thumbnails,
+  // srcset candidates up to 960w) and 1920 good (everything wider). `_quality`
+  // is kept only so existing call sites compile; the bucket decides it.
+  const small   = requestedWidth <= 960
+  const width   = small ? 960 : 1920
+  const quality = small ? 'eco' : 'good'
   // Root cause of the poster/video crop mismatch: this used to extract the
   // still directly from the RAW source (`c_fill,g_auto,w_${width},so_0`),
   // a completely separate transformation pipeline from the one the <video>
@@ -110,33 +120,38 @@ export function cloudinaryPosterUrl(
   return stamp > 0 ? `${base}?v=${stamp}` : base
 }
 
-// ─── Hero video delivery ──────────────────────────────────────────────────────
+// ─── Video delivery (hero + product/portfolio/preview players) ───────────────
 //
-// The autoplaying hero is a muted, looping background — it never needs the
-// source resolution or an audio track. `cloudinaryMp4Url` above applies NO size
-// cap, so every device (a phone included) used to download the video at
-// whatever resolution was uploaded. That is the single biggest driver of
-// Cloudinary bandwidth credits, so the hero (and ONLY the hero — the product /
-// portfolio players keep `cloudinaryMp4Url`, they play with sound on demand)
-// uses this builder instead:
-//   • c_limit,w_N   → never wider than the tier below (and never upscales)
-//   • ac_none       → strips the audio track (the element is muted anyway)
-//   • q_auto:<q>    → eco on the small tier, good everywhere else
+// Two different costs are in play, and they pull in opposite directions:
+//   • bandwidth credits  → smaller files per view (resolution cap, codec, q_auto)
+//   • transformation credits → FEWER DISTINCT URLs per video, because every
+//     distinct (video × transformation chain × delivered format) is a separate
+//     derived asset that Cloudinary transcodes — and bills — once.
 //
-// Every tier is a separate derived asset on Cloudinary, so keep the tier list
-// short: each (video × tier) is transcoded once, on its first request.
+// This file is tuned to keep the second number as small as possible while still
+// capping the first:
+//   • ONE delivered format (H.264 MP4, plays everywhere). `f_auto` used to be
+//     here; it makes Cloudinary build a separate asset per browser family
+//     (WebM/VP9 for Chrome+Firefox, HEVC or H.264 for Safari, AV1 …), so each
+//     size below was really 2–4 transcodes.
+//   • ONE URL per size, shared by hero and players. The hero used `ac_none`
+//     (no audio) and the players kept audio, which made every size two assets.
+//     The audio track of a short loop is a few percent of the bytes, so the
+//     hero now just plays the same file as the players (the element is muted).
+//   • THREE sizes (720 / 1280 / 1920). The old `mobile` (810) and the
+//     `eco` quality on `small` are folded into the 720 `good` asset.
+//
+// So a video is at most 3 derived assets (it was up to ~20), plus 2 posters.
+// Tune a width here → also change TIERS in api/_lib/cloudinaryWarm.js.
 const HERO_TIERS = {
-  /** Data Saver and 2g/3g connections only — deliberately small and soft. */
-  small:  { width: 720,  quality: 'eco'  },
+  /** Portrait phones, Data Saver and 2g/3g. 720 wide = a 720x1280 vertical frame. */
+  small:  { width: 720,  quality: 'good' },
   /**
-   * Portrait phones (these play the vertical cut, so width 810 means an
-   * 810x1440 frame). 1080 wide was a full 1080x1920 = 2.07 MP frame — as many
-   * pixels as 1080p — for a muted background loop on a small screen. 810 keeps
-   * ~44 % fewer pixels, still only ~1.4x upscaled on a 1170 px-wide phone, and
-   * stays at `good` (not `eco`, which looked blocky when 720 was tried).
-   * Tune this one number to trade sharpness for bytes (720 = another ~20 % less).
+   * Same numbers as `small` ON PURPOSE: identical params give an identical URL,
+   * i.e. the very same derived asset (no extra transformation). The name stays
+   * so heroVideoTier()/playerVideoTier() callers keep working unchanged.
    */
-  mobile: { width: 810, quality: 'good' },
+  mobile: { width: 720,  quality: 'good' },
   /** Phone landscape, tablets, laptops and most desktops. */
   medium: { width: 1280, quality: 'good' },
   /** Wide desktops (> 1600 CSS px). */
@@ -207,41 +222,35 @@ export function heroVideoTier(): HeroVideoTier {
 
 // ─── Optimized delivery (hero + product/portfolio/preview players) ───────────
 //
-// Both builders below share ONE pipeline:
+// Both builders below return the SAME URL for the same tier, built as:
+//   • vc_h264      → pinned codec, f_mp4 → pinned container: one delivered format
 //   • c_limit,w_N  → never wider than the device tier (and never upscales)
-//   • f_auto       → Cloudinary picks the most efficient codec the requesting
-//                    browser can play (VP9 WebM / AV1 / HEVC MP4 on Safari, with
-//                    H.264 MP4 as the fallback) instead of forcing H.264 for
-//                    everybody. This is typically 30-50 % smaller at the same
-//                    visual quality. f_auto and q_auto must be separate
-//                    slash-delimited components (not comma-joined).
-//   • q_auto:<q>   → eco on the small tier, good everywhere else
+//   • q_auto:<q>   → quality (all tiers are `good`, see HERO_TIERS)
 //
-// No vc_h264 any more: pinning the codec is exactly what blocked f_auto.
-// Each (video × tier × delivered format) is transcoded once, on its first
-// request, and cached on Cloudinary's CDN afterwards.
+// Each (video × tier) is transcoded once, on its first request, and cached on
+// Cloudinary's CDN afterwards. Keep this chain identical to variantUrl() in
+// api/_lib/cloudinaryWarm.js, or the warm-up builds assets nobody requests.
 
-function optimizedVideoUrl(publicId: string, tier: HeroVideoTier, audio: boolean): string {
+function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
   const { width, quality } = HERO_TIERS[tier]
   return (
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `c_limit,w_${width}/` +
-    (audio ? '' : 'ac_none/') +
-    `f_auto/q_auto:${quality}/${publicId}.mp4`
+    `vc_h264/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
   )
 }
 
-/** Hero loop: tiered, auto-format, audio stripped (the element is muted). */
+/** Hero loop: tiered, single-format. Shares its asset with the players. */
 export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier, false)
+  return optimizedVideoUrl(publicId, tier)
 }
 
 /**
- * Product / portfolio / preview players: same tiers and auto-format as the
- * hero, but WITH audio — the visitor starts these videos themselves, with sound.
+ * Product / portfolio / preview players: identical URL to the hero for the same
+ * tier (audio is kept in both — the hero element is simply muted), so a video
+ * that is used in both places is still only transcoded once per size.
  */
 export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = playerVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier, true)
+  return optimizedVideoUrl(publicId, tier)
 }
 
 /**

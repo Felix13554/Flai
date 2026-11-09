@@ -3,7 +3,8 @@
  * video-savings.mjs
  *
  * Viser i terminalen hvor meget mindre dine Cloudinary-videoer fylder med den
- * nye levering (c_limit + f_auto + q_auto) sammenlignet med den gamle.
+ * nye levering (vc_h264 + c_limit + q_auto, ét format, tre størrelser)
+ * sammenlignet med den gamle.
  *
  *   node scripts/video-savings.mjs <public_id> [<public_id> ...] [--devices=phone,laptop,wide]
  *   npm run video:savings -- mappe/min_video
@@ -25,10 +26,11 @@
 
 const CLOUD = 'dq6jxbyrg'
 
-// NYE tiers (skal følge HERO_TIERS i src/utils/cloudinaryUrls.ts)
+// NYE tiers (skal følge HERO_TIERS i src/utils/cloudinaryUrls.ts).
+// 'mobile' har med vilje samme tal som 'small' = samme URL = samme asset.
 const TIERS = {
-  small:  { width: 720,  quality: 'eco'  },
-  mobile: { width: 810,  quality: 'good' },
+  small:  { width: 720,  quality: 'good' },
+  mobile: { width: 720,  quality: 'good' },
   medium: { width: 1280, quality: 'good' },
   large:  { width: 1920, quality: 'good' },
 }
@@ -47,17 +49,9 @@ const DEVICES = {
   wide:   { label: 'Bred skærm',       hero: 'large',  player: 'large',  oldHero: 'large' },
 }
 
-// f_auto vælger format ud fra browseren, så vi spørger som to forskellige.
-const BROWSERS = {
-  chrome: {
-    label: 'Chrome',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  },
-  safari: {
-    label: 'Safari',
-    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-  },
-}
+// Formatet er fast (H.264 MP4), så alle browsere får samme fil – én user-agent er nok.
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 
 // ─── URL'er ────────────────────────────────────────────────────────────────
 const base = `https://res.cloudinary.com/${CLOUD}/video/upload/`
@@ -65,9 +59,8 @@ const base = `https://res.cloudinary.com/${CLOUD}/video/upload/`
 // GAMMELT (før ændringen)
 const oldHero   = (id, t) => `${base}vc_h264,ac_none/c_limit,w_${OLD_TIERS[t].width}/f_mp4/q_auto:${OLD_TIERS[t].quality}/${id}.mp4`
 const oldPlayer = (id)    => `${base}vc_h264/f_mp4/q_auto:good/${id}.mp4`
-// NYT
-const newHero   = (id, t) => `${base}c_limit,w_${TIERS[t].width}/ac_none/f_auto/q_auto:${TIERS[t].quality}/${id}.mp4`
-const newPlayer = (id, t) => `${base}c_limit,w_${TIERS[t].width}/f_auto/q_auto:${TIERS[t].quality}/${id}.mp4`
+// NYT – hero og afspiller bruger samme URL pr. størrelse (følger optimizedVideoUrl)
+const newUrl    = (id, t) => `${base}vc_h264/c_limit,w_${TIERS[t].width}/f_mp4/q_auto:${TIERS[t].quality}/${id}.mp4`
 
 // ─── Hjælpere ──────────────────────────────────────────────────────────────
 const c = (n, s) => (process.stdout.isTTY ? `\x1b[${n}m${s}\x1b[0m` : s)
@@ -145,18 +138,16 @@ for (const id of ids) {
   console.log(dim('  Henter størrelser (nye varianter kan tage lidt at lave første gang) …'))
 
   for (const kind of ['Hero', 'Afspiller']) {
-    console.log('\n  ' + bold(kind === 'Hero' ? 'Hero (uden lyd, auto-loop)' : 'Produkt / portfolio / preview (med lyd)'))
-    console.log(dim('  ' + 'Enhed'.padEnd(18) + 'Før'.padStart(10) + '   ' + 'Nu i Chrome'.padEnd(28) + 'Nu i Safari'))
+    console.log('\n  ' + bold(kind === 'Hero' ? 'Hero (auto-loop)' : 'Produkt / portfolio / preview (med lyd)'))
+    console.log(dim('  ' + 'Enhed'.padEnd(18) + 'Før'.padStart(10) + '   ' + 'Nu'))
 
     for (const d of devices) {
       const dev = DEVICES[d]
       const t = kind === 'Hero' ? dev.hero : dev.player
       const oldUrl = kind === 'Hero' ? oldHero(id, dev.oldHero) : oldPlayer(id)
-      const newUrl = kind === 'Hero' ? newHero(id, t) : newPlayer(id, t)
 
-      const old = await fileSize(oldUrl, BROWSERS.chrome.ua)
-      const nowChrome = await fileSize(newUrl, BROWSERS.chrome.ua)
-      const nowSafari = await fileSize(newUrl, BROWSERS.safari.ua)
+      const old = await fileSize(oldUrl, UA)
+      const nowChrome = await fileSize(newUrl(id, t), UA)
 
       const cell = (r) => {
         if (r.error) return red(('fejl: ' + r.error).slice(0, 27).padEnd(27))
@@ -169,7 +160,7 @@ for (const id of ids) {
       console.log(
         '  ' + dev.label.padEnd(18) +
         (old.error ? red('fejl'.padStart(10)) : mb(old.bytes).padStart(10)) + '   ' +
-        cell(nowChrome) + ' ' + cell(nowSafari),
+        cell(nowChrome),
       )
       if (old.error) console.log(dim(`  (gammel version: ${old.error})`))
 
@@ -184,7 +175,7 @@ for (const id of ids) {
 
 if (grandCounted.rows > 0) {
   const saved = Math.round((1 - grandNew / grandOld) * 100)
-  console.log('\n' + bold('Samlet (Chrome, alle rækker ovenfor lagt sammen, én visning af hver):'))
+  console.log('\n' + bold('Samlet (alle rækker ovenfor lagt sammen, én visning af hver):'))
   console.log(`  Før: ${mb(grandOld).trim()}   Nu: ${mb(grandNew).trim()}   ` + (saved >= 0 ? green(`Besparelse: ${saved}%`) : red(`Øgning: ${-saved}%`)))
   console.log(dim('  Tallene er hele filens størrelse. Faktisk forbrug pr. visning kan være lavere, hvis besøgende ikke ser hele videoen.'))
 }

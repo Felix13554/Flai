@@ -5,78 +5,60 @@
  * og terminal-scriptet (scripts/warm-videos.mjs). Mappen starter med "_", så
  * Vercel gør den ikke til en funktion.
  *
- * Hvorfor: med f_auto vælger Cloudinary selv format ud fra browseren, og hver
- * kombination (video × størrelse × format) bliver først lavet, når nogen
- * beder om den første gang. Her beder vi selv om alle kombinationerne, ved at
- * spørge som flere forskellige browsere, så den første rigtige besøgende ikke
- * får ventetiden.
+ * Hvorfor: hver kombination (video × størrelse) bliver først lavet hos
+ * Cloudinary, når nogen beder om den første gang. Her beder vi selv om dem, så
+ * den første rigtige besøgende ikke får ventetiden.
  *
- * NB: TIERS / KINDS / variantUrl skal følge src/utils/cloudinaryUrls.ts
- * (HERO_TIERS, optimizedVideoUrl, playerVideoTier). Ændrer du dem dér, så ret
- * dem her også – ellers varmes de forkerte URL'er op.
+ * ─── Kun så få transformationer som muligt ──────────────────────────────────
+ * Hver forskellig URL er et selvstændigt afledt asset, der transkodes (og
+ * tæller som transformations-credits) én gang. Derfor:
+ *   • ÉT format (H.264 MP4). Før brugte vi f_auto, og så lavede Cloudinary et
+ *     asset pr. browser-familie (WebM, HEVC, AV1 …) – og vi spurgte som fem
+ *     forskellige browsere for at få dem alle lavet.
+ *   • ÉN URL pr. størrelse, delt mellem hero og afspillere (før var hero uden
+ *     lyd og afspillere med lyd = to assets pr. størrelse).
+ *   • TRE størrelser (720 / 1280 / 1920).
+ * Resultat: 3 transformationer pr. video i alt (før op til ca. 20-35).
+ *
+ * NB: TIERS / variantUrl skal følge src/utils/cloudinaryUrls.ts (HERO_TIERS,
+ * optimizedVideoUrl). Ændrer du dem dér, så ret dem her også – ellers varmes de
+ * forkerte URL'er op (og så betaler du for assets, ingen bruger).
  */
 
 export const CLOUD = 'dq6jxbyrg'
 
+// De tre størrelser siderne faktisk bruger. 'mobile' i cloudinaryUrls.ts har
+// samme tal som 'small' og er derfor samme URL – den skal ikke varmes op for sig.
 export const TIERS = {
-  small:  { width: 720,  quality: 'eco'  },
-  mobile: { width: 810,  quality: 'good' },
+  small:  { width: 720,  quality: 'good' },
   medium: { width: 1280, quality: 'good' },
   large:  { width: 1920, quality: 'good' },
 }
 
-// Hero bruger alle fire tiers. Afspillerne bruger playerVideoTier(), som aldrig
-// vælger 'mobile' (den bliver til 'small').
-export const KINDS = {
-  hero:   { label: 'Hero',      tiers: ['small', 'mobile', 'medium', 'large'], audio: false },
-  player: { label: 'Afspiller', tiers: ['small', 'medium', 'large'],           audio: true  },
-}
-
-// f_auto vælger format ud fra browseren, så vi spørger som flere forskellige.
-export const BROWSERS = {
-  chrome: {
-    label: 'Chrome',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  },
-  firefox: {
-    label: 'Firefox',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
-  },
-  'safari-ios': {
-    label: 'Safari iPhone',
-    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-  },
-  'safari-mac': {
-    label: 'Safari Mac',
-    ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
-  },
-  android: {
-    label: 'Chrome Android',
-    ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
-  },
-}
+// Det format er fast, så browseren bestemmer ikke længere, hvad Cloudinary
+// laver. Én forespørgsel pr. størrelse er nok; user-agenten er ligegyldig.
+export const WARM_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 
 /** Samme opskrift som optimizedVideoUrl i src/utils/cloudinaryUrls.ts. */
-export function variantUrl(publicId, tier, audio) {
+export function variantUrl(publicId, tier) {
   const { width, quality } = TIERS[tier]
   return (
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `c_limit,w_${width}/` +
-    (audio ? '' : 'ac_none/') +
-    `f_auto/q_auto:${quality}/${publicId}.mp4`
+    `vc_h264/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
   )
 }
 
-/** Alle (video × slags × størrelse × browser) som skal varmes op. */
-export function buildJobs(ids, kinds = Object.keys(KINDS), browsers = Object.keys(BROWSERS)) {
+/** Alle (video × størrelse) som skal varmes op. Aldrig dubletter. */
+export function buildJobs(ids, tiers = Object.keys(TIERS)) {
   const jobs = []
+  const seen = new Set()
   for (const id of ids) {
-    for (const k of kinds) {
-      for (const t of KINDS[k].tiers) {
-        for (const b of browsers) {
-          jobs.push({ id, kind: k, tier: t, browser: b, url: variantUrl(id, t, KINDS[k].audio) })
-        }
-      }
+    for (const t of tiers) {
+      const url = variantUrl(id, t)
+      if (seen.has(url)) continue
+      seen.add(url)
+      jobs.push({ id, tier: t, url })
     }
   }
   return jobs
@@ -89,7 +71,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * den (423/202 = "ved at blive lavet"). Stopper senest ved `deadline` (ms-tid).
  * Returnerer { bytes, type, waited, ms } eller { error } – kaster aldrig.
  */
-export async function warmUrl(url, ua, deadline = Date.now() + 10 * 60 * 1000) {
+export async function warmUrl(url, ua = WARM_UA, deadline = Date.now() + 10 * 60 * 1000) {
   const started = Date.now()
   let waited = false
   while (Date.now() < deadline) {
