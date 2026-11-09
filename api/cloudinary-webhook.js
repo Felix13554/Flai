@@ -144,14 +144,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ignored: 'video-set' })
   }
 
-  const publicId = String(event.public_id)
-  console.log(`[webhook] varmer op: ${publicId}${event.overwritten ? ' (erstattet)' : ' (ny)'}`)
-
-  // Svar Cloudinary med det samme, og lad opvarmningen køre videre bagefter.
-  const job = warmVideo(publicId).catch((err) => console.error('[webhook] fejl:', err))
-  if (keepAlive(job)) return res.status(200).json({ ok: true, warming: publicId })
-
-  // Fallback: ingen waitUntil → vent selv (kortere budget, så Cloudinary ikke time'er ud).
-  await Promise.race([job, new Promise((r) => setTimeout(r, 20_000))])
-  return res.status(200).json({ ok: true, warming: publicId })
+  // Videoer uden zip bruger de gamle f_auto-URL'er (browseren vælger format). At varme dem
+  // op ville igen lave ét asset pr. browser-familie, så de varmes ikke op automatisk.
+  // Upload en Flai-versions-zip, hvis videoen skal være klar uden ventetid.
+  return res.status(200).json({ ok: true, ignored: 'no-set-no-warm' })
 }

@@ -257,7 +257,7 @@ const CompressionInfoPanel: React.FC<{ isHeroVideo?: boolean }> = ({ isHeroVideo
       <li>• <strong><EditableContent contentKey="video-manager-zip-11-versions" fallback="Flai-versions-zip" /></strong> <EditableContent contentKey="video-manager-zip-11-versions-text" fallback="— 3 størrelser (720 · 1280 · 1920) × 3 formater (WebM/VP9 · HEVC · H.264) + 2 posters" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-zip-best-format" fallback="Mindste fil pr. enhed" /></strong> <EditableContent contentKey="video-manager-zip-best-format-text" fallback="— Chrome, Edge, Firefox og Android får VP9, Safari og iOS får HEVC, alt andet får H.264" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-zip-no-transform" fallback="Ingen transformationer" /></strong> <EditableContent contentKey="video-manager-zip-no-transform-text" fallback="— filerne er lavet på din Mac og leveres direkte fra Cloudinary (kun lager og båndbredde)" /></li>
-      <li>• <strong><EditableContent contentKey="video-manager-zip-how" fallback="Lav zip'en" /></strong> <EditableContent contentKey="video-manager-zip-how-text" fallback="— højreklik en video i Finder → Quick Actions → Flai Videoversioner. En enkelt videofil virker stadig (så laver Cloudinary 3 H.264-størrelser)" /></li>
+      <li>• <strong><EditableContent contentKey="video-manager-zip-how" fallback="Lav zip'en" /></strong> <EditableContent contentKey="video-manager-zip-how-text" fallback="— højreklik en video i Finder → Quick Actions → Flai Videoversioner. En enkelt videofil virker stadig, men bruger så de gamle f_auto-versioner (Cloudinary laver dem første gang)" /></li>
       <li>• <strong><EditableContent contentKey="video-manager-chunked-upload" fallback="Chunked upload" /></strong> <EditableContent contentKey="video-manager-filer-opdeles-i-6-mb" fallback="— filer opdeles i 6 MB bidder for pålidelig overførsel" /></li>
     </ul>
   </div>
@@ -583,7 +583,7 @@ const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => v
           {isDone && newPublicId && (
             <div className="flex items-center gap-2 text-xs text-neutral-400">
               <EagerBadge publicId={newPublicId} />
-              <span><EditableContent contentKey="video-manager-set-ready" fallback={zip ? 'Alle 11 versioner er klar på Cloudinary' : '3 H.264-størrelser forberedes på Cloudinary'} /></span>
+              <span><EditableContent contentKey="video-manager-set-ready" fallback={zip ? 'Alle 11 versioner er klar på Cloudinary' : 'Ingen zip – bruger f_auto-versioner (laves ved første afspilning)'} /></span>
             </div>
           )}
 
@@ -747,7 +747,7 @@ const ReplaceVideoModal: React.FC<{
           {isDone && replacedId && (
             <div className="flex items-center gap-2 text-xs text-neutral-400">
               <EagerBadge publicId={replacedId} />
-              <span><EditableContent contentKey="video-manager-set-ready-2" fallback={isSet ? 'Alle 11 versioner er klar på Cloudinary' : '3 H.264-størrelser forberedes på Cloudinary'} /></span>
+              <span><EditableContent contentKey="video-manager-set-ready-2" fallback={isSet ? 'Alle 11 versioner er klar på Cloudinary' : 'Ingen zip – bruger f_auto-versioner (laves ved første afspilning)'} /></span>
             </div>
           )}
 

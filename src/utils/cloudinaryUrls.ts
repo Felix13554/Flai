@@ -287,6 +287,18 @@ const HERO_TIERS = {
 
 export type HeroVideoTier = keyof typeof HERO_TIERS
 
+/**
+ * Widths/qualities of the f_auto URLs that were warmed up before the cost cut
+ * (see git history of this file before e8774bc). Used ONLY for videos that have no
+ * Flai-versions set. Video sets use HERO_TIERS above.
+ */
+const LEGACY_TIERS: Record<HeroVideoTier, { width: number; quality: string }> = {
+  small:  { width: 720,  quality: 'eco'  },
+  mobile: { width: 810,  quality: 'good' },
+  medium: { width: 1280, quality: 'good' },
+  large:  { width: 1920, quality: 'good' },
+}
+
 // ─── Stall-driven downgrade (downgrade-only, per page session) ────────────────
 //
 // The Network Information API only exists in Chromium (iPhones/Safari and
@@ -358,28 +370,37 @@ export function heroVideoTier(): HeroVideoTier {
 // Cloudinary's CDN afterwards. Keep this chain identical to variantUrl() in
 // api/_lib/cloudinaryWarm.js, or the warm-up builds assets nobody requests.
 
-function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
-  const { width, quality } = HERO_TIERS[tier]
+function optimizedVideoUrl(publicId: string, tier: HeroVideoTier, audio: boolean): string {
   // Video set: the pre-made file for this width in this browser's best codec.
-  if (isVideoSetId(publicId)) return videoSetVideoUrl(publicId, width, pickVideoCodec())
+  // No transformation involved, so nothing is billed on delivery.
+  if (isVideoSetId(publicId)) {
+    return videoSetVideoUrl(publicId, HERO_TIERS[tier].width, pickVideoCodec())
+  }
+  // No set (older upload, or a single file): the f_auto URLs this site used before
+  // the cost cut. Cloudinary picks the format per browser (VP9 WebM / HEVC / H.264),
+  // and these exact URLs are the ones that were already warmed up for old videos, so
+  // they are served from the CDN instead of being transcoded again. Keep the chain
+  // byte-for-byte identical to the old one, or it becomes a new (billed) asset.
+  const { width, quality } = LEGACY_TIERS[tier]
   return (
     `https://res.cloudinary.com/${CLOUD}/video/upload/` +
-    `vc_h264/c_limit,w_${width}/f_mp4/q_auto:${quality}/${publicId}.mp4`
+    `c_limit,w_${width}/` +
+    (audio ? '' : 'ac_none/') +
+    `f_auto/q_auto:${quality}/${publicId}.mp4`
   )
 }
 
-/** Hero loop: tiered, single-format. Shares its asset with the players. */
+/** Hero loop: video sets use the pre-made file; older videos the audio-free f_auto URL. */
 export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier)
+  return optimizedVideoUrl(publicId, tier, false)
 }
 
 /**
- * Product / portfolio / preview players: identical URL to the hero for the same
- * tier (audio is kept in both — the hero element is simply muted), so a video
- * that is used in both places is still only transcoded once per size.
+ * Product / portfolio / preview players: video sets use the pre-made file; older
+ * videos the f_auto URL WITH audio (the visitor starts these with sound).
  */
 export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier = playerVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier)
+  return optimizedVideoUrl(publicId, tier, true)
 }
 
 /**
