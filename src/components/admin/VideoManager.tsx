@@ -416,155 +416,271 @@ const VideoSetSummary: React.FC<{ plan: VideoSetPlan | null; planErr: string | n
   );
 };
 
+// ─── Multi dropzone (upload modal) ────────────────────────────────────────────
+
+const MultiDropzone: React.FC<{ onAdd: (files: File[]) => void; hasFiles: boolean; disabled?: boolean }> = ({ onAdd, hasFiles, disabled }) => {
+  const [dragOver, setDragOver] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  return (
+    <>
+      <input ref={ref} type="file" multiple accept=".zip,application/zip" className="hidden"
+        onChange={(e) => { onAdd(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+      <div
+        onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); if (!disabled) onAdd(Array.from(e.dataTransfer.files)); }}
+        onClick={() => { if (!disabled) ref.current?.click(); }}
+        className={`border-2 border-dashed rounded-xl ${hasFiles ? 'p-3' : 'p-6'} text-center transition-all cursor-pointer
+          ${disabled ? 'pointer-events-none opacity-60' : ''}
+          ${dragOver ? 'border-primary bg-primary/10' : 'border-neutral-600 hover:border-neutral-400 hover:bg-neutral-700/30'}`}
+      >
+        <UploadCloud size={hasFiles ? 20 : 28} className="mx-auto text-neutral-500 mb-1.5" />
+        <p className="text-sm text-neutral-300">
+          <EditableContent contentKey="video-upload-dropzone-click" as="span" className="text-primary font-medium" fallback="Klik for at vælge" />{' '}
+          <EditableContent contentKey="video-upload-dropzone-or-drop" as="span" fallback="eller træk og slip" />
+        </p>
+        <EditableContent contentKey="video-upload-dropzone-formats-multi" as="p" className="text-xs text-neutral-500 mt-1"
+          fallback="En eller flere Flai-versions-zip'er (lavet med Flai Videoversioner)" />
+      </div>
+    </>
+  );
+};
+
 // ─── UploadModal ──────────────────────────────────────────────────────────────
 
+type ItemStatus = 'pending' | 'uploading' | 'done' | 'error';
+
+interface QueueItem {
+  id:      number;
+  file:    File;
+  title:   string;
+  plan:    VideoSetPlan | null;
+  planErr: string | null;
+  status:  ItemStatus;
+  pct:     number;
+  label:   string;
+  error?:  string;
+}
+
+const safeSlug = (t: string) => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+const rootOf   = (t: string) => videoSetRootId(safeSlug(t));
+const nameToTitle = (name: string) => name.replace(/\.zip$/i, '');
+
 const UploadModal: React.FC<{ onClose: () => void; onCreated: (v: CldVideo) => void }> = ({ onClose, onCreated }) => {
-  const [videoTitle, setVideoTitle]   = useState('');
   const [description, setDescription] = useState('');
-  const [file, setFile]   = useState<File | null>(null);
-  const [stage, setStage] = useState<Stage>('idle');
-  const [pct, setPct]     = useState(0);
-  const [err, setErr]     = useState<string | null>(null);
-  const [newPublicId, setNewPublicId] = useState<string | null>(null);
-  const [stepLabel, setStepLabel] = useState('');
+  const [items, setItems] = useState<QueueItem[]>([]);
+  const [busy, setBusy]   = useState(false);
+  const [finished, setFinished] = useState(false);
+  const itemsRef = useRef<QueueItem[]>([]);
+  itemsRef.current = items;
+  const nextId = useRef(1);
   const abort = useRef<AbortController | null>(null);
-  const { plan, planErr, zip, blocked } = useVideoSetPlan(file, (slug) => setVideoTitle((t) => t.trim() ? t : slug));
 
-  const handleUpload = async () => {
-    if (!videoTitle.trim()) { toast.error('Titel er påkrævet'); return; }
-    if (!file)              { toast.error('Vælg venligst en Flai-versions-zip'); return; }
-    if (!zip)               { toast.error('Upload zip-filen fra Flai Videoversioner – enkeltstående videoer understøttes ikke'); return; }
-    if (!plan || plan.missing.length) { toast.error('Zip-filen er ikke komplet'); return; }
+  const patch = (id: number, p: Partial<QueueItem>) =>
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...p } : i)));
 
-    setErr(null); setStage('uploading'); setPct(0);
-    abort.current = new AbortController();
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    const zips = files.filter(isZipFile);
+    const skipped = files.length - zips.length;
+    if (skipped) toast.error(`${skipped} fil${skipped === 1 ? '' : 'er'} sprunget over – kun Flai-versions-zip'er understøttes`);
 
-    try {
-      const safe = videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const fresh = zips.filter((f) => !itemsRef.current.some((i) => i.file.name === f.name && i.file.size === f.size));
+    if (!fresh.length) return;
 
-      const root = videoSetRootId(safe);
-      await uploadVideoSet(plan, root, {
-        upload:     uploadSetFile,
-        caption:    videoTitle.trim(),
-        alt:        description.trim(),
-        signal:     abort.current.signal,
-        onProgress: (p, l) => { setPct(p); setStepLabel(l); },
-      });
-      const result: UploadResult = { public_id: root };
+    const added: QueueItem[] = fresh.map((file) => ({
+      id: nextId.current++, file, title: nameToTitle(file.name),
+      plan: null, planErr: null, status: 'pending', pct: 0, label: '',
+    }));
+    setItems((prev) => [...prev, ...added]);
 
-      setNewPublicId(result.public_id);
-      setStage('done');
-      toast.success('Video uploadet — alle versioner er klar');
-
-      // No pre-warm: the files of a set are finished uploads, nothing is transcoded.
-
-      // ── Cache invalidation ──────────────────────────────────────────────────
-      // A) Bust the current tab immediately — updates poster stamp + dispatches
-      //    'heroVideoChanged' so HeroVideoSection reacts without a page reload.
-      bustHeroCache(result.public_id);
-
-      // B) Broadcast to every other connected browser/tab via Supabase Realtime.
-      //    Their HeroVideoSection will swap the video within ~100 ms.
-      broadcastHeroUpdate(result.public_id).catch((e) =>
-        console.warn('heroSync broadcast failed (non-fatal):', e)
-      );
-
-      const newVideo: CldVideo = {
-        public_id:    result.public_id,
-        display_name: videoTitle.trim(),
-        filename:     file.name,
-        asset_folder: 'Herovideo',
-        format:       'mp4',
-        created_at:   new Date().toISOString(),
-        bytes:        file.size,
-        secure_url:   cloudinaryMp4Url(result.public_id),
-        context:      { custom: { caption: videoTitle.trim(), alt: description.trim() } },
-      };
-      setTimeout(() => onCreated(newVideo), 800);
-
-    } catch (e: any) {
-      if (e.message === 'cancelled') return;
-      setErr(e.message ?? 'Upload fejlede');
-      setStage('idle');
-    }
+    // Read each zip's table of contents (only the central directory, nothing is loaded into memory).
+    added.forEach((it) => {
+      planVideoSet(it.file)
+        .then((plan) => setItems((prev) => prev.map((i) => i.id !== it.id ? i : {
+          ...i, plan,
+          // Only replace the title if the user has not edited it meanwhile.
+          title: i.title === nameToTitle(it.file.name) && plan.suggestedSlug ? plan.suggestedSlug : i.title,
+        })))
+        .catch((e) => patch(it.id, { planErr: e?.message ?? 'Kunne ikke læse zip-filen' }));
+    });
   };
 
-  const isBusy = stage === 'uploading';
-  const isDone = stage === 'done';
+  const removeItem = (id: number) => setItems((prev) => prev.filter((i) => i.id !== id));
+
+  // Several zips must not end up on the same Cloudinary ID (the later would overwrite the earlier).
+  const rootCounts = new Map<string, number>();
+  items.forEach((i) => { if (i.title.trim()) rootCounts.set(rootOf(i.title), (rootCounts.get(rootOf(i.title)) ?? 0) + 1); });
+
+  /** Reason an item cannot be uploaded yet, or null. */
+  const problemOf = (i: QueueItem): string | null => {
+    if (i.status === 'done') return null;
+    if (i.planErr)  return i.planErr;
+    if (!i.plan)    return 'reading';
+    if (i.plan.missing.length) {
+      return `Zip'en mangler ${i.plan.missing.length} fil${i.plan.missing.length === 1 ? '' : 'er'}: ${i.plan.missing.join(', ')}. Lav den igen med Flai Videoversioner.`;
+    }
+    if (!i.title.trim()) return 'Titel er påkrævet';
+    if ((rootCounts.get(rootOf(i.title)) ?? 0) > 1) return 'Samme Cloudinary ID som en anden video på listen – giv den en anden titel';
+    return null;
+  };
+
+  const todo    = items.filter((i) => i.status !== 'done');
+  const blocked = todo.some((i) => problemOf(i) !== null);
+
+  const handleUpload = async () => {
+    if (busy || !todo.length || blocked) return;
+    setBusy(true);
+    abort.current = new AbortController();
+    const { signal } = abort.current;
+
+    const queue = itemsRef.current.filter((i) => i.status !== 'done');
+    let ok = 0, failed = 0;
+
+    for (const it of queue) {
+      if (signal.aborted) break;
+      patch(it.id, { status: 'uploading', pct: 0, label: '', error: undefined });
+      try {
+        const root = rootOf(it.title);
+        await uploadVideoSet(it.plan!, root, {
+          upload:     uploadSetFile,
+          caption:    it.title.trim(),
+          alt:        description.trim(),
+          signal,
+          onProgress: (p, l) => patch(it.id, { pct: p, label: l }),
+        });
+        patch(it.id, { status: 'done', pct: 100, label: '' });
+        ok++;
+
+        // No pre-warm: the files of a set are finished uploads, nothing is transcoded.
+        // Bust this tab's hero cache and tell every other connected browser/tab.
+        bustHeroCache(root);
+        broadcastHeroUpdate(root).catch((e) => console.warn('heroSync broadcast failed (non-fatal):', e));
+
+        onCreated({
+          public_id:    root,
+          display_name: it.title.trim(),
+          filename:     it.file.name,
+          asset_folder: 'Herovideo',
+          format:       'mp4',
+          created_at:   new Date().toISOString(),
+          bytes:        it.file.size,
+          secure_url:   cloudinaryMp4Url(root),
+          context:      { custom: { caption: it.title.trim(), alt: description.trim() } },
+        });
+      } catch (e: any) {
+        if (e?.message === 'cancelled' || signal.aborted) { patch(it.id, { status: 'pending', pct: 0, label: '' }); break; }
+        patch(it.id, { status: 'error', pct: 0, label: '', error: e?.message ?? 'Upload fejlede' });
+        failed++;
+      }
+    }
+
+    setBusy(false);
+    if (ok) toast.success(ok === 1 ? 'Video uploadet — alle versioner er klar' : `${ok} videoer uploadet — alle versioner er klar`);
+    if (failed) toast.error(`${failed} upload${failed === 1 ? '' : 's'} fejlede – prøv dem igen`);
+    if (ok === queue.length) { setFinished(true); setTimeout(onClose, 1000); }
+  };
+
+  const locked = busy || finished;
+  const currentIdx = items.findIndex((i) => i.status === 'uploading');
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-neutral-800 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between p-5 border-b border-neutral-700">
+      <div className="bg-neutral-800 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-neutral-700 shrink-0">
           <EditableContent contentKey="video-upload-modal-title" as="h2" className="font-bold text-white text-lg" fallback="Upload video" />
-          <button onClick={() => { abort.current?.abort(); onClose(); }} disabled={isDone} className="p-2 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-40">
+          <button onClick={() => { abort.current?.abort(); onClose(); }} disabled={finished} className="p-2 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-40">
             <X size={18} className="text-neutral-400" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto">
           <div>
-            <EditableContent contentKey="video-upload-title-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Titel *" />
-            <input type="text" value={videoTitle} onChange={(e) => setVideoTitle(e.target.value)}
-              placeholder="Min fantastiske video" disabled={isBusy || isDone}
-              className="w-full bg-neutral-900 border border-neutral-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary placeholder-neutral-500 disabled:opacity-50" />
-            {videoTitle.trim() && (
-              <p className="text-xs text-neutral-500 mt-1">
-                <EditableContent contentKey="video-manager-cloudinary-id" fallback="Cloudinary ID:" /><span className="font-mono text-primary">{videoSetRootId(videoTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_'))}</span>
-              </p>
-            )}
+            <EditableContent contentKey="video-upload-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Flai-versions-zip *" />
+            <MultiDropzone onAdd={addFiles} hasFiles={items.length > 0} disabled={locked} />
           </div>
+
+          {items.length > 0 && (
+            <div className="space-y-2">
+              {items.map((it) => {
+                const problem = problemOf(it);
+                return (
+                  <div key={it.id} className="bg-neutral-900/60 border border-neutral-700 rounded-xl p-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      {it.status === 'done'      ? <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                        : it.status === 'uploading' ? <Loader2 size={16} className="animate-spin text-primary shrink-0" />
+                        : <FileVideo size={16} className="text-neutral-400 shrink-0" />}
+                      <input type="text" value={it.title} onChange={(e) => patch(it.id, { title: e.target.value })}
+                        placeholder="Titel *" disabled={locked || it.status === 'done'}
+                        className="flex-1 min-w-0 bg-neutral-900 border border-neutral-600 rounded-lg px-2.5 py-1.5 text-white text-sm focus:outline-none focus:border-primary placeholder-neutral-500 disabled:opacity-50" />
+                      <span className="text-xs text-neutral-500 shrink-0">{formatBytes(it.file.size)}</span>
+                      {!locked && it.status !== 'done' && (
+                        <button onClick={() => removeItem(it.id)} className="p-1 text-neutral-500 hover:text-white shrink-0" title="Fjern">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {it.title.trim() && (
+                      <p className="text-[11px] text-neutral-500 truncate">
+                        <EditableContent contentKey="video-manager-cloudinary-id" fallback="Cloudinary ID:" /> <span className="font-mono text-primary">{rootOf(it.title)}</span>
+                      </p>
+                    )}
+
+                    {it.status === 'uploading' && (
+                      <div>
+                        <p className="text-xs text-white mb-1">{it.label ? `${it.label} · ${it.pct}%` : `Uploader… ${it.pct}%`}</p>
+                        <div className="w-full bg-neutral-700 rounded-full h-1.5 overflow-hidden">
+                          <div className="h-full rounded-full bg-primary transition-all duration-200" style={{ width: `${it.pct}%` }} />
+                        </div>
+                      </div>
+                    )}
+                    {it.status === 'done' && <p className="text-xs text-emerald-400">Alle 11 versioner er klar på Cloudinary</p>}
+                    {it.status === 'error' && <p className="text-xs text-error">{it.error}</p>}
+                    {(it.status === 'pending' || it.status === 'error') && (
+                      problem === 'reading'
+                        ? <p className="text-xs text-neutral-500 flex items-center gap-1.5"><Loader2 size={10} className="animate-spin" /> Læser zip…</p>
+                        : problem
+                          ? <p className="text-xs text-error">{problem}</p>
+                          : it.status === 'pending' && it.plan && (
+                            <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                              <CheckCircle size={11} /> {it.plan.files.length} filer klar ({formatBytes(it.plan.totalBytes)}): 3 størrelser × 3 formater + 2 posters
+                            </p>
+                          )
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div>
             <EditableContent contentKey="video-upload-description-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Beskrivelse" />
             <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-              placeholder="Valgfri beskrivelse…" rows={2} disabled={isBusy || isDone}
+              placeholder={items.length > 1 ? 'Valgfri beskrivelse (bruges til alle videoer)…' : 'Valgfri beskrivelse…'} rows={2} disabled={locked}
               className="w-full bg-neutral-900 border border-neutral-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary placeholder-neutral-500 resize-none disabled:opacity-50" />
           </div>
 
-          <div>
-            <EditableContent contentKey="video-upload-file-label" as="label" className="text-sm text-neutral-300 mb-1.5 block" fallback="Flai-versions-zip *" />
-            <Dropzone file={file} onChange={setFile} disabled={isBusy || isDone} />
-            {zip && !isDone && <VideoSetSummary plan={plan} planErr={planErr} />}
-          </div>
+          {!locked && items.length === 0 && <CompressionInfoPanel />}
 
-          {!isBusy && !isDone && <CompressionInfoPanel />}
-
-          {(isBusy || isDone) && (
-            <ProgressBar
-              pct={isDone ? 100 : pct}
-              label={isDone ? 'Alle versioner uploadet' : (stepLabel ? `${stepLabel} · ${pct}%` : `Uploader… ${pct}%`)}
-              done={isDone}
-            />
-          )}
-
-          {isDone && newPublicId && (
-            <div className="flex items-center gap-2 text-xs text-neutral-400">
-              <EagerBadge publicId={newPublicId} />
-              <span><EditableContent contentKey="video-manager-set-ready" fallback="Alle 11 versioner er klar på Cloudinary" /></span>
-            </div>
-          )}
-
-          {err && (
-            <div className="flex items-start gap-2 bg-error/10 border border-error/30 rounded-xl p-3 text-error">
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              <p className="text-xs">{err}</p>
-            </div>
+          {busy && items.length > 1 && (
+            <p className="text-xs text-neutral-400">Uploader video {currentIdx + 1} af {items.length}…</p>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 p-5 border-t border-neutral-700">
-          <button onClick={() => { abort.current?.abort(); onClose(); }} disabled={isDone} className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors disabled:opacity-40">
-            {isBusy ? <EditableContent contentKey="video-btn-cancel" as="span" fallback="Annuller" /> : <EditableContent contentKey="video-btn-close" as="span" fallback="Luk" />}
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-neutral-700 shrink-0">
+          <button onClick={() => { abort.current?.abort(); onClose(); }} disabled={finished} className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors disabled:opacity-40">
+            {busy ? <EditableContent contentKey="video-btn-cancel" as="span" fallback="Annuller" /> : <EditableContent contentKey="video-btn-close" as="span" fallback="Luk" />}
           </button>
-          <button onClick={handleUpload} disabled={isBusy || isDone || !videoTitle.trim() || !file || blocked}
+          <button onClick={handleUpload} disabled={locked || !todo.length || blocked}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {isBusy ? <Loader2 size={14} className="animate-spin" /> : isDone ? <CheckCircle size={14} /> : <Upload size={14} />}
-            {isBusy
+            {busy ? <Loader2 size={14} className="animate-spin" /> : finished ? <CheckCircle size={14} /> : <Upload size={14} />}
+            {busy
               ? <EditableContent contentKey="video-btn-uploading" as="span" fallback="Uploader…" />
-              : isDone
+              : finished
                 ? <EditableContent contentKey="video-btn-done" as="span" fallback="Færdig" />
-                : <EditableContent contentKey="video-btn-upload" as="span" fallback="Upload" />}
+                : <><EditableContent contentKey="video-btn-upload" as="span" fallback="Upload" />{todo.length > 1 ? ` ${todo.length} videoer` : ''}</>}
           </button>
         </div>
       </div>
@@ -1047,7 +1163,7 @@ const VideoManager: React.FC = () => {
       {showUpload && (
         <UploadModal
           onClose={() => setShowUpload(false)}
-          onCreated={(v) => { setVideos((prev) => [v, ...prev]); setShowUpload(false); }}
+          onCreated={(v) => setVideos((prev) => [v, ...prev.filter((x) => x.public_id !== v.public_id)])}
         />
       )}
       {assignTarget && <AssignModal video={assignTarget} onClose={() => setAssignTarget(null)} />}
