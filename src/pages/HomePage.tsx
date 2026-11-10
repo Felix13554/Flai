@@ -1151,7 +1151,7 @@ const HomePage: React.FC = () => {
           clientLogoUrl:
             'https://pbqeljimuerxatrtmgsn.supabase.co/storage/v1/object/public/client-logos/1782478431391-38f16914.webp?square',
           cloudinaryVideoUrl:
-            'https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/scan-pork.m3u8',
+            'https://res.cloudinary.com/epjomksm/video/upload/scan-pork--fs.mp4',
           projectSlug: 'Specialister i salg af smågrise',
           website: 'https://scan-pork.com/',
         },
@@ -1161,7 +1161,7 @@ const HomePage: React.FC = () => {
           clientLogoUrl:
             'https://vikiallo.dk/wp-content/uploads/vikiallo-white-LOGO@2x.png',
           cloudinaryVideoUrl:
-            'https://res.cloudinary.com/dq6jxbyrg/video/upload/sp_auto/vikiallo.m3u8',
+            'https://res.cloudinary.com/epjomksm/video/upload/vikiallo--fs.mp4',
           projectSlug: 'Leverandør til print, skilte- og bilindpakningsfirmaer',
           website: 'https://vikiallo.dk/',
         },
@@ -1293,9 +1293,11 @@ const HomePage: React.FC = () => {
       ? extractCloudinaryPublicId(item.cloudinaryVideoUrlMobile)
       : undefined;
     // Same choice HeroVideoSection makes: the vertical cut only on a phone in portrait.
-    const videoId = isPortraitMobileNow() && mobileId ? mobileId : desktopId;
+    const useVertical = isPortraitMobileNow() && !!mobileId;
+    const videoId = useVertical ? mobileId : desktopId;
     preloadProjectForSwitch({
       publicId: videoId || undefined,
+      vertical: useVertical,
       logoUrls: getHeroProjectLogos(item).map((l) => l.url),
       waitForVideo: opts?.waitForVideo ?? false,
     }).then(() => {
@@ -1359,7 +1361,8 @@ const HomePage: React.FC = () => {
     const nextMobileId = next.cloudinaryVideoUrlMobile
       ? extractCloudinaryPublicId(next.cloudinaryVideoUrlMobile)
       : undefined;
-    const nextId = portraitPhone && nextMobileId ? nextMobileId : nextDesktopId;
+    const nextVertical = portraitPhone && !!nextMobileId;
+    const nextId = nextVertical ? nextMobileId : nextDesktopId;
     const currentId =
       portraitPhone && activeProjectMobilePublicId ? activeProjectMobilePublicId : activeProjectPublicId;
     if (!nextId || nextId === currentId) return;
@@ -1367,7 +1370,7 @@ const HomePage: React.FC = () => {
     let idleId: number | undefined;
     const timer = window.setTimeout(() => {
       if (document.visibilityState === 'hidden') return;
-      const run = () => prefetchProjectVideo(nextId);
+      const run = () => prefetchProjectVideo(nextId, nextVertical);
       idleId =
         typeof requestIdleCallback === 'function'
           ? requestIdleCallback(run, { timeout: 4000 })

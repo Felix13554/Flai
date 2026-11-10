@@ -281,32 +281,84 @@ export function reportVideoStall(): boolean {
   return false
 }
 
+function connectionLimited(): boolean {
+  if (_forceSmallTier) return true
+  const conn =
+    (navigator as any).connection ??
+    (navigator as any).mozConnection ??
+    (navigator as any).webkitConnection
+  const type = conn?.effectiveType
+  return conn?.saveData === true || type === 'slow-2g' || type === '2g' || type === '3g'
+}
+
+// ─── Crop-aware hero tier ─────────────────────────────────────────────────────
+//
+// The hero is object-fit: cover, so a 16:9 file in a portrait phone viewport is
+// scaled until its HEIGHT fills the screen and only a narrow slice of its width
+// is visible. The old rule ("portrait phone -> 720 wide") therefore upscaled a
+// 720x406 file ~2x and looked soft. The tier is now chosen from the width the
+// file must have to fill the viewport AFTER the cover-crop:
+//
+//   shownWidth = max(viewportW, viewportH * fileAspect)   (CSS px)
+//   needed     = shownWidth * min(devicePixelRatio, HERO_MAX_DENSITY)
+//
+// and the smallest set width that covers it (with HERO_WIDTH_SLACK of tolerance
+// for mild upscaling) is used. Pixels that are cropped away are still downloaded
+// for a horizontal file, so when less than HERO_CROP_VISIBLE_MIN of the width is
+// visible the tier is capped at HERO_CROPPED_CAP; the real fix for those is a
+// vertical set (FLAI_CROP=9:16), which `vertical: true` selects tiers for.
+const HERO_MAX_DENSITY = 1.5
+const HERO_WIDTH_SLACK = 1.3
+const HERO_CROP_VISIBLE_MIN = 0.6
+const HERO_CROPPED_CAP: HeroVideoTier = 'medium'
+const TIER_RANK: Record<HeroVideoTier, number> = { small: 0, mobile: 0, medium: 1, large: 2 }
+
+export function heroTierRank(tier: HeroVideoTier): number {
+  return TIER_RANK[tier]
+}
+
+/** Width (device px) the file needs, and the share of its width that is visible. */
+export function heroCoverNeed(
+  viewportW: number,
+  viewportH: number,
+  vertical: boolean,
+  dpr: number,
+): { needed: number; visibleFraction: number } {
+  const aspect = vertical ? 9 / 16 : 16 / 9
+  const shownW = Math.max(viewportW, viewportH * aspect)
+  return {
+    needed: shownW * Math.min(Math.max(dpr, 1), HERO_MAX_DENSITY),
+    visibleFraction: shownW > 0 ? Math.min(1, viewportW / shownW) : 1,
+  }
+}
+
 /**
  * Picks the hero delivery tier from the CURRENT connection and viewport.
  * Evaluated when a URL is built (never at import time, so this module stays
  * side-effect-free). Playback, prefetch and the load-before-switch preload all
  * go through `cloudinaryHeroMp4Url`, so they resolve to the same URL on the
  * same device and share one cached response.
+ *
+ * `vertical` = the file being played is the 9:16 cut (mobile id on a portrait phone).
  */
-export function heroVideoTier(): HeroVideoTier {
+export function heroVideoTier(opts: { vertical?: boolean } = {}): HeroVideoTier {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'medium'
-  if (_forceSmallTier) return 'small'
+  if (connectionLimited()) return 'small'
 
-  const conn =
-    (navigator as any).connection ??
-    (navigator as any).mozConnection ??
-    (navigator as any).webkitConnection
-  const type = conn?.effectiveType
-  if (conn?.saveData === true || type === 'slow-2g' || type === '2g' || type === '3g') {
-    return 'small'
+  const { needed, visibleFraction } = heroCoverNeed(
+    window.innerWidth,
+    window.innerHeight,
+    !!opts.vertical,
+    window.devicePixelRatio || 1,
+  )
+  let tier: HeroVideoTier =
+    needed <= HERO_TIERS.small.width * HERO_WIDTH_SLACK ? 'small'
+    : needed <= HERO_TIERS.medium.width * HERO_WIDTH_SLACK ? 'medium'
+    : 'large'
+  if (visibleFraction < HERO_CROP_VISIBLE_MIN && TIER_RANK[tier] > TIER_RANK[HERO_CROPPED_CAP]) {
+    tier = HERO_CROPPED_CAP
   }
-
-  const w = window.innerWidth
-  const h = window.innerHeight
-  // Same test the app uses for "portrait phone" (see isPortraitMobileNow).
-  if (w < 768 && h > w) return 'mobile'
-
-  return w > 1600 ? 'large' : 'medium'
+  return tier
 }
 
 // ─── Optimized delivery (hero + product/portfolio/preview players) ───────────
@@ -319,8 +371,12 @@ function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
 }
 
 /** Hero loop: the pre-made file for this device's width tier in its best codec. */
-export function cloudinaryHeroMp4Url(publicId: string, tier: HeroVideoTier = heroVideoTier()): string {
-  return optimizedVideoUrl(publicId, tier)
+export function cloudinaryHeroMp4Url(
+  publicId: string,
+  tier?: HeroVideoTier,
+  vertical = false,
+): string {
+  return optimizedVideoUrl(publicId, tier ?? heroVideoTier({ vertical }))
 }
 
 /** Product / portfolio / preview players: same pre-made file as the hero. */
@@ -329,10 +385,15 @@ export function cloudinaryPlayerVideoUrl(publicId: string, tier: HeroVideoTier =
 }
 
 /**
- * Players sit in a small 16:9 box and start on a tap, so portrait phones keep
- * the lighter 720 tier (only the full-screen hero gets the sharper `mobile` one).
+ * Players sit in a small 16:9 box and start on a tap, so they are NOT sized by the
+ * full-screen cover logic: portrait phones keep the lightest tier, everything else
+ * goes by viewport width.
  */
 export function playerVideoTier(): HeroVideoTier {
-  const tier = heroVideoTier()
-  return tier === 'mobile' ? 'small' : tier
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'medium'
+  if (connectionLimited()) return 'small'
+  const w = window.innerWidth
+  const h = window.innerHeight
+  if (w < 768 && h > w) return 'small'
+  return w > 1600 ? 'large' : 'medium'
 }

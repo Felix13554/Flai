@@ -881,7 +881,7 @@ const VideoRow: React.FC<{
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 bg-neutral-900/60 rounded-lg px-3 py-2 flex-1 min-w-0 border border-neutral-700">
-              <Zap size={11} className="text-amber-400 shrink-0" title="URL inkluderer q_auto + sp_hd HLS" />
+              <Zap size={11} className="text-amber-400 shrink-0" title="Færdig fil fra videosættet (1920 H.264), ingen transformation" />
               <span className="text-xs font-mono text-neutral-300 break-all">{hlsUrl}</span>
             </div>
             <a href={mp4Url} target="_blank" rel="noopener noreferrer"

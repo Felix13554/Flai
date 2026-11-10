@@ -67,7 +67,7 @@ import {
   cloudinaryHeroMp4Url,
   cloudinaryPosterUrl,
 } from '../utils/heroPreload'
-import { reportVideoStall, reportVideoFormatError } from '../utils/cloudinaryUrls'
+import { reportVideoStall, reportVideoFormatError, heroVideoTier, heroTierRank } from '../utils/cloudinaryUrls'
 import { HeroFrameContext } from '../contexts/HeroFrameContext'
 import { useAdminHeroAutoplayOff } from '../utils/adminHeroAutoplay'
 
@@ -422,8 +422,54 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   // the small tier (see reportVideoStall) — it makes this memo rebuild the URL
   // with the lighter tier. It only ever moves toward LOWER bandwidth.
   const [tierEpoch, setTierEpoch] = useState(0)
-  const videoSrc = useMemo(() => cloudinaryHeroMp4Url(publicId), [publicId, tierEpoch])
+  // ▶ v23: the tier follows what is actually VISIBLE after the object-fit: cover crop
+  // (see heroVideoTier). `verticalVideo` = the 9:16 cut is playing; derived from the
+  // id in state (not from the orientation hook) so it never runs ahead of the video.
+  const verticalVideo =
+    !!controlledMobilePublicId && publicId === controlledMobilePublicId && publicId !== controlledPublicId
+  const verticalRef = useRef(verticalVideo)
+  verticalRef.current = verticalVideo
+  const [viewportEpoch, setViewportEpoch] = useState(0)
+  const heroTier = useMemo(
+    () => heroVideoTier({ vertical: verticalVideo }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [publicId, verticalVideo, tierEpoch, viewportEpoch],
+  )
+  const heroTierRef = useRef(heroTier)
+  heroTierRef.current = heroTier
+  const videoSrc = useMemo(
+    () => cloudinaryHeroMp4Url(publicId, heroTier, verticalVideo),
+    [publicId, heroTier, verticalVideo],
+  )
   videoSrcRef.current = videoSrc
+
+  // ▶ v23: react to the screen changing size (window resize, split view, tablet
+  // rotation, desktop -> fullscreen). UPGRADE-ONLY and debounced: a larger viewport
+  // that needs a sharper file reloads the video once; shrinking (or the mobile
+  // address bar moving the height by a few px) never reloads, because the bigger
+  // file is already downloaded. Rotations that swap the id are handled by the id swap.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let timer: number | undefined
+    const check = () => {
+      const next = heroVideoTier({ vertical: verticalRef.current })
+      if (heroTierRank(next) <= heroTierRank(heroTierRef.current)) return
+      setVideoReady(false)
+      setViewportEpoch((n) => n + 1)
+      setVideoKey((k) => k + 1)
+    }
+    const onResize = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(check, 400)
+    }
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+  }, [])
 
   // ── Ref callback ────────────────────────────────────────────────────────
   // Intentionally stable (no deps). Reads src from videoSrcRef to avoid the
@@ -773,7 +819,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         video.pause()
         // ▶ v22: rebuilt fresh (not read from the ref) so the retry also picks
         // up a connection that has gotten slower since the first load.
-        const retrySrc = cloudinaryHeroMp4Url(publicIdRef.current)
+        const retrySrc = cloudinaryHeroMp4Url(publicIdRef.current, undefined, verticalRef.current)
         videoSrcRef.current = retrySrc
         video.src = retrySrc
         video.load()

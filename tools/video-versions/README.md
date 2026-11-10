@@ -56,6 +56,41 @@ AV1 er ikke med: Cloudinarys dokumentation nævner det ikke som en del af `f_aut
 `publicId` er filnavnet uden endelse (mellemrum → `_`, kun `A-Z a-z 0-9 _ - .`).
 Er originalen smallere end en størrelse, bliver den ikke opskaleret, så to filer kan være ens.
 
+## Farver
+
+Alle versioner ender som **SDR · 8 bit · yuv420p · limited range · BT.709**, og transfer-taggen
+sættes eksplicit til **sRGB** (`iec61966-2-1`). Scriptet undersøger kilden med ffprobe og
+omregner kun det, der afviger. Hvad der er gjort står i loggen (`FARVE …`) og i
+`manifest.json` under `color`.
+
+| Kilde | Hvad der sker |
+|---|---|
+| SDR BT.709, mangler transfer-tag (fx DaVinci Resolve) | Kun tag. Pixels ændres ikke. |
+| BT.601 (SD) eller ukendt matrix | Omregnes til BT.709. Ukendt matrix: 709 fra 720 høj og op, ellers 601 (som afspillere gør). |
+| Full range (`yuvj420p`) | Omregnes til limited. |
+| RGB-kilde | Omregnes til YUV med BT.709-matrix (ffmpeg bruger ellers 601). |
+| BT.2020-SDR, Display P3 | Primærfarver omregnes til BT.709. |
+| 10/12 bit, 4:4:4, alpha (fx ProRes 4444) | 8 bit 4:2:0. Alpha fjernes. |
+| HDR (PQ eller HLG) | Tonemappes til SDR via en 3D-LUT. |
+| Gamma 2.2 / 2.8 / sRGB tagget i kilden | Kildens transfer-tag bevares. |
+
+**Hvorfor sRGB-tagget:** Mangler kilden transfer-tag, viser Safari/QuickTime videoen lysere end
+Chrome og Firefox. Målt på Safari 27, Chrome 157 og Firefox 151 giver `iec61966-2-1` ens
+udseende i alle tre og ændrer ikke Chrome/Firefox. Et eksplicit BT.709-tag gør ingen forskel i
+Safari. Taggen ændrer ingen pixels.
+
+**Kendte begrænsninger**
+- **Log-optagelser** (D-Log, S-Log, V-Log m.fl.) er normalt tagget som almindelig BT.709 og kan
+  ikke genkendes. De konverteres ikke og ser flade ud, som originalen. Grade dem først.
+- **HDR-tonemapping** er testet på syntetiske HLG/PQ-klip (rundtur), ikke på rigtigt HDR-materiale.
+  Der antages 1000 nit mastering-peak og 203 nit som SDR-hvid. Ffmpeg her har ikke `zscale`.
+- **Dolby Vision profil 5** understøttes ikke, og der gives en advarsel.
+- Transfer `linear`, `log100`, `log316`, `smpte428`, `bt1361e`, `xvycc`: pixels er uændrede, og
+  der gives en advarsel.
+- Resolve skriver et `gama`-atom (2,4) i originalen, som QuickTime/Safari bruger til at vise den
+  mørkere. Versionerne har det ikke, så originalen ser stadig lidt mørkere ud i Safari/QuickTime.
+- Posters er JPEG (sRGB), tonemappet/omregnet som videoen, hvis kilden kræver det.
+
 ## Flag
 
 ```sh
