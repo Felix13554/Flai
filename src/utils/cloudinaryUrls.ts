@@ -307,6 +307,14 @@ function connectionLimited(): boolean {
 // for a horizontal file, so when less than HERO_CROP_VISIBLE_MIN of the width is
 // visible the tier is capped at HERO_CROPPED_CAP; the real fix for those is a
 // vertical set (FLAI_CROP=9:16), which `vertical: true` selects tiers for.
+//
+// Two portrait-phone cases bypass the cover maths above:
+//   - A vertical set: the file IS 9:16, so nothing is cropped away and the tier is
+//     chosen like for any other file: viewport width x density.
+//   - A horizontal-only video: the 16:9 frame is not downloaded just to hide most of
+//     it. A centred 9:16 slice (exactly what object-fit: cover shows) is requested
+//     instead, see portraitCropUrl. The tier then follows the viewport HEIGHT, which
+//     is what the slice has to fill.
 const HERO_MAX_DENSITY = 1.5
 const HERO_WIDTH_SLACK = 1.3
 const HERO_CROP_VISIBLE_MIN = 0.6
@@ -316,6 +324,15 @@ const TIER_RANK: Record<HeroVideoTier, number> = { small: 0, mobile: 0, medium: 
 export function heroTierRank(tier: HeroVideoTier): number {
   return TIER_RANK[tier]
 }
+
+/** True on a phone held in portrait (same test HeroVideoSection uses for its mobile layout). */
+export function isPortraitPhoneNow(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches
+}
+
+/** Heights (px) of the 9:16 slice served to portrait phones for horizontal-only videos. */
+const PORTRAIT_CROP_HEIGHT = { small: 720, medium: 1080 } as const
 
 /** Width (device px) the file needs, and the share of its width that is visible. */
 export function heroCoverNeed(
@@ -341,24 +358,35 @@ export function heroCoverNeed(
  *
  * `vertical` = the file being played is the 9:16 cut (mobile id on a portrait phone).
  */
-export function heroVideoTier(opts: { vertical?: boolean } = {}): HeroVideoTier {
+export function heroVideoTier(opts: { vertical?: boolean; portraitCrop?: boolean } = {}): HeroVideoTier {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'medium'
   if (connectionLimited()) return 'small'
 
-  const { needed, visibleFraction } = heroCoverNeed(
-    window.innerWidth,
-    window.innerHeight,
-    !!opts.vertical,
-    window.devicePixelRatio || 1,
-  )
-  let tier: HeroVideoTier =
-    needed <= HERO_TIERS.small.width * HERO_WIDTH_SLACK ? 'small'
-    : needed <= HERO_TIERS.medium.width * HERO_WIDTH_SLACK ? 'medium'
-    : 'large'
+  const vertical = !!opts.vertical
+  const portraitCrop = !vertical && (opts.portraitCrop ?? isPortraitPhoneNow())
+  const dpr = window.devicePixelRatio || 1
+  const density = Math.min(Math.max(dpr, 1), HERO_MAX_DENSITY)
+
+  // Vertical file: nothing is cropped away, so size it by the width it fills.
+  if (vertical) return tierForWidth(window.innerWidth * density)
+
+  // Horizontal-only video on a portrait phone: a 9:16 slice is served, sized by height.
+  if (portraitCrop) {
+    return window.innerHeight * density <= PORTRAIT_CROP_HEIGHT.small * HERO_WIDTH_SLACK ? 'small' : 'medium'
+  }
+
+  const { needed, visibleFraction } = heroCoverNeed(window.innerWidth, window.innerHeight, false, dpr)
+  let tier = tierForWidth(needed)
   if (visibleFraction < HERO_CROP_VISIBLE_MIN && TIER_RANK[tier] > TIER_RANK[HERO_CROPPED_CAP]) {
     tier = HERO_CROPPED_CAP
   }
   return tier
+}
+
+function tierForWidth(needed: number): HeroVideoTier {
+  return needed <= HERO_TIERS.small.width * HERO_WIDTH_SLACK ? 'small'
+    : needed <= HERO_TIERS.medium.width * HERO_WIDTH_SLACK ? 'medium'
+    : 'large'
 }
 
 // ─── Optimized delivery (hero + product/portfolio/preview players) ───────────
@@ -370,13 +398,35 @@ function optimizedVideoUrl(publicId: string, tier: HeroVideoTier): string {
   return videoSetVideoUrl(publicId, HERO_TIERS[tier].width, pickVideoCodec())
 }
 
-/** Hero loop: the pre-made file for this device's width tier in its best codec. */
+const PORTRAIT_CROP_VC: Record<VideoSetCodec, string> = { vp9: 'vc_vp9', hevc: 'vc_h265', h264: 'vc_h264' }
+
+/**
+ * Centred 9:16 slice of a horizontal set's root file (1920 wide), for portrait phones
+ * that have no vertical set. The part object-fit: cover would hide is never
+ * downloaded. This is the ONE place that uses a Cloudinary transformation: one derived
+ * asset per codec and height, created on first request, and only by portrait phones.
+ */
+function portraitCropUrl(publicId: string, tier: HeroVideoTier): string {
+  const codec = pickVideoCodec()
+  const h = TIER_RANK[tier] === 0 ? PORTRAIT_CROP_HEIGHT.small : PORTRAIT_CROP_HEIGHT.medium
+  return `https://res.cloudinary.com/${CLOUD}/video/upload/ar_9:16,c_crop,g_center/c_limit,h_${h},${PORTRAIT_CROP_VC[codec]}/${ensureVideoSetRoot(publicId)}.${VIDEO_SET_EXT[codec]}`
+}
+
+/**
+ * Hero loop: the pre-made file for this device's tier in its best codec.
+ * `vertical`: the file is the 9:16 cut (plain tier by width, nothing cropped).
+ * `portraitCrop`: serve the centred 9:16 slice of a horizontal file; when omitted it is
+ * true for a horizontal file on a portrait phone.
+ */
 export function cloudinaryHeroMp4Url(
   publicId: string,
   tier?: HeroVideoTier,
   vertical = false,
+  portraitCrop?: boolean,
 ): string {
-  return optimizedVideoUrl(publicId, tier ?? heroVideoTier({ vertical }))
+  const crop = !vertical && (portraitCrop ?? isPortraitPhoneNow())
+  const t = tier ?? heroVideoTier({ vertical, portraitCrop: crop })
+  return crop ? portraitCropUrl(publicId, t) : optimizedVideoUrl(publicId, t)
 }
 
 /** Product / portfolio / preview players: same pre-made file as the hero. */
