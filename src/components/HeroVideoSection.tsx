@@ -431,43 +431,20 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
   verticalRef.current = verticalVideo
   const [viewportEpoch, setViewportEpoch] = useState(0)
 
-  // ▶ v24: a horizontal-only video on a portrait phone is served as a centred 9:16
-  // slice, so the part object-fit: cover would hide is never downloaded. Decided once
-  // per video id, when it is loaded. A project with a vertical cut never crops (that
-  // file is plain, sized by width). Rotating to landscape needs the whole frame, so
-  // the effect below drops the crop and reloads; rotating back to portrait keeps the
-  // full file that is already playing (no reload, same rule as the upgrade-only resize).
-  const cropDecision = useRef<{ id: string; crop: boolean }>({ id: '', crop: false })
-  if (cropDecision.current.id !== publicId) {
-    cropDecision.current = {
-      id: publicId,
-      crop: isPortraitMobile && !verticalVideo && !controlledMobilePublicId,
-    }
-  }
-  const portraitCrop = cropDecision.current.crop
-  const portraitCropRef = useRef(portraitCrop)
-  portraitCropRef.current = portraitCrop
-
+  // The hero never uses a Cloudinary transformation: a horizontal-only video on a
+  // portrait phone is the plain pre-made file, same as on every other device.
   const heroTier = useMemo(
-    () => heroVideoTier({ vertical: verticalVideo, portraitCrop }),
+    () => heroVideoTier({ vertical: verticalVideo }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [publicId, verticalVideo, portraitCrop, tierEpoch, viewportEpoch],
+    [publicId, verticalVideo, tierEpoch, viewportEpoch],
   )
   const heroTierRef = useRef(heroTier)
   heroTierRef.current = heroTier
   const videoSrc = useMemo(
-    () => cloudinaryHeroMp4Url(publicId, heroTier, verticalVideo, portraitCrop),
-    [publicId, heroTier, verticalVideo, portraitCrop],
+    () => cloudinaryHeroMp4Url(publicId, heroTier, verticalVideo),
+    [publicId, heroTier, verticalVideo],
   )
   videoSrcRef.current = videoSrc
-
-  useEffect(() => {
-    if (isPortraitMobile || !cropDecision.current.crop) return
-    cropDecision.current = { ...cropDecision.current, crop: false }
-    setVideoReady(false)
-    setViewportEpoch((n) => n + 1)
-    setVideoKey((k) => k + 1)
-  }, [isPortraitMobile])
 
   // ▶ v23: react to the screen changing size (window resize, split view, tablet
   // rotation, desktop -> fullscreen). UPGRADE-ONLY and debounced: a larger viewport
@@ -478,7 +455,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
     if (typeof window === 'undefined') return
     let timer: number | undefined
     const check = () => {
-      const next = heroVideoTier({ vertical: verticalRef.current, portraitCrop: portraitCropRef.current })
+      const next = heroVideoTier({ vertical: verticalRef.current })
       if (heroTierRank(next) <= heroTierRank(heroTierRef.current)) return
       setVideoReady(false)
       setViewportEpoch((n) => n + 1)
@@ -845,7 +822,7 @@ const HeroVideoSection: React.FC<HeroVideoSectionProps> = ({ className = '', chi
         video.pause()
         // ▶ v22: rebuilt fresh (not read from the ref) so the retry also picks
         // up a connection that has gotten slower since the first load.
-        const retrySrc = cloudinaryHeroMp4Url(publicIdRef.current, undefined, verticalRef.current, portraitCropRef.current)
+        const retrySrc = cloudinaryHeroMp4Url(publicIdRef.current, undefined, verticalRef.current)
         videoSrcRef.current = retrySrc
         video.src = retrySrc
         video.load()

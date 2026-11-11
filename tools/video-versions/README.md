@@ -110,4 +110,4 @@ færdige filer i stedet for at lade Cloudinary lave dem, er **ikke koblet på en
 ## Hero på portrætmobil
 
 - **Lodret sæt findes** (`FLAI_CROP=9:16`): ingen beskæring, så størrelsen vælges som for enhver anden fil (skærmbredde × tæthed).
-- **Kun en vandret video:** der hentes kun det synlige udsnit (midterste 9:16, samme som `object-fit: cover` viser) i stedet for hele 16:9-billedet. Det er de eneste filer, der bruger en Cloudinary-transformation (`c_crop,ar_9:16` af `--fs`-rodfilen, 720 eller 1080 høj, i browserens codec). De laves ved første forespørgsel og kun af portrætmobiler. Drejes telefonen til landskab, hentes den fulde fil.
+- **Kun en vandret video:** der hentes den almindelige, færdiglavede fil (størrelsen vælges ud fra det, der er synligt efter `object-fit: cover`, max `medium`). Herovideoen bruger aldrig Cloudinary-transformationer, heller ikke på mobil.
