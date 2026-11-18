@@ -286,18 +286,16 @@ const Section_9009b281 = ((
       compact: boolean;
     }
 
-    /** A card on the left must show at least this much to be worth placing. */
-    const MIN_VISIBLE_SLIVER_PX = 48;
-
-    /** Desktop: how many reviews fit to the LEFT of the centered review 1,
-     * based on the width of the screen. Phone layout: always 0. */
+    /** Desktop: how many WHOLE reviews fit to the LEFT of the centered review 1,
+     * based on the width of the screen (never a half-hidden card on the left —
+     * everything else goes to the right). Phone layout: always 0. */
     function computeLeftCount(m: RowMetrics, total: number): number {
       if (m.compact || total <= 1) return 0;
       const side = (m.viewportWidth - m.cardWidth) / 2;
       let count = 0;
       while (
         count < total - 1 &&
-        side - (count + 1) * CARD_GAP_PX - count * m.cardWidth >= MIN_VISIBLE_SLIVER_PX
+        side - (count + 1) * (m.cardWidth + CARD_GAP_PX) >= 0
       ) {
         count += 1;
       }
