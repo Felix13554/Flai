@@ -278,21 +278,41 @@ const Section_9009b281 = ((
       return clamp(raw, 1, total);
     }
 
-    /** The card position that counts as "the middle", in card units: an integer
-     * is that card's index, x.5 is the gap right after card x.
-     *   - odd total  -> the middle card, always
-     *   - even total -> the gap between the two middle cards if an even number of
-     *                   cards fits on screen (so pairs sit symmetrically),
-     *                   otherwise the right-hand middle card */
-    function middleAnchor(total: number, visibleCount: number): number {
-      if (total % 2 === 1) return (total - 1) / 2;
-      return visibleCount % 2 === 0 ? (total - 1) / 2 : total / 2;
-    }
-
     interface RowMetrics {
       viewportWidth: number;
       trackWidth: number;
       cardWidth: number;
+      /** Phone layout (same breakpoint as the CSS): review 1 comes first. */
+      compact: boolean;
+    }
+
+    /** A card on the left must show at least this much to be worth placing. */
+    const MIN_VISIBLE_SLIVER_PX = 48;
+
+    /** Desktop: how many reviews fit to the LEFT of the centered review 1,
+     * based on the width of the screen. Phone layout: always 0. */
+    function computeLeftCount(m: RowMetrics, total: number): number {
+      if (m.compact || total <= 1) return 0;
+      const side = (m.viewportWidth - m.cardWidth) / 2;
+      let count = 0;
+      while (
+        count < total - 1 &&
+        side - (count + 1) * CARD_GAP_PX - count * m.cardWidth >= MIN_VISIBLE_SLIVER_PX
+      ) {
+        count += 1;
+      }
+      return count;
+    }
+
+    /** Grid column (1-based) of review `index` (0-based).
+     *   - phone:   natural order, review 1 first
+     *   - desktop: review 1 sits in the middle, reviews 2,3,4... fill the space
+     *              to its left (`leftCount` of them), the rest continue to its right */
+    function displayColumn(index: number, leftCount: number): number {
+      if (leftCount === 0) return index + 1;
+      if (index === 0) return leftCount + 1;
+      if (index <= leftCount) return index;
+      return index + 1;
     }
 
     interface RowLayout {
@@ -302,8 +322,10 @@ const Section_9009b281 = ((
       offset: number;
       minOffset: number;
       maxOffset: number;
-      /** The middle position, in card units (see middleAnchor). */
+      /** The centered position, in card units (see computeRowLayout). */
       anchor: number;
+      /** Reviews placed to the left of review 1 (desktop only). */
+      leftCount: number;
     }
 
     /** Works out where the track has to be for a given offset from the middle.
@@ -313,11 +335,14 @@ const Section_9009b281 = ((
       const { viewportWidth: vw, trackWidth: tw, cardWidth: cw } = m;
       const step = cw + CARD_GAP_PX;
       if (total <= 0 || vw <= 0 || cw <= 0) {
-        return { x: 0, offset: 0, minOffset: 0, maxOffset: 0, anchor: 0 };
+        return { x: 0, offset: 0, minOffset: 0, maxOffset: 0, anchor: 0, leftCount: 0 };
       }
 
       const visible = computeVisibleCount(cw, vw, total);
-      const anchor = middleAnchor(total, visible);
+      // Phone: review 1 first (anchor 0). Desktop: review 1 is the centered card,
+      // with `leftCount` reviews to its left (see displayColumn).
+      const leftCount = computeLeftCount(m, total);
+      const anchor = m.compact ? 0 : leftCount;
 
       // Centers of the viewport, in track coordinates. The first/last "block" of
       // `visible` cards may be centered at most (so the strip never runs further
@@ -326,12 +351,14 @@ const Section_9009b281 = ((
       const block = visible * cw + (visible - 1) * CARD_GAP_PX;
       const minCx = block / 2;
       const maxCx = tw - block / 2;
-      const midCx = clamp(anchor * step + cw / 2, minCx, maxCx);
+      // Desktop: review 1 is centered exactly, never nudged by the end clamps.
+      const midCx = m.compact ? clamp(anchor * step + cw / 2, minCx, maxCx) : anchor * step + cw / 2;
 
       const toEnd = maxCx - midCx;
       const toStart = midCx - minCx;
       const maxOffset = toEnd < EDGE_TOLERANCE_PX ? 0 : Math.max(1, Math.round(toEnd / step));
-      const minOffset = toStart < EDGE_TOLERANCE_PX ? 0 : -Math.max(1, Math.round(toStart / step));
+      // Desktop: the left side only holds what fills the screen, nothing to slide to.
+      const minOffset = m.compact && toStart >= EDGE_TOLERANCE_PX ? -Math.max(1, Math.round(toStart / step)) : 0;
       const offset = clamp(requestedOffset, minOffset, maxOffset);
 
       // Whole-card steps from the middle; the last step towards an end lands
@@ -340,7 +367,7 @@ const Section_9009b281 = ((
       if (maxOffset > 0 && offset === maxOffset) cx = maxCx;
       else if (minOffset < 0 && offset === minOffset) cx = minCx;
 
-      return { x: Math.round(vw / 2 - cx), offset, minOffset, maxOffset, anchor };
+      return { x: Math.round(vw / 2 - cx), offset, minOffset, maxOffset, anchor, leftCount };
     }
 
     // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -521,6 +548,7 @@ const Section_9009b281 = ((
       const layoutRef = useRef<RowLayout | null>(null);
       layoutRef.current = layout;
       const shownOffset = layout ? layout.offset : offset;
+      const leftCount = layout ? layout.leftCount : 0;
 
       useEffect(() => {
         if (prevTotalRef.current !== total) {
@@ -559,13 +587,15 @@ const Section_9009b281 = ((
             viewportWidth: vw,
             trackWidth: track.offsetWidth,
             cardWidth: firstCard.offsetWidth,
+            compact: window.matchMedia('(max-width: 768px)').matches,
           };
           const prev = metricsRef.current;
           if (
             prev &&
             prev.viewportWidth === next.viewportWidth &&
             prev.trackWidth === next.trackWidth &&
-            prev.cardWidth === next.cardWidth
+            prev.cardWidth === next.cardWidth &&
+            prev.compact === next.compact
           ) {
             return;
           }
@@ -654,8 +684,8 @@ const Section_9009b281 = ((
             >
               {reviews.map((review, i) => (
                 <React.Fragment key={`${review.user.name}-${i}`}>
-                  <ReviewCard review={review} column={i + 1} />
-                  <ResultCard review={review} column={i + 1} />
+                  <ReviewCard review={review} column={displayColumn(i, leftCount)} />
+                  <ResultCard review={review} column={displayColumn(i, leftCount)} />
                 </React.Fragment>
               ))}
             </div>
