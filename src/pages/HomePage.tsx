@@ -301,18 +301,26 @@ const Section_9009b281 = ((
       ) {
         count += 1;
       }
-      return count;
+      // Alternating 2 left / 3 right ... means at most floor(total / 2) on the left.
+      return Math.min(count, Math.floor(total / 2));
     }
 
     /** Grid column (1-based) of review `index` (0-based).
      *   - phone:   natural order, review 1 first
-     *   - desktop: review 1 sits in the middle, reviews 2,3,4... fill the space
-     *              to its left (`leftCount` of them), the rest continue to its right */
+     *   - desktop: review 1 sits in the middle, review 2 to its left, 3 to its
+     *              right, 4 left, 5 right ... alternating until the left side of
+     *              the screen is full (`leftCount` cards); every remaining review
+     *              continues to the right, in order. */
     function displayColumn(index: number, leftCount: number): number {
       if (leftCount === 0) return index + 1;
       if (index === 0) return leftCount + 1;
-      if (index <= leftCount) return index;
-      return index + 1;
+      // Left side holds reviews 2, 4, 6 ... (indices 1, 3, 5 ...), nearest first.
+      if (index % 2 === 1 && index <= 2 * leftCount - 1) {
+        return leftCount + 1 - (index + 1) / 2;
+      }
+      // Right side: all other reviews in order after the centered one.
+      const placedLeft = Math.min(Math.floor(index / 2), leftCount);
+      return leftCount + 1 + (index - placedLeft);
     }
 
     interface RowLayout {
@@ -340,7 +348,7 @@ const Section_9009b281 = ((
 
       const visible = computeVisibleCount(cw, vw, total);
       // Phone: review 1 first (anchor 0). Desktop: review 1 is the centered card,
-      // with `leftCount` reviews to its left (see displayColumn).
+      // with `leftCount` reviews on its left, alternating (see displayColumn).
       const leftCount = computeLeftCount(m, total);
       const anchor = m.compact ? 0 : leftCount;
 
